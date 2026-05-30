@@ -3,15 +3,24 @@ LLM Guardrails Gateway — production entrypoint.
 Run: uvicorn main:app --reload
 """
 from contextlib import asynccontextmanager
+import logging
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import create_all_tables
+from app.middleware.request_logging import RequestLoggingMiddleware
 from app.routers import auth, api_keys, chat, analytics, policy
 
 settings = get_settings()
+logging.basicConfig(
+    level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
+    format="%(message)s",
+)
 allowed_origins = [origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
 
@@ -39,6 +48,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(auth.router)
 app.include_router(api_keys.router)
@@ -54,3 +64,17 @@ async def health():
         "env":     settings.APP_ENV,
         "backend": settings.DEFAULT_LLM_BACKEND,
     }
+
+
+static_dir = Path(__file__).resolve().parent / "static"
+if static_dir.exists():
+    assets_dir = static_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def serve_frontend(path: str):
+        requested = static_dir / path
+        if path and requested.is_file():
+            return FileResponse(requested)
+        return FileResponse(static_dir / "index.html")

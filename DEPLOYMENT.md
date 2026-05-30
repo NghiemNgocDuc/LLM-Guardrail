@@ -77,11 +77,11 @@ Recommended shape:
 
 1. Create a new Web Service from the GitHub repository.
 2. Choose Docker deployment.
-3. Use `Dockerfile` for the API service.
+3. Use `Dockerfile.fullstack` for a single public demo service.
 4. Add the runtime env vars from this guide.
 5. Deploy.
 
-For the current two-container project, you have two options:
+If you want to keep separate frontend/backend services instead:
 
 - deploy the API on Render and host the frontend separately as a static site with `VITE_API_BASE_URL=https://<api-service>`
 - keep using Docker Compose on a VPS or platform that supports Compose directly
@@ -91,7 +91,7 @@ For the current two-container project, you have two options:
 Recommended shape:
 
 1. Create an app from the GitHub repository.
-2. Use Dockerfile-based deployment.
+2. Use Dockerfile-based deployment with `Dockerfile.fullstack`.
 3. Add the runtime env vars as Koyeb secrets/environment variables.
 4. Set the public port to `8000` for the API container.
 5. Deploy.

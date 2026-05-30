@@ -9,6 +9,26 @@ Production-ready Docker stack for a multi-tenant LLM safety gateway with:
 - Per-organization guardrail policy
 - Groq/OpenAI-compatible LLM backend support
 
+## Architecture
+
+```text
+Client app or dashboard
+        |
+        v
+FastAPI Guardrail Gateway
+  | auth + API keys
+  | rate limits + demo limits
+  | input guardrails
+  | provider routing
+  | output guardrails
+        |
+        v
+Groq / OpenAI / Anthropic / Gemini / Ollama
+
+PostgreSQL stores users, policies, API keys, and audit logs.
+Redis stores shared rate-limit windows.
+```
+
 ## Docker Quickstart
 
 Create `.env` from the example and fill in real secrets:
@@ -38,6 +58,8 @@ Open:
 - Health: http://localhost:8080/health
 
 For hosted deployment with Supabase, Upstash, Render, or Koyeb, see [DEPLOYMENT.md](DEPLOYMENT.md).
+
+Single-container cloud deploys can use `Dockerfile.fullstack`, which builds the React dashboard and serves it from FastAPI on the same port.
 
 ## Services
 
@@ -91,6 +113,11 @@ curl -X POST http://localhost:8080/chat \
   -H "Content-Type: application/json" \
   -d '{"prompt":"What is the capital of France?"}'
 ```
+
+Client examples:
+
+- [Python](examples/python_client.py)
+- [JavaScript](examples/javascript_client.mjs)
 
 ## Configuration
 

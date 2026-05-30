@@ -11,6 +11,8 @@ class OutputGuardrailResult:
     allowed: bool
     check: str = ""
     reason: Optional[str] = None
+    reason_code: str = "clean"
+    risk_score: float = 0.0
     sanitized_output: Optional[str] = None
 
 
@@ -21,18 +23,34 @@ class OutputGuardrail:
         self.topics = topic_policy
 
     def check(self, response: str) -> OutputGuardrailResult:
+        err = self._check_secret_leakage(response)
+        if err:
+            return OutputGuardrailResult(
+                allowed=False,
+                check="Secret Leakage",
+                reason=err,
+                reason_code="secret_leakage",
+                risk_score=0.95,
+            )
+
         if self.policy.get("enforce_schema"):
             err = self._validate_schema(response)
-            if err: return OutputGuardrailResult(allowed=False, check="Schema Validation", reason=err)
+            if err: return OutputGuardrailResult(allowed=False, check="Schema Validation", reason=err, reason_code="schema_violation", risk_score=0.6)
 
         if self.policy.get("block_toxic_content"):
             err = self._check_toxicity(response)
-            if err: return OutputGuardrailResult(allowed=False, check="Toxicity Filter", reason=err)
+            if err: return OutputGuardrailResult(allowed=False, check="Toxicity Filter", reason=err, reason_code="toxic_content", risk_score=0.8)
 
         err = self._check_topic_policy(response)
-        if err: return OutputGuardrailResult(allowed=False, check="Topic Policy", reason=err)
+        if err: return OutputGuardrailResult(allowed=False, check="Topic Policy", reason=err, reason_code="blocked_topic", risk_score=0.75)
 
-        return OutputGuardrailResult(allowed=True, check="All Output Checks", sanitized_output=response)
+        return OutputGuardrailResult(allowed=True, check="All Output Checks", reason_code="clean", risk_score=0.0, sanitized_output=response)
+
+    def _check_secret_leakage(self, response):
+        lower = response.lower()
+        if "api_key=" in lower or "authorization: bearer" in lower:
+            return "Potential credential leakage detected"
+        return None
 
     def _validate_schema(self, response):
         try:

@@ -35,6 +35,7 @@ settings = get_settings()
 router = APIRouter(prefix="/chat", tags=["Gateway"])
 
 _DEFAULT_INPUT_RULES = {
+    "block_secrets": True,
     "block_pii": True,
     "pii_patterns": [
         {"name": "credit_card", "regex": r"\b(?:\d[ -]?){13,16}\b"},
@@ -42,9 +43,23 @@ _DEFAULT_INPUT_RULES = {
         {"name": "email",       "regex": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"},
     ],
     "block_prompt_injection": True,
-    "injection_keywords": ["ignore previous instructions", "disregard your system prompt"],
+    "injection_keywords": [
+        "ignore previous instructions",
+        "disregard your system prompt",
+        "forget everything",
+        "reveal your system prompt",
+        "print your hidden instructions",
+        "bypass the policy",
+        "disable safety",
+    ],
     "block_jailbreak": True,
-    "jailbreak_patterns": ["DAN mode", "developer mode"],
+    "jailbreak_patterns": [
+        "DAN mode",
+        "developer mode",
+        "pretend you have no restrictions",
+        "act as an unrestricted ai",
+        "you are now jailbroken",
+    ],
 }
 _DEFAULT_OUTPUT_RULES   = {"enforce_schema": False, "block_toxic_content": True}
 _DEFAULT_TOPIC_POLICY   = {"blocked_topics": ["competitor products", "medical advice"]}
@@ -126,7 +141,7 @@ async def chat(
             model="—", backend="—",
             input_passed=False, input_block_reason=in_result.reason,
             output_passed=None, output_block_reason=None,
-            fired_rule=in_result.reason,
+            fired_rule=in_result.reason_code,
             status="input_blocked", latency_ms=latency_ms,
             input_tokens=0, output_tokens=0,
         )
@@ -134,7 +149,13 @@ async def chat(
             request_id=request_id,
             response=None,
             status="input_blocked",
-            input_guard=GuardrailResult(passed=False, check=in_result.check, reason=in_result.reason or ""),
+            input_guard=GuardrailResult(
+                passed=False,
+                check=in_result.check,
+                reason=in_result.reason or "",
+                reason_code=in_result.reason_code,
+                risk_score=in_result.risk_score,
+            ),
             output_guard=None,
             latency_ms=latency_ms,
             model="—", backend="—",
@@ -181,7 +202,7 @@ async def chat(
         input_passed=True, input_block_reason=None,
         output_passed=out_result.allowed,
         output_block_reason=None if out_result.allowed else out_result.reason,
-        fired_rule=None if out_result.allowed else out_result.reason,
+        fired_rule=None if out_result.allowed else out_result.reason_code,
         status=status_str, latency_ms=latency_ms,
         input_tokens=llm_resp.input_tokens, output_tokens=llm_resp.output_tokens,
     )
@@ -190,11 +211,19 @@ async def chat(
         request_id=request_id,
         response=llm_resp.text if out_result.allowed else None,
         status=status_str,
-        input_guard=GuardrailResult(passed=True, check=in_result.check, reason=in_result.reason or ""),
+        input_guard=GuardrailResult(
+            passed=True,
+            check=in_result.check,
+            reason=in_result.reason or "",
+            reason_code=in_result.reason_code,
+            risk_score=in_result.risk_score,
+        ),
         output_guard=GuardrailResult(
             passed=out_result.allowed,
             check=out_result.check,
             reason=out_result.reason or "",
+            reason_code=out_result.reason_code,
+            risk_score=out_result.risk_score,
         ),
         latency_ms=latency_ms,
         model=llm_resp.model,

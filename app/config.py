@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "LLM Guardrails Gateway"
     APP_ENV: str = "development"
     DEBUG: bool = True
+    LOG_LEVEL: str = "INFO"
     ALLOWED_ORIGINS: str = "http://localhost:8080,http://localhost:5173"
 
     DATABASE_URL: str = ""

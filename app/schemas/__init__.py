@@ -108,6 +108,8 @@ class GuardrailResult(BaseModel):
     passed: bool
     check:  str
     reason: str
+    reason_code: str = "clean"
+    risk_score: float = 0.0
 
 
 class ChatResponse(BaseModel):
