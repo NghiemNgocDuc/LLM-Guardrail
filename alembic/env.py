@@ -17,7 +17,9 @@ if config.config_file_name:
     fileConfig(config.config_file_name)
 
 # Inject the DB URL from settings so alembic.ini doesn't need secrets
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Alembic stores this in configparser, where '%' starts interpolation syntax.
+# URL-encoded passwords can contain values like '%40', so escape '%' here.
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 target_metadata = Base.metadata
 
