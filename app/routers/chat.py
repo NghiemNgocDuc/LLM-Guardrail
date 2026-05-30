@@ -90,8 +90,26 @@ async def chat(
 
     # ── 2. Rate limit ─────────────────────────────────────────────────────
     enforce_demo_payload_limits(body.prompt, body.max_tokens)
-    await check_rate_limit(api_key.id, rpm, rpd)
-    await enforce_demo_rate_limits(api_key.id, client_ip(request))
+    try:
+        await check_rate_limit(api_key.id, rpm, rpd)
+        await enforce_demo_rate_limits(api_key.id, client_ip(request))
+    except HTTPException as e:
+        if e.status_code != 429:
+            raise
+        latency_ms = int((time.monotonic() - start) * 1000)
+        await _log_request(
+            db=db, api_key=api_key,
+            prompt_hash=_sha256(body.prompt),
+            prompt_preview=_safe_preview(body.prompt, False),
+            model=body.model or "-", backend=body.backend or settings.DEFAULT_LLM_BACKEND,
+            input_passed=True, input_block_reason=None,
+            output_passed=None, output_block_reason=None,
+            fired_rule="rate_limit",
+            status="rate_limited", latency_ms=latency_ms,
+            input_tokens=0, output_tokens=0,
+        )
+        await db.commit()
+        raise
 
     # ── 3. Input guardrail ────────────────────────────────────────────────
     in_guard = InputGuardrail(input_rules)

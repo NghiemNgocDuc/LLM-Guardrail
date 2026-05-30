@@ -128,6 +128,7 @@ class UsageSummary(BaseModel):
     delivered:          int
     input_blocked:      int
     output_blocked:     int
+    rate_limited:       int = 0
     error_count:        int
     block_rate_pct:     float
     avg_latency_ms:     float
@@ -146,8 +147,17 @@ class TopFiredRule(BaseModel):
     count: int
 
 
+class ProviderUsage(BaseModel):
+    backend: str
+    model: str
+    count: int
+    tokens: int
+
+
 class AnalyticsDashboard(BaseModel):
     summary:      UsageSummary
     time_series:  list[TimeSeriesPoint]
     top_rules:    list[TopFiredRule]
+    provider_usage: list[ProviderUsage] = []
+    recent_suspicious: list[dict] = []
     recent_logs:  list[dict]

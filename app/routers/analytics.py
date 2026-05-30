@@ -13,7 +13,7 @@ from app.database import get_db
 from app.deps import CurrentUser
 from app.models import RequestLog
 from app.schemas import (
-    AnalyticsDashboard, TimeSeriesPoint, TopFiredRule, UsageSummary,
+    AnalyticsDashboard, ProviderUsage, TimeSeriesPoint, TopFiredRule, UsageSummary,
 )
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
@@ -39,6 +39,7 @@ async def dashboard(
             func.sum(case((RequestLog.status == "delivered",     1), else_=0)).label("delivered"),
             func.sum(case((RequestLog.status == "input_blocked", 1), else_=0)).label("input_blocked"),
             func.sum(case((RequestLog.status == "output_blocked",1), else_=0)).label("output_blocked"),
+            func.sum(case((RequestLog.status == "rate_limited",  1), else_=0)).label("rate_limited"),
             func.sum(case((RequestLog.status == "error",         1), else_=0)).label("errors"),
             func.avg(RequestLog.latency_ms).label("avg_latency"),
             func.sum(RequestLog.input_tokens + RequestLog.output_tokens).label("total_tokens"),
@@ -46,13 +47,14 @@ async def dashboard(
     )
     row = summary_q.one()
     total = row.total or 0
-    blocked = (row.input_blocked or 0) + (row.output_blocked or 0)
+    blocked = (row.input_blocked or 0) + (row.output_blocked or 0) + (row.rate_limited or 0)
 
     summary = UsageSummary(
         total_requests=total,
         delivered=row.delivered or 0,
         input_blocked=row.input_blocked or 0,
         output_blocked=row.output_blocked or 0,
+        rate_limited=row.rate_limited or 0,
         error_count=row.errors or 0,
         block_rate_pct=round(blocked / total * 100, 2) if total else 0.0,
         avg_latency_ms=round(row.avg_latency or 0, 1),
@@ -86,6 +88,47 @@ async def dashboard(
     )
     top_rules = [TopFiredRule(rule=r.fired_rule, count=r.cnt) for r in rules_q.all()]
 
+    provider_q = await db.execute(
+        select(
+            RequestLog.backend,
+            RequestLog.model,
+            func.count().label("cnt"),
+            func.sum(RequestLog.input_tokens + RequestLog.output_tokens).label("tokens"),
+        )
+        .where(*base_filter, RequestLog.status == "delivered")
+        .group_by(RequestLog.backend, RequestLog.model)
+        .order_by(func.count().desc())
+        .limit(10)
+    )
+    provider_usage = [
+        ProviderUsage(
+            backend=r.backend,
+            model=r.model,
+            count=r.cnt,
+            tokens=r.tokens or 0,
+        )
+        for r in provider_q.all()
+    ]
+
+    suspicious_q = await db.execute(
+        select(RequestLog)
+        .where(*base_filter, RequestLog.status != "delivered")
+        .order_by(RequestLog.created_at.desc())
+        .limit(10)
+    )
+    recent_suspicious = [
+        {
+            "id": log.id,
+            "status": log.status,
+            "prompt_preview": log.prompt_preview,
+            "backend": log.backend,
+            "fired_rule": log.fired_rule,
+            "reason": log.input_block_reason or log.output_block_reason or log.fired_rule,
+            "created_at": log.created_at.isoformat(),
+        }
+        for log in suspicious_q.scalars().all()
+    ]
+
     # ── Recent logs ───────────────────────────────────────────────────────
     recent_q = await db.execute(
         select(RequestLog)
@@ -111,6 +154,8 @@ async def dashboard(
         summary=summary,
         time_series=time_series,
         top_rules=top_rules,
+        provider_usage=provider_usage,
+        recent_suspicious=recent_suspicious,
         recent_logs=recent_logs,
     )
 

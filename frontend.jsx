@@ -118,7 +118,7 @@ const s = {
     borderRadius: 8,
     padding: 20,
   },
-  statGrid: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginBottom: 24 },
+  statGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 16, marginBottom: 24 },
   statCard: {
     background: "#0f0f1a",
     border: "1px solid #1e1e30",
@@ -140,6 +140,7 @@ const s = {
       delivered:      { bg: "#0d2d1a", color: "#34d399", border: "#065f46" },
       input_blocked:  { bg: "#2d1a0d", color: "#fb923c", border: "#7c2d12" },
       output_blocked: { bg: "#2d1a0d", color: "#f59e0b", border: "#78350f" },
+      rate_limited:   { bg: "#1f1a0d", color: "#facc15", border: "#713f12" },
       error:          { bg: "#2d0d0d", color: "#f87171", border: "#7f1d1d" },
     };
     const c = map[status] || { bg: "#1e1e30", color: "#94a3b8", border: "#374151" };
@@ -307,8 +308,9 @@ function DashboardView() {
   if (error) return <div style={s.alert("error")}>{error}</div>;
   if (!data) return <div style={{ color: "#4a4a6a", fontSize: 12 }}>Loading...</div>;
 
-  const { summary, time_series, top_rules, recent_logs } = data;
+  const { summary, time_series, top_rules, provider_usage = [], recent_suspicious = [], recent_logs } = data;
   const maxRule = Math.max(...(top_rules.map(r => r.count)), 1);
+  const blockedTotal = summary.input_blocked + summary.output_blocked + (summary.rate_limited || 0);
 
   return (
     <div>
@@ -318,7 +320,8 @@ function DashboardView() {
       <div style={s.statGrid}>
         {[
           { label: "Total Requests", value: summary.total_requests.toLocaleString(), sub: "last 7 days" },
-          { label: "Block Rate", value: summary.block_rate_pct + "%", sub: `${summary.input_blocked + summary.output_blocked} blocked` },
+          { label: "Blocked Requests", value: blockedTotal.toLocaleString(), sub: summary.block_rate_pct + "% of traffic" },
+          { label: "Rate-Limit Hits", value: (summary.rate_limited || 0).toLocaleString(), sub: "quota protected" },
           { label: "Avg Latency", value: summary.avg_latency_ms + "ms", sub: "end-to-end" },
           { label: "Total Tokens", value: summary.total_tokens.toLocaleString(), sub: "in + out" },
         ].map(c => (
@@ -349,7 +352,7 @@ function DashboardView() {
 
         {/* Top rules */}
         <div style={s.card}>
-          <div style={s.sectionTitle}>Top Fired Rules</div>
+          <div style={s.sectionTitle}>Top Violation Types</div>
           {top_rules.length === 0
             ? <div style={{ color: "#4a4a6a", fontSize: 12 }}>No rules fired yet</div>
             : top_rules.map(r => (
@@ -367,6 +370,61 @@ function DashboardView() {
               </div>
             ))
           }
+        </div>
+      </div>
+
+      <div style={s.grid2}>
+        <div style={s.card}>
+          <div style={s.sectionTitle}>Provider Usage</div>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                {["Backend","Model","Requests","Tokens"].map(h => (
+                  <th key={h} style={s.th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {provider_usage.length === 0 ? (
+                <tr><td colSpan={4} style={s.td}>No provider calls yet</td></tr>
+              ) : provider_usage.map(p => (
+                <tr key={`${p.backend}:${p.model}`}>
+                  <td style={s.td}>{p.backend}</td>
+                  <td style={{ ...s.td, maxWidth: 180, overflow: "hidden",
+                    textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.model}</td>
+                  <td style={s.td}>{p.count.toLocaleString()}</td>
+                  <td style={s.td}>{p.tokens.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={s.card}>
+          <div style={s.sectionTitle}>Recent Suspicious Prompts</div>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                {["Status","Prompt","Reason","Time"].map(h => (
+                  <th key={h} style={s.th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {recent_suspicious.length === 0 ? (
+                <tr><td colSpan={4} style={s.td}>No suspicious prompts yet</td></tr>
+              ) : recent_suspicious.map(log => (
+                <tr key={log.id}>
+                  <td style={s.td}><span style={s.badge(log.status)}>{log.status}</span></td>
+                  <td style={{ ...s.td, maxWidth: 180, overflow: "hidden",
+                    textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{log.prompt_preview}</td>
+                  <td style={{ ...s.td, maxWidth: 160, overflow: "hidden",
+                    textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{log.reason || log.fired_rule || "-"}</td>
+                  <td style={s.td}>{new Date(log.created_at).toLocaleTimeString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
