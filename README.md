@@ -37,6 +37,8 @@ Open:
 - API docs: http://localhost:8080/docs
 - Health: http://localhost:8080/health
 
+For hosted deployment with Supabase, Upstash, Render, or Koyeb, see [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Services
 
 | Service | Purpose |

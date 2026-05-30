@@ -79,7 +79,7 @@ class Settings(BaseSettings):
             )
         if not self.DATABASE_URL.startswith("postgresql+asyncpg://"):
             raise ValueError("DATABASE_URL must use postgresql+asyncpg in production")
-        if not self.RATE_LIMIT_REDIS_URL.startswith("redis://"):
+        if not self.RATE_LIMIT_REDIS_URL.startswith(("redis://", "rediss://")):
             raise ValueError("RATE_LIMIT_REDIS_URL must be configured in production")
         if self.DEFAULT_LLM_BACKEND == "groq" and not self.GROQ_API_KEY:
             raise ValueError("GROQ_API_KEY must be configured when DEFAULT_LLM_BACKEND=groq")
