@@ -1,0 +1,166 @@
+"""
+Database models.
+
+Relationships:
+  User  ──belongs to──▶  Organization
+  Org   ──has one──────▶  OrgPolicy       (per-tenant guardrail rules)
+  User  ──has many──────▶  APIKey
+  APIKey ──has many─────▶  RequestLog      (full audit trail)
+"""
+import secrets
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import (
+    Boolean, DateTime, ForeignKey,
+    Integer, String, Text, JSON, BigInteger, Uuid,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.database import Base
+
+
+def utcnow():
+    return datetime.now(timezone.utc)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Organization  (one per team / company)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id:         Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name:       Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    slug:       Mapped[str] = mapped_column(String(60),  unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    users:   Mapped[list["User"]]      = relationship("User",      back_populates="org")
+    policy:  Mapped["OrgPolicy"]       = relationship("OrgPolicy", back_populates="org", uselist=False, cascade="all, delete-orphan")
+    api_keys: Mapped[list["APIKey"]]   = relationship("APIKey",    back_populates="org")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OrgPolicy  (per-tenant guardrail config stored as JSON)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class OrgPolicy(Base):
+    __tablename__ = "org_policies"
+
+    id:     Mapped[str]  = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str]  = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), unique=True)
+
+    # Stored as JSON so each organization can tune guardrails independently.
+    input_rules:      Mapped[dict] = mapped_column(JSON, default=dict)
+    output_rules:     Mapped[dict] = mapped_column(JSON, default=dict)
+    topic_policy:     Mapped[dict] = mapped_column(JSON, default=dict)
+    compliance_rules: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    # LLM backend override for this org ("openai", "anthropic", "ollama", or None = use default)
+    llm_backend: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    llm_model:   Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+    # Rate limits (override global defaults)
+    rate_limit_rpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rate_limit_rpd: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    org: Mapped["Organization"] = relationship("Organization", back_populates="policy")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# User
+# ─────────────────────────────────────────────────────────────────────────────
+
+class User(Base):
+    __tablename__ = "users"
+
+    id:             Mapped[str]  = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email:          Mapped[str]  = mapped_column(String(254), unique=True, index=True, nullable=False)
+    hashed_password:Mapped[str]  = mapped_column(String(256), nullable=False)
+    full_name:      Mapped[str]  = mapped_column(String(120), nullable=False)
+    is_active:      Mapped[bool] = mapped_column(Boolean, default=True)
+    is_admin:       Mapped[bool] = mapped_column(Boolean, default=False)
+
+    org_id: Mapped[str | None] = mapped_column(ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True)
+    org:    Mapped["Organization"] = relationship("Organization", back_populates="users")
+
+    api_keys: Mapped[list["APIKey"]] = relationship("APIKey", back_populates="owner", cascade="all, delete-orphan")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_login:  Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# APIKey
+# ─────────────────────────────────────────────────────────────────────────────
+
+class APIKey(Base):
+    __tablename__ = "api_keys"
+
+    id:          Mapped[str]  = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name:        Mapped[str]  = mapped_column(String(80), nullable=False)           # human label
+    key_prefix:  Mapped[str]  = mapped_column(String(12), nullable=False)           # e.g. "grg_abc123" (shown in UI)
+    key_hash:    Mapped[str]  = mapped_column(String(256), unique=True, nullable=False)  # bcrypt hash
+    is_active:   Mapped[bool] = mapped_column(Boolean, default=True)
+
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    org_id:   Mapped[str | None] = mapped_column(ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True)
+
+    owner: Mapped["User"]          = relationship("User",         back_populates="api_keys")
+    org:   Mapped["Organization"]  = relationship("Organization", back_populates="api_keys")
+
+    # Usage counters (updated on every request)
+    total_requests:  Mapped[int] = mapped_column(BigInteger, default=0)
+    total_blocked:   Mapped[int] = mapped_column(BigInteger, default=0)
+    total_tokens:    Mapped[int] = mapped_column(BigInteger, default=0)
+
+    created_at:  Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at:  Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    logs: Mapped[list["RequestLog"]] = relationship("RequestLog", back_populates="api_key")
+
+    @staticmethod
+    def generate_raw_key() -> str:
+        """Generate a raw key (shown once). Prefix + 32 random bytes."""
+        return "grg_" + secrets.token_urlsafe(32)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RequestLog  (immutable audit trail — never update, only insert)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RequestLog(Base):
+    __tablename__ = "request_logs"
+
+    id:          Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    api_key_id:  Mapped[str] = mapped_column(ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True, index=True)
+    org_id:      Mapped[str | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
+
+    # Request
+    prompt_hash:    Mapped[str]      = mapped_column(String(64))    # SHA-256 of prompt (never store raw PII)
+    prompt_preview: Mapped[str]      = mapped_column(String(120))   # first 120 chars, redacted if PII found
+    model:          Mapped[str]      = mapped_column(String(80))
+    backend:        Mapped[str]      = mapped_column(String(32))
+
+    # Guardrail verdicts
+    input_passed:    Mapped[bool]        = mapped_column(Boolean)
+    input_block_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output_passed:   Mapped[bool | None] = mapped_column(Boolean, nullable=True)   # None if input blocked
+    output_block_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Which specific rule fired (for analytics)
+    fired_rule: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+    # Outcome
+    status:          Mapped[str]   = mapped_column(String(20))   # "delivered" | "input_blocked" | "output_blocked" | "error"
+    latency_ms:      Mapped[int]   = mapped_column(Integer)
+    input_tokens:    Mapped[int]   = mapped_column(Integer, default=0)
+    output_tokens:   Mapped[int]   = mapped_column(Integer, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+    api_key: Mapped["APIKey"] = relationship("APIKey", back_populates="logs")
