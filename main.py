@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.database import create_all_tables
 from app.middleware.request_logging import RequestLoggingMiddleware
-from app.routers import auth, api_keys, chat, analytics, policy
+from app.routers import admin, auth, api_keys, chat, analytics, policy
 
 settings = get_settings()
 logging.basicConfig(
@@ -52,6 +52,7 @@ app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(auth.router)
 app.include_router(api_keys.router)
+app.include_router(admin.router)
 app.include_router(chat.router)
 app.include_router(analytics.router)
 app.include_router(policy.router)

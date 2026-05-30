@@ -61,6 +61,10 @@ For hosted deployment with Supabase, Upstash, Render, or Koyeb, see [DEPLOYMENT.
 
 Single-container cloud deploys can use `Dockerfile.fullstack`, which builds the React dashboard and serves it from FastAPI on the same port.
 
+Live demo checklist: [LIVE_DEMO.md](LIVE_DEMO.md)
+Operations and backup guide: [OPERATIONS.md](OPERATIONS.md)
+Screenshot guide: [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)
+
 ## Services
 
 | Service | Purpose |
@@ -118,6 +122,8 @@ Client examples:
 
 - [Python](examples/python_client.py)
 - [JavaScript](examples/javascript_client.mjs)
+
+SDK helpers are documented in [SDK.md](SDK.md).
 
 ## Configuration
 

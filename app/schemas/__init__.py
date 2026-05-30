@@ -32,6 +32,7 @@ class UserOut(BaseModel):
     email: str
     full_name: str
     is_admin: bool
+    is_active: bool = True
     org_id: str | None
     created_at: datetime
 
@@ -62,6 +63,11 @@ class APIKeyOut(BaseModel):
 class APIKeyCreated(APIKeyOut):
     """Returned only once at creation — includes the raw key."""
     raw_key: str
+
+
+class AdminUserUpdate(BaseModel):
+    is_active: bool | None = None
+    is_admin: bool | None = None
 
 
 # ─── Organization & Policy ────────────────────────────────────────────────────
