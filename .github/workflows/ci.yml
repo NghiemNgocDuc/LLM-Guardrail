@@ -9,20 +9,13 @@ on:
 permissions:
   contents: read
 
-env:
-  GITHUB_TOKEN: ${{ github.token }}
-
 jobs:
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        run: |
-          git init .
-          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
-          git -c http.https://github.com/.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" fetch --depth=1 origin "$GITHUB_SHA"
-          git checkout --force FETCH_HEAD
+        uses: actions/checkout@v5
 
       - name: Scan for common secret patterns
         shell: python
@@ -78,24 +71,23 @@ jobs:
     needs: secret-scan
     steps:
       - name: Checkout
-        run: |
-          git init .
-          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
-          git -c http.https://github.com/.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" fetch --depth=1 origin "$GITHUB_SHA"
-          git checkout --force FETCH_HEAD
+        uses: actions/checkout@v5
 
-      - name: Show Python version
-        run: python3 --version
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
 
       - name: Install dependencies
-        run: python3 -m pip install -r requirements-dev.txt
+        run: python -m pip install -r requirements-dev.txt
 
       - name: Run tests
         env:
           APP_ENV: development
           DATABASE_URL: ""
           SECRET_KEY: test-secret-not-for-production
-        run: python3 -m pytest -q
+        run: python -m pytest -q
 
   frontend-build:
     name: Frontend build
@@ -103,16 +95,13 @@ jobs:
     needs: secret-scan
     steps:
       - name: Checkout
-        run: |
-          git init .
-          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
-          git -c http.https://github.com/.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" fetch --depth=1 origin "$GITHUB_SHA"
-          git checkout --force FETCH_HEAD
+        uses: actions/checkout@v5
 
-      - name: Show Node version
-        run: |
-          node --version
-          npm --version
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -129,17 +118,19 @@ jobs:
     needs: secret-scan
     steps:
       - name: Checkout
-        run: |
-          git init .
-          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
-          git -c http.https://github.com/.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" fetch --depth=1 origin "$GITHUB_SHA"
-          git checkout --force FETCH_HEAD
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
 
       - name: Install pip-audit
-        run: python3 -m pip install pip-audit
+        run: python -m pip install pip-audit
 
       - name: Run pip-audit
-        run: python3 -m pip_audit -r requirements.txt
+        run: python -m pip_audit -r requirements.txt
 
   docker-build:
     name: Docker build
@@ -150,11 +141,7 @@ jobs:
       - dependency-scan
     steps:
       - name: Checkout
-        run: |
-          git init .
-          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
-          git -c http.https://github.com/.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" fetch --depth=1 origin "$GITHUB_SHA"
-          git checkout --force FETCH_HEAD
+        uses: actions/checkout@v5
 
       - name: Build API image
         run: docker build -t llm-guardrail-api:ci .
