@@ -16,12 +16,13 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
 from app.deps import AuthedAPIKey
+from app.demo_limits import client_ip, enforce_demo_payload_limits, enforce_demo_rate_limits
 from app.middleware.rate_limit import check_rate_limit
 from app.models import OrgPolicy, RequestLog
 from app.schemas import ChatRequest, ChatResponse, GuardrailResult
@@ -63,6 +64,7 @@ def _sha256(text: str) -> str:
 @router.post("", response_model=ChatResponse)
 async def chat(
     body: ChatRequest,
+    request: Request,
     api_key: AuthedAPIKey,
     db: AsyncSession = Depends(get_db),
 ):
@@ -87,7 +89,9 @@ async def chat(
     rpd = (policy.rate_limit_rpd if policy and policy.rate_limit_rpd else None) or settings.DEFAULT_RATE_LIMIT_RPD
 
     # ── 2. Rate limit ─────────────────────────────────────────────────────
+    enforce_demo_payload_limits(body.prompt, body.max_tokens)
     await check_rate_limit(api_key.id, rpm, rpd)
+    await enforce_demo_rate_limits(api_key.id, client_ip(request))
 
     # ── 3. Input guardrail ────────────────────────────────────────────────
     in_guard = InputGuardrail(input_rules)

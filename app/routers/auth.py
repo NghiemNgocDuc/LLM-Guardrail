@@ -51,6 +51,12 @@ def _slugify(name: str) -> str:
 
 @router.post("/signup", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
+    if settings.DEMO_MODE and settings.DEMO_DISABLE_SIGNUPS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo mode is using a fixed demo account; public signup is disabled.",
+        )
+
     # Check email uniqueness
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():

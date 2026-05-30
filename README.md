@@ -131,3 +131,23 @@ alembic revision --autogenerate -m "describe change"
 - Put TLS in front of `web` for public deployment.
 - Keep `.env` out of source control.
 - Use `docker compose logs -f api web` for operational debugging.
+
+## Public Demo Mode
+
+Enable demo mode when hosting a public link that uses your provider quota:
+
+```env
+DEMO_MODE=true
+DEMO_RATE_LIMIT_RPM=5
+DEMO_RATE_LIMIT_RPD=25
+DEMO_IP_RATE_LIMIT_RPM=20
+DEMO_IP_RATE_LIMIT_RPD=100
+DEMO_MAX_PROMPT_CHARS=2000
+DEMO_MAX_OUTPUT_TOKENS=256
+```
+
+Demo mode adds stricter per-API-key and per-IP limits on top of organization limits, rejects oversized prompts, and rejects requests asking for too many output tokens before calling the LLM. To run a fixed shared demo account, create the account yourself and set:
+
+```env
+DEMO_DISABLE_SIGNUPS=true
+```

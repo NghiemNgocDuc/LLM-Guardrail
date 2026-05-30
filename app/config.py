@@ -29,6 +29,15 @@ class Settings(BaseSettings):
     DEFAULT_RATE_LIMIT_RPD: int = 1000
     RATE_LIMIT_REDIS_URL: str = ""
 
+    DEMO_MODE: bool = False
+    DEMO_DISABLE_SIGNUPS: bool = False
+    DEMO_RATE_LIMIT_RPM: int = 5
+    DEMO_RATE_LIMIT_RPD: int = 25
+    DEMO_IP_RATE_LIMIT_RPM: int = 20
+    DEMO_IP_RATE_LIMIT_RPD: int = 100
+    DEMO_MAX_PROMPT_CHARS: int = 2_000
+    DEMO_MAX_OUTPUT_TOKENS: int = 256
+
     OPENAI_API_KEY: str = ""
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     ANTHROPIC_API_KEY: str = ""
