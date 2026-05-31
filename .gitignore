@@ -29,3 +29,4 @@ Thumbs.db
 # Docker / local runtime
 *.log
 guardrails.db
+dev.db

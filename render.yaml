@@ -1,0 +1,21 @@
+# Render service manifest. Connect your GitHub repo to Render and
+# Render will create services from this manifest. After creating
+# services, set secrets (DATABASE_URL, RATE_LIMIT_REDIS_URL, SECRET_KEY, etc.)
+
+services:
+  - type: web
+    name: llm-guardrail-api
+    env: docker
+    branch: main
+    dockerCommand: ""
+    dockerfilePath: Dockerfile
+    plan: starter
+    healthCheckPath: /health
+
+  - type: web
+    name: llm-guardrail-web
+    env: docker
+    branch: main
+    dockerfilePath: Dockerfile.frontend
+    plan: starter
+    staticPublishPath: /
