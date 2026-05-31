@@ -14,6 +14,19 @@ function setGatewayKey(key) {
   if (key) localStorage.setItem("gateway_api_key", key);
   else localStorage.removeItem("gateway_api_key");
 }
+
+/** Mask gateway keys in UI — show a short prefix hint, hide the rest. */
+function maskGatewayKey(key) {
+  if (!key) return "";
+  const visible = Math.min(8, key.length);
+  return key.slice(0, visible) + "*".repeat(Math.max(8, key.length - visible));
+}
+
+const gatewayKeyInputProps = {
+  type: "password",
+  autoComplete: "off",
+  spellCheck: false,
+};
 function setTokens(access, refresh) {
   localStorage.setItem("access_token", access);
   localStorage.setItem("refresh_token", refresh);
@@ -21,6 +34,15 @@ function setTokens(access, refresh) {
 function clearTokens() {
   localStorage.removeItem("access_token");
   localStorage.removeItem("refresh_token");
+}
+
+function formatApiError(detail) {
+  if (!detail) return "Request failed";
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item.msg || JSON.stringify(item)).join("; ");
+  }
+  return String(detail);
 }
 
 async function api(path, opts = {}) {
@@ -36,7 +58,7 @@ async function api(path, opts = {}) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || "Request failed");
+    throw new Error(formatApiError(err.detail) || "Request failed");
   }
   if (res.status === 204) return null;
   return res.json();
@@ -49,6 +71,361 @@ const PII_PATTERNS = [
 ];
 const INJECTION_KW = ["ignore previous instructions", "disregard your system prompt", "forget everything"];
 const JAILBREAK_KW = ["DAN mode", "developer mode", "pretend you have no restrictions"];
+
+const USER_PROMPT = "Can you explain what this platform does?";
+const AI_RESPONSE = "Of course! I act as a safety layer between your applications and your LLMs. I can help you test prompts, block injection attempts, enforce policy rules, and monitor provider usage all from one clean dashboard.";
+
+/** Type text character-by-character or word-by-word when `active` becomes true. */
+function useTypewriter(text, { speed = 36, delay = 0, active = false, wordByWord = false } = {}) {
+  const [displayed, setDisplayed] = useState("");
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (!active) {
+      setDisplayed("");
+      setDone(false);
+      return;
+    }
+
+    setDisplayed("");
+    setDone(false);
+    
+    const items = wordByWord ? text.split(" ") : text;
+    let index = 0;
+    let intervalId = null;
+    
+    const startId = window.setTimeout(() => {
+      intervalId = window.setInterval(() => {
+        index += 1;
+        const next = wordByWord 
+          ? items.slice(0, index).join(" ") + (index < items.length ? " " : "")
+          : items.slice(0, index);
+        setDisplayed(next);
+        if (index >= items.length) {
+          if (intervalId) window.clearInterval(intervalId);
+          setDone(true);
+        }
+      }, speed);
+    }, delay);
+
+    return () => {
+      window.clearTimeout(startId);
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [text, speed, delay, active, wordByWord]);
+
+  return { displayed, done };
+}
+
+function TypeCursor({ visible }) {
+  if (!visible) return null;
+  return <span className="auth-cursor">▍</span>;
+}
+
+function AuthFlowBackground() {
+  const particles = [
+    { left: "8%", delay: "0s", dur: "14s" },
+    { left: "22%", delay: "2s", dur: "18s" },
+    { left: "38%", delay: "4s", dur: "16s" },
+    { left: "55%", delay: "1s", dur: "20s" },
+    { left: "72%", delay: "3s", dur: "15s" },
+    { left: "88%", delay: "5s", dur: "17s" },
+  ];
+
+  return (
+    <div className="auth-flow-bg" aria-hidden>
+      <div className="auth-flow-orb auth-flow-orb-1" />
+      <div className="auth-flow-orb auth-flow-orb-2" />
+      <div className="auth-flow-orb auth-flow-orb-3" />
+      <svg className="auth-flow-svg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice">
+        <path className="auth-flow-path auth-flow-path-1" d="M-80 520 C 220 120, 420 680, 720 380 S 1180 180, 1320 420" />
+        <path className="auth-flow-path auth-flow-path-2" d="M-60 180 C 280 420, 520 40, 760 260 S 1100 620, 1280 300" />
+        <path className="auth-flow-path auth-flow-path-3" d="M 80 720 C 360 520, 600 760, 880 540 S 1240 320, 1320 580" />
+      </svg>
+      <div className="auth-flow-grid" />
+      {particles.map((p, i) => (
+        <span
+          key={i}
+          className="auth-flow-particle"
+          style={{ left: p.left, animationDelay: p.delay, animationDuration: p.dur }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function AuthTerminalIntro() {
+  const [showPrompt, setShowPrompt] = useState(false);
+  const [showThinking, setShowThinking] = useState(false);
+  const [showResponse, setShowResponse] = useState(false);
+  const [responseDone, setResponseDone] = useState(false);
+  const [showFeatures, setShowFeatures] = useState(false);
+
+  const promptText = useTypewriter(USER_PROMPT, {
+    speed: 30, delay: 600, active: showPrompt, wordByWord: false
+  });
+
+  const responseText = useTypewriter(AI_RESPONSE, {
+    speed: 25, delay: 0, active: showResponse, wordByWord: false
+  });
+
+  useEffect(() => {
+    setShowPrompt(true);
+  }, []);
+
+  useEffect(() => {
+    if (promptText.done) {
+      setShowThinking(true);
+      const id = window.setTimeout(() => {
+        setShowThinking(false);
+        setShowResponse(true);
+      }, 800);
+      return () => window.clearTimeout(id);
+    }
+  }, [promptText.done]);
+
+  useEffect(() => {
+    if (responseText.done) {
+      setResponseDone(true);
+      const id = window.setTimeout(() => setShowFeatures(true), 400);
+      return () => window.clearTimeout(id);
+    }
+  }, [responseText.done]);
+
+  return (
+    <div style={authStyles.introPanel}>
+      <div style={authStyles.terminal}>
+        <div style={authStyles.terminalBar}>
+          <span style={authStyles.dot("#ff5f57")} />
+          <span style={authStyles.dot("#febc2e")} />
+          <span style={authStyles.dot("#28c840")} />
+          <span style={{...authStyles.terminalTitle, fontWeight: 600, fontFamily: "inherit"}}>AI Assistant</span>
+        </div>
+        <div style={{ ...authStyles.terminalBody, padding: "24px", fontFamily: "inherit" }}>
+          
+          {showPrompt && (
+            <div style={{ display: "flex", gap: 14, marginBottom: 20 }}>
+              <div style={{ flexShrink: 0, width: 32, height: 32, borderRadius: "50%", background: "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "#64748b" }}>U</div>
+              <div style={{ flex: 1, background: "rgba(241, 245, 249, 0.6)", padding: "12px 16px", borderRadius: "12px", borderTopLeftRadius: "2px", color: "#334155", fontSize: 14, lineHeight: 1.5, border: "1px solid rgba(200, 215, 235, 0.4)", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
+                {promptText.displayed}
+                {!promptText.done && <TypeCursor visible />}
+              </div>
+            </div>
+          )}
+
+          {(showThinking || showResponse) && (
+            <div style={{ display: "flex", gap: 14, animation: "authFadeIn 0.3s ease forwards" }}>
+              <div style={{ flexShrink: 0, width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #6366f1, #a855f7)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 700, boxShadow: "0 4px 10px rgba(99, 102, 241, 0.3)" }}>AI</div>
+              <div style={{ flex: 1, color: "#1e293b", fontSize: 14, lineHeight: 1.6, paddingTop: 5 }}>
+                {showThinking && <span style={{ color: "#94a3b8", fontStyle: "italic", animation: "authBlink 1.5s infinite" }}>Analyzing request...</span>}
+                {showResponse && (
+                  <>
+                    {responseText.displayed}
+                    {!responseText.done && <TypeCursor visible />}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {responseDone && (
+        <div style={{ marginTop: 28 }} className="auth-intro-copy">
+          <div style={authStyles.badge}>// live_gateway_active</div>
+          <h1 style={authStyles.headline}>Ship LLM apps safely.</h1>
+        </div>
+      )}
+
+      {showFeatures && (
+        <div style={{ ...authStyles.featureGrid, animation: "authFadeIn 0.5s ease forwards", marginTop: 20 }}>
+          {[
+            ["Input Guard", "Blocks PII & injections"],
+            ["Output Guard", "Filters toxic responses"],
+            ["Audit Log", "Tracks tokens & latency"],
+          ].map(([title, desc]) => (
+            <div key={title} style={authStyles.featureCard}>
+              <div style={{...authStyles.featureTitle, fontFamily: "inherit"}}>{title}</div>
+              <div style={{...authStyles.featureDesc, fontFamily: "inherit"}}>{desc}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const authStyles = {
+  page: {
+    position: "relative",
+    minHeight: "100vh",
+    background: "#f4f7fb",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    overflow: "hidden",
+  },
+  pageInner: {
+    position: "relative",
+    zIndex: 1,
+    width: "min(1100px, 100%)",
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))",
+    gap: 28,
+    alignItems: "center",
+  },
+  introPanel: { color: "#102033" },
+  terminal: {
+    background: "rgba(255, 255, 255, 0.6)",
+    border: "1px solid rgba(255, 255, 255, 0.8)",
+    backdropFilter: "blur(24px)",
+    borderRadius: 12,
+    overflow: "hidden",
+    boxShadow: "0 24px 60px rgba(32, 48, 80, 0.08)",
+  },
+  terminalBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "10px 14px",
+    background: "rgba(255, 255, 255, 0.4)",
+    borderBottom: "1px solid rgba(200, 215, 235, 0.4)",
+  },
+  dot: (color) => ({
+    width: 10,
+    height: 10,
+    borderRadius: "50%",
+    background: color,
+    display: "inline-block",
+  }),
+  terminalTitle: {
+    marginLeft: 8,
+    fontSize: 11,
+    color: "#607086",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  },
+  terminalBody: {
+    margin: 0,
+    padding: "16px 18px 20px",
+    fontSize: 12.5,
+    lineHeight: 1.65,
+    color: "#304050",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    minHeight: 148,
+  },
+  badge: {
+    display: "inline-flex",
+    padding: "5px 10px",
+    borderRadius: 6,
+    background: "linear-gradient(135deg, #f0f5ff, #f5f3ff)",
+    border: "1px solid #d8b4fe",
+    color: "#7c3aed",
+    fontSize: 11,
+    fontWeight: 700,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    marginBottom: 14,
+  },
+  headline: {
+    margin: 0,
+    fontSize: "clamp(28px, 4vw, 40px)",
+    lineHeight: 1.15,
+    fontWeight: 800,
+    color: "#102033",
+    minHeight: "1.2em",
+    letterSpacing: "-0.02em",
+  },
+  subhead: {
+    margin: "14px 0 0",
+    color: "#475569",
+    fontSize: 15,
+    lineHeight: 1.7,
+    minHeight: 0,
+  },
+  featureGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
+    gap: 12,
+    marginTop: 24,
+  },
+  featureCard: {
+    background: "rgba(255, 255, 255, 0.6)",
+    border: "1px solid rgba(200, 215, 235, 0.6)",
+    backdropFilter: "blur(12px)",
+    borderRadius: 8,
+    padding: 14,
+  },
+  featureTitle: {
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    fontWeight: 700,
+    color: "#6366f1",
+    fontSize: 13,
+  },
+  featureDesc: { color: "#64748b", fontSize: 12, marginTop: 6 },
+  formShell: { color: "#102033" },
+  formCard: {
+    background: "rgba(255,255,255,0.97)",
+    border: "1px solid #dce7f0",
+    borderRadius: 10,
+    padding: 24,
+    boxShadow: "0 20px 50px rgba(0,0,0,0.25)",
+  },
+  codeLabel: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#0f766e",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    letterSpacing: "0.02em",
+  },
+  codeInput: {
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    fontSize: 13,
+  },
+  passwordWrap: { position: "relative", width: "100%" },
+  passwordToggle: {
+    position: "absolute",
+    right: 8,
+    top: "50%",
+    transform: "translateY(-50%)",
+    border: "none",
+    background: "transparent",
+    color: "#607086",
+    fontSize: 11,
+    fontWeight: 700,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    cursor: "pointer",
+    padding: "6px 8px",
+    borderRadius: 6,
+    lineHeight: 1,
+  },
+};
+
+function PasswordInput({ value, onChange, placeholder, autoComplete }) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div style={authStyles.passwordWrap}>
+      <input
+        style={{ ...s.input, ...authStyles.codeInput, paddingRight: 72 }}
+        type={visible ? "text" : "password"}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+        autoComplete={autoComplete}
+      />
+      <button
+        type="button"
+        className="auth-password-toggle"
+        style={authStyles.passwordToggle}
+        onClick={() => setVisible((v) => !v)}
+        aria-label={visible ? "Hide password" : "Show password"}
+        title={visible ? "Hide password" : "Show password"}
+      >
+        {visible ? "hide()" : "show()"}
+      </button>
+    </div>
+  );
+}
 
 function clientGuardrail(prompt) {
   for (const p of PII_PATTERNS) {
@@ -220,27 +597,196 @@ function GlobalStyles() {
       button:hover:not(:disabled) { transform: translateY(-1px); }
       button:disabled { opacity: .58; cursor: not-allowed; }
       input:focus, textarea:focus, select:focus { border-color: #0f766e !important; box-shadow: 0 0 0 3px rgba(15,118,110,.12) !important; }
+      .auth-password-toggle:hover { color: #0f766e; background: rgba(15, 118, 110, 0.08); }
+      .auth-password-toggle:focus-visible { outline: 2px solid #0f766e; outline-offset: 2px; }
       tr:last-child td { border-bottom: none !important; }
       @media (max-width: 760px) {
         .app-shell { flex-direction: column; }
         .app-sidebar { width: 100% !important; border-right: 0 !important; border-bottom: 1px solid #dbe8f3; }
         .app-main { padding: 18px !important; }
       }
+      .auth-cursor {
+        display: inline-block;
+        margin-left: 2px;
+        color: #6366f1;
+        animation: authBlink 1s step-end infinite;
+      }
+      @keyframes authBlink {
+        50% { opacity: 0; }
+      }
+      @keyframes authFadeIn {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .auth-intro-copy {
+        animation: authFadeIn 0.35s ease forwards;
+      }
+
+      .auth-flow-bg {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        overflow: hidden;
+        background: linear-gradient(145deg, #f4f7fb 0%, #ffffff 42%, #f5f3ff 100%);
+      }
+      .auth-flow-orb {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(80px);
+        opacity: 0.85;
+        will-change: transform;
+      }
+      .auth-flow-orb-1 {
+        width: 420px;
+        height: 420px;
+        background: radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, transparent 70%);
+        top: -12%;
+        left: -8%;
+        animation: authOrbDrift1 22s ease-in-out infinite;
+      }
+      .auth-flow-orb-2 {
+        width: 520px;
+        height: 520px;
+        background: radial-gradient(circle, rgba(59, 130, 246, 0.35) 0%, transparent 70%);
+        bottom: -18%;
+        right: -10%;
+        animation: authOrbDrift2 26s ease-in-out infinite;
+      }
+      .auth-flow-orb-3 {
+        width: 360px;
+        height: 360px;
+        background: radial-gradient(circle, rgba(16, 185, 129, 0.30) 0%, transparent 70%);
+        top: 40%;
+        left: 45%;
+        animation: authOrbDrift3 20s ease-in-out infinite;
+      }
+      @keyframes authOrbDrift1 {
+        0%, 100% { transform: translate(0, 0) scale(1); }
+        50% { transform: translate(80px, 60px) scale(1.08); }
+      }
+      @keyframes authOrbDrift2 {
+        0%, 100% { transform: translate(0, 0) scale(1); }
+        50% { transform: translate(-70px, -50px) scale(1.1); }
+      }
+      @keyframes authOrbDrift3 {
+        0%, 100% { transform: translate(-50%, -50%) scale(1); }
+        50% { transform: translate(calc(-50% + 40px), calc(-50% - 30px)) scale(0.92); }
+      }
+      .auth-flow-svg {
+        position: absolute;
+        inset: -10%;
+        width: 120%;
+        height: 120%;
+        opacity: 0.35;
+      }
+      .auth-flow-path {
+        fill: none;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-dasharray: 12 18;
+        animation: authPathFlow 24s linear infinite;
+      }
+      .auth-flow-path-1 { stroke: rgba(139, 92, 246, 0.5); animation-duration: 28s; }
+      .auth-flow-path-2 { stroke: rgba(59, 130, 246, 0.45); animation-duration: 22s; animation-direction: reverse; }
+      .auth-flow-path-3 { stroke: rgba(45, 212, 191, 0.4); animation-duration: 32s; }
+      @keyframes authPathFlow {
+        from { stroke-dashoffset: 0; }
+        to { stroke-dashoffset: -600; }
+      }
+      .auth-flow-grid {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(100, 116, 139, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(100, 116, 139, 0.05) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 20%, transparent 75%);
+        animation: authGridScroll 40s linear infinite;
+      }
+      @keyframes authGridScroll {
+        from { background-position: 0 0, 0 0; }
+        to { background-position: 0 48px, 48px 0; }
+      }
+      .auth-flow-particle {
+        position: absolute;
+        bottom: -20px;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: rgba(139, 92, 246, 0.5);
+        box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
+        animation-name: authParticleRise;
+        animation-timing-function: linear;
+        animation-iteration-count: infinite;
+      }
+      @keyframes authParticleRise {
+        0% { transform: translateY(0) scale(0.6); opacity: 0; }
+        10% { opacity: 0.9; }
+        90% { opacity: 0.35; }
+        100% { transform: translateY(-110vh) scale(1); opacity: 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .auth-flow-orb,
+        .auth-flow-path,
+        .auth-flow-grid,
+        .auth-flow-particle {
+          animation: none !important;
+        }
+      }
     `}</style>
   );
 }
 
 // AUTH VIEW
+function authScreenFromLocation() {
+  const path = window.location.pathname.replace(/\/$/, "") || "/";
+  const token = new URLSearchParams(window.location.search).get("token") || "";
+  if (path.endsWith("/verify-email") && token) return { screen: "verify", token };
+  if (path.endsWith("/reset-password") && token) return { screen: "reset", token };
+  return { screen: "auth", token: "" };
+}
+
 function AuthView({ onAuth }) {
+  const initial = authScreenFromLocation();
   const [tab, setTab] = useState("login");
-  const [form, setForm] = useState({ email: "", password: "", full_name: "", org_name: "" });
+  const [screen, setScreen] = useState(initial.screen);
+  const [linkToken, setLinkToken] = useState(initial.token);
+  const [form, setForm] = useState({
+    email: "", password: "", full_name: "", org_name: "", new_password: "", confirm_password: "",
+  });
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  function goHome() {
+    window.history.replaceState({}, "", "/");
+    setScreen("auth");
+    setLinkToken("");
+    setError("");
+    setInfo("");
+  }
+
+  useEffect(() => {
+    if (screen !== "verify" || !linkToken) return;
+    setLoading(true);
+    setError("");
+    api("/auth/verify-email", { method: "POST", body: { token: linkToken } })
+      .then((data) => {
+        window.history.replaceState({}, "", "/");
+        setScreen("auth");
+        setLinkToken("");
+        setTab("login");
+        setInfo(data.message);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [screen, linkToken]);
+
   async function submit() {
-    setError(""); setLoading(true);
+    setError(""); setInfo(""); setLoading(true);
     try {
       if (tab === "login") {
         const data = await api("/auth/login", {
@@ -249,8 +795,8 @@ function AuthView({ onAuth }) {
         setTokens(data.access_token, data.refresh_token);
         const me = await api("/auth/me");
         onAuth(me);
-      } else {
-        await api("/auth/signup", {
+      } else if (tab === "signup") {
+        const data = await api("/auth/signup", {
           method: "POST",
           body: {
             email: form.email, password: form.password,
@@ -258,13 +804,13 @@ function AuthView({ onAuth }) {
             org_name: form.org_name || undefined,
           },
         });
-        // auto-login after signup
-        const data = await api("/auth/login", {
-          method: "POST", body: { email: form.email, password: form.password },
+        setInfo(data.message);
+        setTab("login");
+      } else if (tab === "forgot") {
+        const data = await api("/auth/forgot-password", {
+          method: "POST", body: { email: form.email },
         });
-        setTokens(data.access_token, data.refresh_token);
-        const me = await api("/auth/me");
-        onAuth(me);
+        setInfo(data.message);
       }
     } catch (e) {
       setError(e.message);
@@ -273,81 +819,184 @@ function AuthView({ onAuth }) {
     }
   }
 
+  async function submitReset() {
+    setError(""); setInfo("");
+    if (form.new_password !== form.confirm_password) {
+      setError("Passwords do not match");
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await api("/auth/reset-password", {
+        method: "POST",
+        body: { token: linkToken, new_password: form.new_password },
+      });
+      window.history.replaceState({}, "", "/");
+      setScreen("auth");
+      setLinkToken("");
+      setTab("login");
+      setInfo(data.message);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function resendVerification() {
+    if (!form.email) {
+      setError("Enter your email first");
+      return;
+    }
+    setError(""); setInfo(""); setLoading(true);
+    try {
+      const data = await api("/auth/resend-verification", {
+        method: "POST", body: { email: form.email },
+      });
+      setInfo(data.message);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#f8fbff,#eefaf5 48%,#f7f9ff)", display: "flex",
-      alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ width: "min(1040px, 100%)", display: "grid",
-        gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))", gap: 28, alignItems: "center" }}>
-        <div style={s.heroPanel}>
-          <div style={{ display: "inline-flex", padding: "6px 10px",
-            borderRadius: 999, background: "#e8f8f3", color: "#0f766e", fontSize: 12,
-            fontWeight: 800, marginBottom: 18 }}>
-            Live Groq gateway
-          </div>
-          <h1 style={{ margin: 0, fontSize: 44, lineHeight: 1.05, color: "#102033", letterSpacing: 0 }}>
-            Ship LLM apps with a safety layer in front.
-          </h1>
-          <p style={{ margin: "16px 0 24px", color: "#405166", fontSize: 16, lineHeight: 1.7 }}>
-            Test prompts, block injection attempts, enforce policy rules, and monitor provider usage from one clean dashboard.
-          </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12 }}>
-            {[["Input guard", "PII and injection checks"], ["Output guard", "Toxic and policy filters"], ["Audit trail", "Logs, tokens, latency"]].map(([title, desc]) => (
-              <div key={title} style={{ background: "#fff", border: "1px solid #dce7f0", borderRadius: 8, padding: 14 }}>
-                <div style={{ fontWeight: 850, color: "#102033", fontSize: 14 }}>{title}</div>
-                <div style={{ color: "#607086", fontSize: 12, marginTop: 5 }}>{desc}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div>
+    <>
+    <GlobalStyles />
+    <div style={authStyles.page}>
+      <AuthFlowBackground />
+      <div style={authStyles.pageInner}>
+        <AuthTerminalIntro />
+        <div style={authStyles.formShell}>
         <div style={{ marginBottom: 18 }}>
           <div style={{ ...s.logoText, fontSize: 24 }}>LLM Guardrail</div>
-          <div style={{ ...s.logoSub, fontSize: 13 }}>Safety and compliance middleware</div>
-        </div>
-        <div style={{ ...s.card, padding: 24 }}>
-          <div style={{ display: "flex", marginBottom: 24, background: "#eef3f8", borderRadius: 8, padding: 4 }}>
-            {["login","signup"].map(t => (
-              <div key={t} onClick={() => setTab(t)} style={{
-                flex: 1, textAlign: "center", padding: "9px", borderRadius: 7,
-                fontSize: 13, fontWeight: 850, cursor: "pointer",
-                background: tab === t ? "#ffffff" : "transparent",
-                color: tab === t ? "#0f5f7a" : "#607086",
-                boxShadow: tab === t ? "0 6px 18px rgba(16,32,51,0.08)" : "none",
-                transition: "all 0.18s ease",
-              }}>{t}</div>
-            ))}
+          <div style={{ ...s.logoSub, fontSize: 13 }}>
+            Sign in to manage your workspace
           </div>
+        </div>
+        <div style={authStyles.formCard}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: "#102033" }}>
+            {screen === "verify" ? "Verify Email" :
+             screen === "reset" ? "Reset Password" :
+             tab === "forgot" ? "Reset Password" :
+             tab === "signup" ? "Create an Account" : "Welcome Back"}
+          </div>
+
+          {screen === "auth" && (
+            <div style={{ display: "flex", marginBottom: 24, background: "#eef3f8", borderRadius: 8, padding: 4 }}>
+              {["login", "signup"].map((t) => (
+                <div key={t} onClick={() => { setTab(t); setError(""); setInfo(""); }} style={{
+                  flex: 1, textAlign: "center", padding: "9px", borderRadius: 7,
+                  fontSize: 13, fontWeight: 850, cursor: "pointer",
+                  background: tab === t ? "#ffffff" : "transparent",
+                  color: tab === t ? "#0f5f7a" : "#607086",
+                  boxShadow: tab === t ? "0 6px 18px rgba(16,32,51,0.08)" : "none",
+                }}>{t === "login" ? "Sign in" : "Sign up"}</div>
+              ))}
+            </div>
+          )}
 
           {error && <div style={s.alert("error")}>{error}</div>}
+          {info && <div style={s.alert("success")}>{info}</div>}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {tab === "signup" && (
-              <>
-                <label style={s.label}>Full name</label>
-                <input style={s.input} placeholder="Full name" value={form.full_name} onChange={set("full_name")} />
-              </>
-            )}
-            <label style={s.label}>Email</label>
-            <input style={s.input} placeholder="you@example.com" type="email" value={form.email} onChange={set("email")} />
-            <label style={s.label}>Password</label>
-            <input style={s.input} placeholder="Your password" type="password" value={form.password} onChange={set("password")} />
-            {tab === "signup" && (
-              <>
-                <label style={s.label}>Organization</label>
-                <input style={s.input} placeholder="Organization name (optional)" value={form.org_name} onChange={set("org_name")} />
-              </>
-            )}
-            <button style={{ ...s.btn("primary"), marginTop: 8 }} onClick={submit} disabled={loading}>
-              {loading ? "Working..." : tab === "login" ? "Sign in" : "Create account"}
-            </button>
-          </div>
+          {screen === "verify" && (
+            <div style={{ color: "#607086", fontSize: 14 }}>
+              {loading ? "Verifying your email…" : "Verification complete. You can sign in."}
+            </div>
+          )}
+
+          {screen === "reset" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <label style={s.label}>New Password</label>
+              <PasswordInput
+                placeholder="Min 8 characters"
+                value={form.new_password}
+                onChange={set("new_password")}
+                autoComplete="new-password"
+              />
+              <label style={s.label}>Confirm Password</label>
+              <PasswordInput
+                placeholder="Confirm new password"
+                value={form.confirm_password}
+                onChange={set("confirm_password")}
+                autoComplete="new-password"
+              />
+              <button style={{ ...s.btn("primary"), marginTop: 8 }} onClick={submitReset} disabled={loading}>
+                {loading ? "Resetting..." : "Reset Password"}
+              </button>
+              <button type="button" style={s.btn("secondary")} onClick={goHome}>Back to sign in</button>
+            </div>
+          )}
+
+          {screen === "auth" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {tab === "signup" && (
+                <>
+                  <label style={s.label}>Full Name</label>
+                  <input style={s.input} placeholder="Jane Developer"
+                    value={form.full_name} onChange={set("full_name")} />
+                </>
+              )}
+              {(tab === "login" || tab === "signup" || tab === "forgot") && (
+                <>
+                  <label style={s.label}>Email Address</label>
+                  <input style={s.input} placeholder="dev@acme.corp"
+                    type="email" value={form.email} onChange={set("email")} autoComplete="email" />
+                </>
+              )}
+              {tab !== "forgot" && (
+                <>
+                  <label style={s.label}>Password</label>
+                  <PasswordInput
+                    placeholder="••••••••"
+                    value={form.password}
+                    onChange={set("password")}
+                    autoComplete={tab === "login" ? "current-password" : "new-password"}
+                  />
+                </>
+              )}
+              {tab === "signup" && (
+                <>
+                  <label style={s.label}>Organization Name (Optional)</label>
+                  <input style={s.input} placeholder="Acme Corp"
+                    value={form.org_name} onChange={set("org_name")} />
+                </>
+              )}
+              <button style={{ ...s.btn("primary"), marginTop: 8 }} onClick={submit} disabled={loading}>
+                {loading ? "Please wait..." :
+                  tab === "login" ? "Sign In" :
+                  tab === "forgot" ? "Send Reset Link" : "Create Account"}
+              </button>
+              {tab === "login" && (
+                <button type="button" style={{ ...s.btn("secondary"), fontSize: 13 }}
+                  onClick={() => { setTab("forgot"); setError(""); setInfo(""); }}>
+                  Forgot password?
+                </button>
+              )}
+              {tab === "forgot" && (
+                <button type="button" style={{ ...s.btn("secondary"), fontSize: 13 }}
+                  onClick={() => { setTab("login"); setError(""); setInfo(""); }}>
+                  Back to login
+                </button>
+              )}
+              {(tab === "login" || tab === "forgot") && (
+                <button type="button" style={{ ...s.btn("secondary"), fontSize: 13 }}
+                  onClick={resendVerification} disabled={loading}>
+                  Resend verification email
+                </button>
+              )}
+            </div>
+          )}
         </div>
-        <div style={{ textAlign:"center", marginTop:14, fontSize:12, color:"#7b8a9d" }}>
-          Public demo limits are enabled to protect provider quota.
+        <div style={{ textAlign:"center", marginTop:14, fontSize:11, color:"#607086",
+          fontFamily: "ui-monospace, monospace" }}>
+          {"// demo_mode: rate limits active"}
         </div>
         </div>
       </div>
     </div>
+    </>
   );
 }
 
@@ -550,6 +1199,7 @@ function ApiKeysView() {
     try {
       const data = await api("/api-keys", { method: "POST", body: { name: newName.trim() } });
       setRawKey(data.raw_key);
+      setGatewayKey(data.raw_key);
       setNewName("");
       load();
     } catch (e) { setError(e.message); }
@@ -581,8 +1231,13 @@ function ApiKeysView() {
       )}
       {rawKey && (
         <div style={s.alert("success")}>
-          <div style={{ marginBottom: 6 }}>Key created. Copy it now, it will not be shown again:</div>
-          <code style={{ fontSize: 12, wordBreak: "break-all", color: "#067647", fontWeight: 800 }}>{rawKey}</code>
+          <div style={{ marginBottom: 6 }}>
+            Key created and saved for Chat Tester. Use Copy key to grab the full value once — it is masked here and will not be shown again.
+            The short prefix in the table is not enough to authenticate.
+          </div>
+          <code style={{ fontSize: 12, wordBreak: "break-all", color: "#067647", fontWeight: 800 }}>
+            {maskGatewayKey(rawKey)}
+          </code>
           <div style={{ marginTop: 8 }}>
             <button style={s.btn("secondary")} onClick={() => { navigator.clipboard.writeText(rawKey); }}>
               Copy key
@@ -619,7 +1274,9 @@ function ApiKeysView() {
             {keys.map(k => (
               <tr key={k.id}>
                 <td style={s.td}>{k.name}</td>
-                <td style={{ ...s.td, fontFamily: "monospace", color: "#0f766e", fontWeight: 800 }}>{k.key_prefix}...</td>
+                <td style={{ ...s.td, fontFamily: "monospace", color: "#0f766e", fontWeight: 800 }}>
+                  {maskGatewayKey(k.key_prefix + "0".repeat(24))}
+                </td>
                 <td style={s.td}>{k.total_requests.toLocaleString()}</td>
                 <td style={s.td}>{k.total_blocked.toLocaleString()}</td>
                 <td style={s.td}>{new Date(k.created_at).toLocaleDateString()}</td>
@@ -730,7 +1387,9 @@ function AdminView() {
             {keys.map(k => (
               <tr key={k.id}>
                 <td style={s.td}>{k.name}</td>
-                <td style={{ ...s.td, fontFamily: "monospace", color: "#0f766e", fontWeight: 800 }}>{k.key_prefix}...</td>
+                <td style={{ ...s.td, fontFamily: "monospace", color: "#0f766e", fontWeight: 800 }}>
+                  {maskGatewayKey(k.key_prefix + "0".repeat(24))}
+                </td>
                 <td style={s.td}>{k.total_requests.toLocaleString()}</td>
                 <td style={s.td}>{k.total_blocked.toLocaleString()}</td>
                 <td style={s.td}><span style={s.badge(k.is_active ? "delivered" : "error")}>{k.is_active ? "active" : "revoked"}</span></td>
@@ -1020,8 +1679,8 @@ function ChatView() {
 
   async function send() {
     if (!prompt.trim()) return;
-    if (!gatewayKey) {
-      setResult({ error: "Enter a gateway API key first. Create one in API Keys, then paste the grg_ key here." });
+    if (!gatewayKey && !getToken()) {
+      setResult({ error: "Sign in and create a gateway API key, or paste your full grg_ key here." });
       return;
     }
     const guard = clientGuardrail(prompt);
@@ -1031,9 +1690,11 @@ function ChatView() {
     }
     setLoading(true); setResult(null);
     try {
+      const headers = {};
+      if (gatewayKey) headers["X-Api-Key"] = gatewayKey;
       const data = await api("/chat", {
         method: "POST",
-        headers: { "X-Api-Key": gatewayKey },
+        headers,
         body: { prompt: prompt.trim() },
       });
       setResult(data);
@@ -1070,7 +1731,8 @@ function ChatView() {
         </div>
         <label style={s.label}>Gateway key</label>
         <input
-          style={{ ...s.input, marginBottom: 10 }}
+          {...gatewayKeyInputProps}
+          style={{ ...s.input, marginBottom: 10, fontFamily: "monospace" }}
           placeholder="Paste a gateway API key: grg_..."
           value={gatewayKey}
           onChange={onGatewayKeyChange}
