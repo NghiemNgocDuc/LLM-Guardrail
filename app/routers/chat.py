@@ -76,6 +76,18 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def _effective_max_tokens(body: ChatRequest) -> int:
+    """
+    In demo mode, cap output tokens. The ChatRequest schema defaults max_tokens to
+    1024, so we cannot rely on the client omitting the field — always clamp.
+    """
+    if not settings.DEMO_MODE:
+        return body.max_tokens
+    if "max_tokens" not in body.model_fields_set:
+        return settings.DEMO_MAX_OUTPUT_TOKENS
+    return min(body.max_tokens, settings.DEMO_MAX_OUTPUT_TOKENS)
+
+
 @router.post("", response_model=ChatResponse)
 async def chat(
     body: ChatRequest,
@@ -104,7 +116,8 @@ async def chat(
     rpd = (policy.rate_limit_rpd if policy and policy.rate_limit_rpd else None) or settings.DEFAULT_RATE_LIMIT_RPD
 
     # ── 2. Rate limit ─────────────────────────────────────────────────────
-    enforce_demo_payload_limits(body.prompt, body.max_tokens)
+    max_tokens = _effective_max_tokens(body)
+    enforce_demo_payload_limits(body.prompt, max_tokens)
     try:
         await check_rate_limit(api_key.id, rpm, rpd)
         await enforce_demo_rate_limits(api_key.id, client_ip(request))
@@ -166,7 +179,7 @@ async def chat(
         llm_resp = await call_llm(
             prompt=body.prompt,
             temperature=body.temperature,
-            max_tokens=body.max_tokens,
+            max_tokens=max_tokens,
             request_backend=body.backend,
             org_backend=org_backend,
             request_model=body.model,
