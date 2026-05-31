@@ -12,6 +12,14 @@ settings = get_settings()
 engine = None
 AsyncSessionLocal = None
 
+# Supabase transaction pooler (PgBouncer) cannot reuse prepared statements across
+# pooled backend connections. Disable both asyncpg and SQLAlchemy statement caches.
+# See: https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#asyncpg-prepared-statement-cache
+ASYNCPG_CONNECT_ARGS = {
+    "statement_cache_size": 0,
+    "prepared_statement_cache_size": 0,
+}
+
 
 def get_engine():
     global engine
@@ -21,13 +29,10 @@ def get_engine():
         engine = create_async_engine(
             settings.DATABASE_URL,
             echo=settings.DEBUG,
+            pool_pre_ping=True,
             pool_size=10,
             max_overflow=20,
-            # asyncpg may use prepared statement caching which is incompatible
-            # with some TCP proxies / PgBouncer in transaction/statement mode.
-            # Disable asyncpg's statement cache to avoid
-            # asyncpg.exceptions.DuplicatePreparedStatementError.
-            connect_args={"statement_cache_size": 0},
+            connect_args=dict(ASYNCPG_CONNECT_ARGS),
         )
     return engine
 

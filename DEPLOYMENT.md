@@ -32,6 +32,8 @@ If Supabase gives a URL with `sslmode=require`, use `ssl=require` for asyncpg:
 DATABASE_URL=postgresql+asyncpg://postgres.<project-ref>:<password>@<pooler-host>:6543/postgres?ssl=require
 ```
 
+The app sets `statement_cache_size=0` and `prepared_statement_cache_size=0` on every asyncpg connection so PgBouncer (Supabase pooler) does not raise `DuplicatePreparedStatementError`. You do not need to add those to the URL manually.
+
 Do not commit this value. Store it only in your hosting provider's secret/env settings.
 
 ## Upstash Redis

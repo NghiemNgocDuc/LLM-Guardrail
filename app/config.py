@@ -60,6 +60,19 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
+    def normalize_database_url(self) -> "Settings":
+        if not self.DATABASE_URL and self.POSTGRES_USER and self.POSTGRES_PASSWORD and self.POSTGRES_DB:
+            self.DATABASE_URL = (
+                f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+                f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+            )
+        if self.DATABASE_URL.startswith("postgres://"):
+            self.DATABASE_URL = "postgresql+asyncpg://" + self.DATABASE_URL[len("postgres://") :]
+        elif self.DATABASE_URL.startswith("postgresql://") and "+asyncpg" not in self.DATABASE_URL:
+            self.DATABASE_URL = "postgresql+asyncpg://" + self.DATABASE_URL[len("postgresql://") :]
+        return self
+
+    @model_validator(mode="after")
     def validate_production_config(self) -> "Settings":
         if self.APP_ENV != "production":
             return self
@@ -73,18 +86,6 @@ class Settings(BaseSettings):
             or "replace" in normalized_secret
         ):
             raise ValueError("SECRET_KEY must be set to a strong production secret")
-        # If individual POSTGRES_* vars are set, build the URL.
-        if not self.DATABASE_URL and self.POSTGRES_USER and self.POSTGRES_PASSWORD and self.POSTGRES_DB:
-            self.DATABASE_URL = (
-                f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-                f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-            )
-
-        # Normalize common Supabase-style URLs that start with `postgres://`
-        # to SQLAlchemy's async driver prefix `postgresql+asyncpg://` so users
-        # can paste the connection string directly from providers.
-        if self.DATABASE_URL.startswith("postgres://"):
-            self.DATABASE_URL = "postgresql+asyncpg://" + self.DATABASE_URL[len("postgres://") :]
 
         if not self.DATABASE_URL.startswith("postgresql+asyncpg://"):
             raise ValueError("DATABASE_URL must use postgresql+asyncpg in production")
