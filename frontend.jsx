@@ -4,10 +4,10 @@ import {
   Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
 
-// ─── CONFIG ──────────────────────────────────────────────────────────────────
+// CONFIG
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? "http://localhost:8000" : "");
 
-// ─── API HELPERS ─────────────────────────────────────────────────────────────
+// API HELPERS
 function getToken() { return localStorage.getItem("access_token"); }
 function getGatewayKey() { return localStorage.getItem("gateway_api_key") || ""; }
 function setGatewayKey(key) {
@@ -64,134 +64,173 @@ function clientGuardrail(prompt) {
   return { blocked: false };
 }
 
-// ─── STYLES ──────────────────────────────────────────────────────────────────
+// STYLES
 const s = {
   app: {
     minHeight: "100vh",
-    background: "#0a0a0f",
-    color: "#e2e8f0",
-    fontFamily: "'IBM Plex Mono', 'Fira Code', monospace",
+    background: "linear-gradient(135deg, #f8fbff 0%, #eef7f3 42%, #f7f9ff 100%)",
+    color: "#102033",
+    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     display: "flex",
   },
   sidebar: {
-    width: 220,
-    background: "#0f0f1a",
-    borderRight: "1px solid #1e1e30",
-    padding: "24px 0",
+    width: 260,
+    background: "rgba(255,255,255,0.88)",
+    borderRight: "1px solid #dbe8f3",
+    padding: "22px 14px",
     display: "flex",
     flexDirection: "column",
     flexShrink: 0,
+    boxShadow: "12px 0 40px rgba(17, 39, 68, 0.06)",
+    backdropFilter: "blur(16px)",
   },
   logo: {
-    padding: "0 20px 24px",
-    borderBottom: "1px solid #1e1e30",
-    marginBottom: 16,
+    padding: "0 10px 20px",
+    borderBottom: "1px solid #e7eef6",
+    marginBottom: 18,
   },
   logoText: {
-    fontSize: 13,
-    fontWeight: 700,
-    letterSpacing: "0.15em",
-    color: "#7c3aed",
-    textTransform: "uppercase",
+    fontSize: 18,
+    fontWeight: 800,
+    letterSpacing: 0,
+    color: "#102033",
   },
-  logoSub: { fontSize: 10, color: "#4a4a6a", marginTop: 2, letterSpacing: "0.1em" },
+  logoSub: { fontSize: 12, color: "#607086", marginTop: 6, overflow: "hidden", textOverflow: "ellipsis" },
   navItem: (active) => ({
     display: "flex", alignItems: "center", gap: 10,
-    padding: "9px 20px",
+    padding: "11px 12px",
     cursor: "pointer",
-    fontSize: 12,
-    letterSpacing: "0.05em",
-    color: active ? "#a78bfa" : "#6b7280",
-    background: active ? "#1a1a2e" : "transparent",
-    borderLeft: active ? "2px solid #7c3aed" : "2px solid transparent",
-    transition: "all 0.15s",
+    fontSize: 14,
+    fontWeight: active ? 750 : 650,
+    letterSpacing: 0,
+    color: active ? "#0f5f7a" : "#607086",
+    background: active ? "linear-gradient(135deg, #e8f8f3, #eef5ff)" : "transparent",
+    border: active ? "1px solid #bfe8dd" : "1px solid transparent",
+    borderRadius: 8,
+    transition: "all 0.18s ease",
     userSelect: "none",
+    marginBottom: 6,
   }),
-  main: { flex: 1, overflow: "auto", padding: 32 },
+  main: { flex: 1, overflow: "auto", padding: 32, maxWidth: 1520, margin: "0 auto" },
   pageTitle: {
-    fontSize: 18, fontWeight: 700, marginBottom: 24,
-    color: "#f1f5f9", letterSpacing: "0.05em",
+    fontSize: 28, fontWeight: 850, marginBottom: 22,
+    color: "#102033", letterSpacing: 0,
   },
   card: {
-    background: "#0f0f1a",
-    border: "1px solid #1e1e30",
+    background: "rgba(255,255,255,0.92)",
+    border: "1px solid #dce7f0",
     borderRadius: 8,
-    padding: 20,
+    padding: 22,
+    boxShadow: "0 16px 42px rgba(16, 32, 51, 0.07)",
   },
-  statGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 16, marginBottom: 24 },
+  statGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(185px,1fr))", gap: 16, marginBottom: 24 },
   statCard: {
-    background: "#0f0f1a",
-    border: "1px solid #1e1e30",
+    background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+    border: "1px solid #dce7f0",
     borderRadius: 8,
     padding: 20,
+    boxShadow: "0 12px 28px rgba(16, 32, 51, 0.06)",
   },
-  statLabel: { fontSize: 10, color: "#4a4a6a", letterSpacing: "0.12em", textTransform: "uppercase" },
-  statValue: { fontSize: 28, fontWeight: 700, marginTop: 6, color: "#f1f5f9" },
-  statSub:   { fontSize: 11, color: "#6b7280", marginTop: 4 },
-  grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 },
-  sectionTitle: { fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "#6b7280",
-    textTransform: "uppercase", marginBottom: 16 },
+  statLabel: { fontSize: 12, color: "#607086", letterSpacing: 0, fontWeight: 750 },
+  statValue: { fontSize: 32, fontWeight: 850, marginTop: 6, color: "#102033" },
+  statSub:   { fontSize: 12, color: "#7b8a9d", marginTop: 4 },
+  grid2: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))", gap: 18, marginBottom: 24 },
+  sectionTitle: { fontSize: 13, fontWeight: 800, letterSpacing: 0, color: "#27394f",
+    marginBottom: 16 },
   table: { width: "100%", borderCollapse: "collapse" },
-  th: { textAlign: "left", padding: "8px 12px", fontSize: 10, color: "#4a4a6a",
-    letterSpacing: "0.1em", textTransform: "uppercase", borderBottom: "1px solid #1e1e30" },
-  td: { padding: "10px 12px", fontSize: 12, borderBottom: "1px solid #0f0f1a", color: "#94a3b8" },
+  th: { textAlign: "left", padding: "10px 12px", fontSize: 11, color: "#7b8a9d",
+    letterSpacing: "0.04em", textTransform: "uppercase", borderBottom: "1px solid #e7eef6", whiteSpace: "nowrap" },
+  td: { padding: "12px", fontSize: 13, borderBottom: "1px solid #eef3f8", color: "#405166" },
   badge: (status) => {
     const map = {
-      delivered:      { bg: "#0d2d1a", color: "#34d399", border: "#065f46" },
-      input_blocked:  { bg: "#2d1a0d", color: "#fb923c", border: "#7c2d12" },
-      output_blocked: { bg: "#2d1a0d", color: "#f59e0b", border: "#78350f" },
-      rate_limited:   { bg: "#1f1a0d", color: "#facc15", border: "#713f12" },
-      error:          { bg: "#2d0d0d", color: "#f87171", border: "#7f1d1d" },
+      delivered:      { bg: "#e8f8ef", color: "#067647", border: "#abe7c6" },
+      input_blocked:  { bg: "#fff3e8", color: "#b45309", border: "#fed7aa" },
+      output_blocked: { bg: "#fff7df", color: "#99620f", border: "#fde68a" },
+      rate_limited:   { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" },
+      error:          { bg: "#fff1f2", color: "#be123c", border: "#fecdd3" },
     };
-    const c = map[status] || { bg: "#1e1e30", color: "#94a3b8", border: "#374151" };
+    const c = map[status] || { bg: "#eef3f8", color: "#405166", border: "#dce7f0" };
     return {
-      display: "inline-block", padding: "2px 8px", borderRadius: 4,
-      fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
+      display: "inline-flex", alignItems: "center", padding: "4px 9px", borderRadius: 999,
+      fontSize: 11, fontWeight: 800, letterSpacing: 0,
       background: c.bg, color: c.color, border: `1px solid ${c.border}`,
     };
   },
   input: {
-    width: "100%", background: "#0a0a0f", border: "1px solid #1e1e30",
-    borderRadius: 6, padding: "10px 12px", color: "#e2e8f0",
-    fontFamily: "inherit", fontSize: 12, outline: "none",
+    width: "100%", background: "#ffffff", border: "1px solid #ccd9e6",
+    borderRadius: 8, padding: "11px 12px", color: "#102033",
+    fontFamily: "inherit", fontSize: 14, outline: "none",
     boxSizing: "border-box",
+    boxShadow: "0 1px 0 rgba(16,32,51,0.03)",
   },
   btn: (variant = "primary") => ({
-    padding: "9px 18px", borderRadius: 6, border: "none", cursor: "pointer",
-    fontSize: 12, fontWeight: 700, letterSpacing: "0.08em",
+    padding: "10px 16px", borderRadius: 8, border: "1px solid transparent", cursor: "pointer",
+    fontSize: 13, fontWeight: 800, letterSpacing: 0,
     fontFamily: "inherit",
     ...(variant === "primary"
-      ? { background: "#7c3aed", color: "#fff" }
+      ? { background: "linear-gradient(135deg, #0f766e, #2563eb)", color: "#fff", boxShadow: "0 10px 22px rgba(37, 99, 235, 0.18)" }
       : variant === "danger"
-      ? { background: "#7f1d1d", color: "#fca5a5" }
-      : { background: "#1e1e30", color: "#94a3b8", border: "1px solid #374151" }),
+      ? { background: "#fff1f2", color: "#be123c", border: "1px solid #fecdd3" }
+      : { background: "#ffffff", color: "#405166", border: "1px solid #ccd9e6" }),
   }),
   toggle: (on) => ({
-    width: 36, height: 20, borderRadius: 10, position: "relative",
-    background: on ? "#7c3aed" : "#1e1e30", border: "none", cursor: "pointer",
+    width: 42, height: 24, borderRadius: 999, position: "relative",
+    background: on ? "#0f766e" : "#cad6e2", border: "none", cursor: "pointer",
     transition: "background 0.2s", flexShrink: 0,
   }),
   toggleDot: (on) => ({
-    position: "absolute", top: 3, left: on ? 19 : 3,
-    width: 14, height: 14, borderRadius: "50%", background: "#fff",
+    position: "absolute", top: 3, left: on ? 21 : 3,
+    width: 18, height: 18, borderRadius: "50%", background: "#fff",
     transition: "left 0.2s",
+    boxShadow: "0 2px 8px rgba(16,32,51,0.18)",
   }),
   chip: (on) => ({
-    padding: "4px 12px", borderRadius: 20, fontSize: 11, cursor: "pointer",
-    border: on ? "1px solid #7c3aed" : "1px solid #1e1e30",
-    background: on ? "#1a1230" : "transparent",
-    color: on ? "#a78bfa" : "#6b7280",
+    padding: "7px 12px", borderRadius: 999, fontSize: 12, cursor: "pointer",
+    border: on ? "1px solid #8ddfcf" : "1px solid #dce7f0",
+    background: on ? "#e8f8f3" : "#ffffff",
+    color: on ? "#0f766e" : "#607086",
+    fontWeight: 750,
     userSelect: "none",
   }),
   alert: (type) => ({
-    padding: "12px 16px", borderRadius: 6, fontSize: 12, marginBottom: 16,
-    background: type === "error" ? "#2d0d0d" : type === "success" ? "#0d2d1a" : "#1a1230",
-    border: `1px solid ${type === "error" ? "#7f1d1d" : type === "success" ? "#065f46" : "#312e81"}`,
-    color: type === "error" ? "#f87171" : type === "success" ? "#34d399" : "#a78bfa",
+    padding: "13px 15px", borderRadius: 8, fontSize: 13, marginBottom: 16,
+    background: type === "error" ? "#fff1f2" : type === "success" ? "#e8f8ef" : "#eff6ff",
+    border: `1px solid ${type === "error" ? "#fecdd3" : type === "success" ? "#abe7c6" : "#bfdbfe"}`,
+    color: type === "error" ? "#be123c" : type === "success" ? "#067647" : "#1d4ed8",
+    lineHeight: 1.5,
   }),
+  muted: { color: "#7b8a9d", fontSize: 13 },
+  label: { fontSize: 12, color: "#607086", fontWeight: 750, marginBottom: 6 },
+  heroPanel: {
+    background: "linear-gradient(135deg, #ffffff 0%, #ecfdf7 52%, #eff6ff 100%)",
+    border: "1px solid #d3eadf",
+    borderRadius: 8,
+    padding: 24,
+    marginBottom: 24,
+    boxShadow: "0 18px 50px rgba(16, 32, 51, 0.08)",
+  },
 };
 
-// ─── AUTH VIEW ───────────────────────────────────────────────────────────────
+function GlobalStyles() {
+  return (
+    <style>{`
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #f8fbff; }
+      button, input, textarea, select { transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease; }
+      button:hover:not(:disabled) { transform: translateY(-1px); }
+      button:disabled { opacity: .58; cursor: not-allowed; }
+      input:focus, textarea:focus, select:focus { border-color: #0f766e !important; box-shadow: 0 0 0 3px rgba(15,118,110,.12) !important; }
+      tr:last-child td { border-bottom: none !important; }
+      @media (max-width: 760px) {
+        .app-shell { flex-direction: column; }
+        .app-sidebar { width: 100% !important; border-right: 0 !important; border-bottom: 1px solid #dbe8f3; }
+        .app-main { padding: 18px !important; }
+      }
+    `}</style>
+  );
+}
+
+// AUTH VIEW
 function AuthView({ onAuth }) {
   const [tab, setTab] = useState("login");
   const [form, setForm] = useState({ email: "", password: "", full_name: "", org_name: "" });
@@ -235,66 +274,84 @@ function AuthView({ onAuth }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0a0a0f", display: "flex",
-      alignItems: "center", justifyContent: "center" }}>
-      <div style={{ width: 380 }}>
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.2em", color: "#7c3aed",
-            textTransform: "uppercase", fontFamily: "'IBM Plex Mono',monospace" }}>
-            ▣ LLM GUARDRAILS
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#f8fbff,#eefaf5 48%,#f7f9ff)", display: "flex",
+      alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ width: "min(1040px, 100%)", display: "grid",
+        gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))", gap: 28, alignItems: "center" }}>
+        <div style={s.heroPanel}>
+          <div style={{ display: "inline-flex", padding: "6px 10px",
+            borderRadius: 999, background: "#e8f8f3", color: "#0f766e", fontSize: 12,
+            fontWeight: 800, marginBottom: 18 }}>
+            Live Groq gateway
           </div>
-          <div style={{ fontSize: 11, color: "#4a4a6a", marginTop: 6,
-            fontFamily: "monospace", letterSpacing: "0.05em" }}>
-            Safety & compliance middleware
+          <h1 style={{ margin: 0, fontSize: 44, lineHeight: 1.05, color: "#102033", letterSpacing: 0 }}>
+            Ship LLM apps with a safety layer in front.
+          </h1>
+          <p style={{ margin: "16px 0 24px", color: "#405166", fontSize: 16, lineHeight: 1.7 }}>
+            Test prompts, block injection attempts, enforce policy rules, and monitor provider usage from one clean dashboard.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12 }}>
+            {[["Input guard", "PII and injection checks"], ["Output guard", "Toxic and policy filters"], ["Audit trail", "Logs, tokens, latency"]].map(([title, desc]) => (
+              <div key={title} style={{ background: "#fff", border: "1px solid #dce7f0", borderRadius: 8, padding: 14 }}>
+                <div style={{ fontWeight: 850, color: "#102033", fontSize: 14 }}>{title}</div>
+                <div style={{ color: "#607086", fontSize: 12, marginTop: 5 }}>{desc}</div>
+              </div>
+            ))}
           </div>
         </div>
-        <div style={{ ...s.card }}>
-          {/* Tab toggle */}
-          <div style={{ display: "flex", marginBottom: 24, background: "#0a0a0f",
-            borderRadius: 6, padding: 3 }}>
+        <div>
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ ...s.logoText, fontSize: 24 }}>LLM Guardrail</div>
+          <div style={{ ...s.logoSub, fontSize: 13 }}>Safety and compliance middleware</div>
+        </div>
+        <div style={{ ...s.card, padding: 24 }}>
+          <div style={{ display: "flex", marginBottom: 24, background: "#eef3f8", borderRadius: 8, padding: 4 }}>
             {["login","signup"].map(t => (
               <div key={t} onClick={() => setTab(t)} style={{
-                flex: 1, textAlign: "center", padding: "7px", borderRadius: 4,
-                fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase",
-                cursor: "pointer", fontFamily: "monospace",
-                background: tab === t ? "#7c3aed" : "transparent",
-                color: tab === t ? "#fff" : "#4a4a6a",
-                transition: "all 0.15s",
+                flex: 1, textAlign: "center", padding: "9px", borderRadius: 7,
+                fontSize: 13, fontWeight: 850, cursor: "pointer",
+                background: tab === t ? "#ffffff" : "transparent",
+                color: tab === t ? "#0f5f7a" : "#607086",
+                boxShadow: tab === t ? "0 6px 18px rgba(16,32,51,0.08)" : "none",
+                transition: "all 0.18s ease",
               }}>{t}</div>
             ))}
           </div>
 
           {error && <div style={s.alert("error")}>{error}</div>}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {tab === "signup" && (
-              <input style={s.input} placeholder="Full name"
-                value={form.full_name} onChange={set("full_name")} />
+              <>
+                <label style={s.label}>Full name</label>
+                <input style={s.input} placeholder="Full name" value={form.full_name} onChange={set("full_name")} />
+              </>
             )}
-            <input style={s.input} placeholder="Email"
-              type="email" value={form.email} onChange={set("email")} />
-            <input style={s.input} placeholder="Password"
-              type="password" value={form.password} onChange={set("password")} />
+            <label style={s.label}>Email</label>
+            <input style={s.input} placeholder="you@example.com" type="email" value={form.email} onChange={set("email")} />
+            <label style={s.label}>Password</label>
+            <input style={s.input} placeholder="Your password" type="password" value={form.password} onChange={set("password")} />
             {tab === "signup" && (
-              <input style={s.input} placeholder="Organization name (optional)"
-                value={form.org_name} onChange={set("org_name")} />
+              <>
+                <label style={s.label}>Organization</label>
+                <input style={s.input} placeholder="Organization name (optional)" value={form.org_name} onChange={set("org_name")} />
+              </>
             )}
-            <button style={{ ...s.btn("primary"), marginTop: 4 }}
-              onClick={submit} disabled={loading}>
-              {loading ? "..." : tab === "login" ? "SIGN IN" : "CREATE ACCOUNT"}
+            <button style={{ ...s.btn("primary"), marginTop: 8 }} onClick={submit} disabled={loading}>
+              {loading ? "Working..." : tab === "login" ? "Sign in" : "Create account"}
             </button>
           </div>
         </div>
-        <div style={{ textAlign:"center", marginTop:16, fontSize:10, color:"#4a4a6a",
-          fontFamily:"monospace", letterSpacing:"0.05em" }}>
-          Set BASE_URL at top of file → your backend
+        <div style={{ textAlign:"center", marginTop:14, fontSize:12, color:"#7b8a9d" }}>
+          Public demo limits are enabled to protect provider quota.
+        </div>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── DASHBOARD VIEW ──────────────────────────────────────────────────────────
+// DASHBOARD VIEW
 function DashboardView() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -306,7 +363,7 @@ function DashboardView() {
   }, []);
 
   if (error) return <div style={s.alert("error")}>{error}</div>;
-  if (!data) return <div style={{ color: "#4a4a6a", fontSize: 12 }}>Loading...</div>;
+  if (!data) return <div style={s.muted}>Loading dashboard...</div>;
 
   const { summary, time_series, top_rules, provider_usage = [], recent_suspicious = [], recent_logs } = data;
   const maxRule = Math.max(...(top_rules.map(r => r.count)), 1);
@@ -314,7 +371,22 @@ function DashboardView() {
 
   return (
     <div>
-      <div style={s.pageTitle}>Dashboard</div>
+      <div style={s.heroPanel}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ ...s.pageTitle, marginBottom: 8 }}>Security Operations</div>
+            <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6, maxWidth: 720 }}>
+              Live view of prompt traffic, blocked attempts, provider spend signals, and suspicious inputs.
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <span style={s.badge("delivered")}>Groq connected</span>
+            <span style={s.badge(blockedTotal > 0 ? "input_blocked" : "delivered")}>
+              {blockedTotal > 0 ? "Threats blocked" : "No active threats"}
+            </span>
+          </div>
+        </div>
+      </div>
 
       {/* Stat cards */}
       <div style={s.statGrid}>
@@ -339,13 +411,13 @@ function DashboardView() {
           <div style={s.sectionTitle}>Delivered vs Blocked</div>
           <ResponsiveContainer width="100%" height={180}>
             <AreaChart data={time_series} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e1e30" />
-              <XAxis dataKey="ts" tick={{ fontSize: 10, fill: "#4a4a6a" }} />
-              <YAxis tick={{ fontSize: 10, fill: "#4a4a6a" }} />
-              <Tooltip contentStyle={{ background: "#0f0f1a", border: "1px solid #1e1e30",
-                borderRadius: 4, fontSize: 11, fontFamily: "monospace" }} />
-              <Area type="monotone" dataKey="delivered" stroke="#34d399" fill="#0d2d1a" strokeWidth={2} />
-              <Area type="monotone" dataKey="blocked"   stroke="#f87171" fill="#2d0d0d" strokeWidth={2} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e7eef6" />
+              <XAxis dataKey="ts" tick={{ fontSize: 11, fill: "#7b8a9d" }} />
+              <YAxis tick={{ fontSize: 11, fill: "#7b8a9d" }} />
+              <Tooltip contentStyle={{ background: "#ffffff", border: "1px solid #dce7f0",
+                borderRadius: 8, fontSize: 12, boxShadow: "0 12px 28px rgba(16,32,51,0.1)" }} />
+              <Area type="monotone" dataKey="delivered" stroke="#0f766e" fill="#ccfbf1" strokeWidth={2} />
+              <Area type="monotone" dataKey="blocked"   stroke="#f97316" fill="#ffedd5" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -354,18 +426,18 @@ function DashboardView() {
         <div style={s.card}>
           <div style={s.sectionTitle}>Top Violation Types</div>
           {top_rules.length === 0
-            ? <div style={{ color: "#4a4a6a", fontSize: 12 }}>No rules fired yet</div>
+            ? <div style={s.muted}>No rules fired yet</div>
             : top_rules.map(r => (
               <div key={r.rule} style={{ marginBottom: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between",
                   fontSize: 11, marginBottom: 4 }}>
-                  <span style={{ color: "#94a3b8" }}>{r.rule}</span>
-                  <span style={{ color: "#7c3aed" }}>{r.count}</span>
+                  <span style={{ color: "#405166", fontWeight: 700 }}>{r.rule}</span>
+                  <span style={{ color: "#0f766e", fontWeight: 850 }}>{r.count}</span>
                 </div>
-                <div style={{ height: 4, background: "#1e1e30", borderRadius: 2 }}>
+                <div style={{ height: 7, background: "#eef3f8", borderRadius: 999 }}>
                   <div style={{ height: "100%", borderRadius: 2,
                     width: (r.count / maxRule * 100) + "%",
-                    background: "#7c3aed", transition: "width 0.5s" }} />
+                    background: "linear-gradient(90deg,#0f766e,#2563eb)", transition: "width 0.5s" }} />
                 </div>
               </div>
             ))
@@ -445,7 +517,7 @@ function DashboardView() {
                 <td style={s.td}><span style={s.badge(log.status)}>{log.status}</span></td>
                 <td style={{ ...s.td, maxWidth: 200, overflow: "hidden",
                   textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{log.prompt_preview}</td>
-                <td style={s.td}>{log.fired_rule || "—"}</td>
+                <td style={s.td}>{log.fired_rule || "-"}</td>
                 <td style={s.td}>{log.backend}</td>
                 <td style={s.td}>{log.latency_ms}ms</td>
                 <td style={s.td}>{new Date(log.created_at).toLocaleTimeString()}</td>
@@ -458,7 +530,7 @@ function DashboardView() {
   );
 }
 
-// ─── API KEYS VIEW ───────────────────────────────────────────────────────────
+// API KEYS VIEW
 function ApiKeysView() {
   const [keys, setKeys] = useState([]);
   const [newName, setNewName] = useState("");
@@ -494,7 +566,12 @@ function ApiKeysView() {
 
   return (
     <div>
-      <div style={s.pageTitle}>API Keys</div>
+      <div style={s.heroPanel}>
+        <div style={{ ...s.pageTitle, marginBottom: 8 }}>Gateway API Keys</div>
+        <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6 }}>
+          Create scoped keys for applications that need guardrail protection before calling the LLM provider.
+        </div>
+      </div>
 
       {error && <div style={s.alert("error")}>{error}</div>}
       {keys.length === 0 && !rawKey && (
@@ -504,27 +581,27 @@ function ApiKeysView() {
       )}
       {rawKey && (
         <div style={s.alert("success")}>
-          <div style={{ marginBottom: 6 }}>Key created — copy it now, it won't be shown again:</div>
-          <code style={{ fontSize: 11, wordBreak: "break-all", color: "#34d399" }}>{rawKey}</code>
+          <div style={{ marginBottom: 6 }}>Key created. Copy it now, it will not be shown again:</div>
+          <code style={{ fontSize: 12, wordBreak: "break-all", color: "#067647", fontWeight: 800 }}>{rawKey}</code>
           <div style={{ marginTop: 8 }}>
             <button style={s.btn("secondary")} onClick={() => { navigator.clipboard.writeText(rawKey); }}>
-              COPY
+              Copy key
             </button>
             <button style={{ ...s.btn("secondary"), marginLeft: 8 }} onClick={() => setRawKey("")}>
-              DISMISS
+              Dismiss
             </button>
           </div>
         </div>
       )}
 
       <div style={{ ...s.card, marginBottom: 24 }}>
-        <div style={s.sectionTitle}>Create New Key</div>
+          <div style={s.sectionTitle}>Create new key</div>
         <div style={{ display: "flex", gap: 12 }}>
           <input style={{ ...s.input, flex: 1 }} placeholder="Key name (e.g. production)"
             value={newName} onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && create()} />
           <button style={s.btn("primary")} onClick={create} disabled={loading}>
-            {loading ? "..." : "CREATE"}
+            {loading ? "Creating..." : "Create"}
           </button>
         </div>
       </div>
@@ -542,7 +619,7 @@ function ApiKeysView() {
             {keys.map(k => (
               <tr key={k.id}>
                 <td style={s.td}>{k.name}</td>
-                <td style={{ ...s.td, fontFamily: "monospace", color: "#7c3aed" }}>{k.key_prefix}…</td>
+                <td style={{ ...s.td, fontFamily: "monospace", color: "#0f766e", fontWeight: 800 }}>{k.key_prefix}...</td>
                 <td style={s.td}>{k.total_requests.toLocaleString()}</td>
                 <td style={s.td}>{k.total_blocked.toLocaleString()}</td>
                 <td style={s.td}>{new Date(k.created_at).toLocaleDateString()}</td>
@@ -553,13 +630,13 @@ function ApiKeysView() {
                 </td>
                 <td style={s.td}>
                   {k.is_active && (
-                    <button style={s.btn("danger")} onClick={() => revoke(k.id)}>REVOKE</button>
+                    <button style={s.btn("danger")} onClick={() => revoke(k.id)}>Revoke</button>
                   )}
                 </td>
               </tr>
             ))}
             {keys.length === 0 && (
-              <tr><td colSpan={7} style={{ ...s.td, textAlign: "center", color: "#4a4a6a" }}>
+              <tr><td colSpan={7} style={{ ...s.td, textAlign: "center", color: "#7b8a9d" }}>
                 No keys yet
               </td></tr>
             )}
@@ -570,7 +647,7 @@ function ApiKeysView() {
   );
 }
 
-// ─── LOGS VIEW ───────────────────────────────────────────────────────────────
+// LOGS VIEW
 function AdminView() {
   const [users, setUsers] = useState([]);
   const [keys, setKeys] = useState([]);
@@ -603,7 +680,12 @@ function AdminView() {
 
   return (
     <div>
-      <div style={s.pageTitle}>Admin</div>
+      <div style={s.heroPanel}>
+        <div style={{ ...s.pageTitle, marginBottom: 8 }}>Admin Controls</div>
+        <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6 }}>
+          Manage organization users and revoke keys when access should be removed.
+        </div>
+      </div>
       {error && <div style={s.alert("error")}>{error}</div>}
 
       <div style={{ ...s.card, marginBottom: 24 }}>
@@ -648,11 +730,11 @@ function AdminView() {
             {keys.map(k => (
               <tr key={k.id}>
                 <td style={s.td}>{k.name}</td>
-                <td style={{ ...s.td, fontFamily: "monospace", color: "#7c3aed" }}>{k.key_prefix}...</td>
+                <td style={{ ...s.td, fontFamily: "monospace", color: "#0f766e", fontWeight: 800 }}>{k.key_prefix}...</td>
                 <td style={s.td}>{k.total_requests.toLocaleString()}</td>
                 <td style={s.td}>{k.total_blocked.toLocaleString()}</td>
                 <td style={s.td}><span style={s.badge(k.is_active ? "delivered" : "error")}>{k.is_active ? "active" : "revoked"}</span></td>
-                <td style={s.td}>{k.is_active && <button style={s.btn("danger")} onClick={() => revokeKey(k.id)}>REVOKE</button>}</td>
+                <td style={s.td}>{k.is_active && <button style={s.btn("danger")} onClick={() => revokeKey(k.id)}>Revoke</button>}</td>
               </tr>
             ))}
             {keys.length === 0 && (
@@ -684,7 +766,12 @@ function LogsView() {
 
   return (
     <div>
-      <div style={s.pageTitle}>Request Logs</div>
+      <div style={s.heroPanel}>
+        <div style={{ ...s.pageTitle, marginBottom: 8 }}>Request Logs</div>
+        <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6 }}>
+          Filter recent gateway activity and inspect blocked reasons, latency, tokens, and provider behavior.
+        </div>
+      </div>
       {error && <div style={s.alert("error")}>{error}</div>}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
@@ -693,7 +780,7 @@ function LogsView() {
             {f || "all"}
           </div>
         ))}
-        <div style={{ marginLeft: "auto", fontSize: 11, color: "#4a4a6a",
+        <div style={{ marginLeft: "auto", fontSize: 12, color: "#607086", fontWeight: 750,
           alignSelf: "center" }}>{total} total</div>
       </div>
 
@@ -715,7 +802,7 @@ function LogsView() {
                   title={log.input_block_reason || log.output_block_reason || ""}>
                   {log.prompt_preview}
                 </td>
-                <td style={s.td}>{log.fired_rule || "—"}</td>
+                <td style={s.td}>{log.fired_rule || "-"}</td>
                 <td style={s.td}>{log.backend}</td>
                 <td style={s.td}>{log.latency_ms}ms</td>
                 <td style={s.td}>{(log.input_tokens + log.output_tokens).toLocaleString()}</td>
@@ -729,19 +816,19 @@ function LogsView() {
         <div style={{ display: "flex", justifyContent: "center", gap: 8,
           marginTop: 16, alignItems: "center" }}>
           <button style={s.btn("secondary")} disabled={page === 1}
-            onClick={() => setPage(p => p - 1)}>← PREV</button>
+            onClick={() => setPage(p => p - 1)}>Previous</button>
           <span style={{ fontSize: 11, color: "#6b7280" }}>
             Page {page} of {Math.ceil(total / 25) || 1}
           </span>
           <button style={s.btn("secondary")} disabled={page * 25 >= total}
-            onClick={() => setPage(p => p + 1)}>NEXT →</button>
+            onClick={() => setPage(p => p + 1)}>Next</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── POLICY VIEW ─────────────────────────────────────────────────────────────
+// POLICY VIEW
 function PolicyView({ user }) {
   const [policy, setPolicy] = useState(null);
   const [error, setError] = useState("");
@@ -774,7 +861,7 @@ function PolicyView({ user }) {
   }
 
   if (error && !policy) return <div style={s.alert("error")}>{error}</div>;
-  if (!policy) return <div style={{ color: "#4a4a6a", fontSize: 12 }}>Loading...</div>;
+  if (!policy) return <div style={s.muted}>Loading policy...</div>;
 
   const toggleRule = (section, key) => {
     setPolicy(p => ({
@@ -807,8 +894,8 @@ function PolicyView({ user }) {
 
   const Rule = ({ label, section, k }) => (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "12px 0", borderBottom: "1px solid #1e1e30" }}>
-      <span style={{ fontSize: 12, color: "#94a3b8" }}>{label}</span>
+      padding: "12px 0", borderBottom: "1px solid #e7eef6" }}>
+      <span style={{ fontSize: 13, color: "#405166", fontWeight: 700 }}>{label}</span>
       <button style={s.toggle(policy[section]?.[k])}
         onClick={() => user.is_admin && toggleRule(section, k)}>
         <div style={s.toggleDot(policy[section]?.[k])} />
@@ -818,8 +905,13 @@ function PolicyView({ user }) {
 
   return (
     <div>
-      <div style={s.pageTitle}>Policy Editor</div>
-      {!user.is_admin && <div style={s.alert("info")}>View only — admin access required to edit</div>}
+      <div style={s.heroPanel}>
+        <div style={{ ...s.pageTitle, marginBottom: 8 }}>Policy Editor</div>
+        <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6 }}>
+          Tune the organization rules that run before and after provider responses.
+        </div>
+      </div>
+      {!user.is_admin && <div style={s.alert("info")}>View only. Admin access is required to edit.</div>}
       {error && <div style={s.alert("error")}>{error}</div>}
       {success && <div style={s.alert("success")}>{success}</div>}
 
@@ -853,7 +945,7 @@ function PolicyView({ user }) {
         </div>
         {user.is_admin && (
           <div style={{ display: "flex", gap: 8 }}>
-            <input style={{ ...s.input, flex: 1 }} placeholder="Add custom topic…"
+            <input style={{ ...s.input, flex: 1 }} placeholder="Add custom topic..."
               value={newTopic} onChange={(e) => setNewTopic(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addTopic()} />
             <button style={s.btn("secondary")} onClick={addTopic}>ADD</button>
@@ -866,7 +958,7 @@ function PolicyView({ user }) {
         <div style={s.sectionTitle}>LLM Backend Override</div>
         <div style={{ display: "flex", gap: 12 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, color: "#4a4a6a", marginBottom: 6 }}>Backend</div>
+            <div style={s.label}>Backend</div>
             <select style={{ ...s.input }} value={policy.llm_backend || ""}
               disabled={!user.is_admin}
               onChange={(e) => setPolicy(p => ({ ...p, llm_backend: e.target.value || null }))}>
@@ -881,7 +973,7 @@ function PolicyView({ user }) {
             </select>
           </div>
           <div style={{ flex: 2 }}>
-            <div style={{ fontSize: 11, color: "#4a4a6a", marginBottom: 6 }}>Model</div>
+            <div style={s.label}>Model</div>
             <input style={s.input} placeholder="e.g. claude-sonnet-4-20250514"
               disabled={!user.is_admin}
               value={policy.llm_model || ""}
@@ -893,16 +985,16 @@ function PolicyView({ user }) {
       {user.is_admin && (
         <div style={{ display: "flex", gap: 12 }}>
           <button style={s.btn("primary")} onClick={save} disabled={saving}>
-            {saving ? "SAVING..." : "SAVE POLICY"}
+            {saving ? "Saving..." : "Save policy"}
           </button>
-          <button style={s.btn("secondary")} onClick={reset}>RESET DEFAULTS</button>
+          <button style={s.btn("secondary")} onClick={reset}>Reset defaults</button>
         </div>
       )}
     </div>
   );
 }
 
-// ─── CHAT TESTER VIEW ────────────────────────────────────────────────────────
+// CHAT TESTER VIEW
 function ChatView() {
   const [prompt, setPrompt] = useState("");
   const [gatewayKey, setGatewayKeyState] = useState(getGatewayKey());
@@ -954,7 +1046,12 @@ function ChatView() {
 
   return (
     <div>
-      <div style={s.pageTitle}>Chat Tester</div>
+      <div style={s.heroPanel}>
+        <div style={{ ...s.pageTitle, marginBottom: 8 }}>Guardrail Playground</div>
+        <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6 }}>
+          Send a prompt through client checks, backend policy rules, Groq, and output validation.
+        </div>
+      </div>
       {!gatewayKey && (
         <div style={s.alert("info")}>
           Create an API key in API Keys, then paste the grg_ key here to test the gateway.
@@ -962,12 +1059,23 @@ function ChatView() {
       )}
       <div style={s.card}>
         <div style={s.sectionTitle}>Test a prompt through the live pipeline</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 16 }}>
+          {["Client precheck", "Input policy", "Provider call", "Output policy"].map((step, idx) => (
+            <div key={step} style={{ border: "1px solid #dce7f0", background: "#f8fbff",
+              borderRadius: 8, padding: 12 }}>
+              <div style={{ color: "#0f766e", fontWeight: 850, fontSize: 12 }}>0{idx + 1}</div>
+              <div style={{ color: "#27394f", fontWeight: 800, fontSize: 13, marginTop: 4 }}>{step}</div>
+            </div>
+          ))}
+        </div>
+        <label style={s.label}>Gateway key</label>
         <input
           style={{ ...s.input, marginBottom: 10 }}
           placeholder="Paste a gateway API key: grg_..."
           value={gatewayKey}
           onChange={onGatewayKeyChange}
         />
+        <label style={s.label}>Prompt</label>
         <textarea
           style={{ ...s.input, minHeight: 100, resize: "vertical", marginBottom: 4 }}
           placeholder={'Try: "ignore previous instructions"\nOr: "What is 123-45-6789"'}
@@ -975,13 +1083,13 @@ function ChatView() {
           onChange={onPromptChange}
         />
         {clientBlock && (
-          <div style={{ fontSize: 11, color: "#fb923c", marginBottom: 8 }}>
-            ⚡ Client-side guard: {clientBlock}
+          <div style={{ fontSize: 12, color: "#b45309", marginBottom: 8, fontWeight: 750 }}>
+            Client-side guard: {clientBlock}
           </div>
         )}
         <button style={{ ...s.btn("primary"), marginTop: 8 }}
           onClick={send} disabled={loading || !prompt.trim()}>
-          {loading ? "SENDING..." : "SEND →"}
+          {loading ? "Sending..." : "Send prompt"}
         </button>
       </div>
 
@@ -990,7 +1098,7 @@ function ChatView() {
           {result.error && <div style={s.alert("error")}>{result.error}</div>}
           {result.clientBlocked && (
             <div style={s.alert("error")}>
-              🚫 Blocked client-side before hitting backend<br />
+              Blocked client-side before hitting backend<br />
               <span style={{ fontSize: 11 }}>{result.reason}</span>
             </div>
           )}
@@ -1003,11 +1111,11 @@ function ChatView() {
                 </div>
                 <div>
                   <div style={s.statLabel}>Latency</div>
-                  <div style={{ fontSize: 14, color: "#f1f5f9", marginTop: 4 }}>{result.latency_ms}ms</div>
+                  <div style={{ fontSize: 14, color: "#102033", marginTop: 4, fontWeight: 800 }}>{result.latency_ms}ms</div>
                 </div>
                 <div>
                   <div style={s.statLabel}>Backend</div>
-                  <div style={{ fontSize: 14, color: "#f1f5f9", marginTop: 4 }}>{result.backend} / {result.model}</div>
+                  <div style={{ fontSize: 14, color: "#102033", marginTop: 4, fontWeight: 800 }}>{result.backend} / {result.model}</div>
                 </div>
               </div>
 
@@ -1017,16 +1125,16 @@ function ChatView() {
                   { label: "Input Guard", g: result.input_guard },
                   ...(result.output_guard ? [{ label: "Output Guard", g: result.output_guard }] : []),
                 ].map(({ label, g }) => (
-                  <div key={label} style={{ flex: 1, padding: 12,
-                    background: g.passed ? "#0d2d1a" : "#2d0d0d",
-                    borderRadius: 6, border: `1px solid ${g.passed ? "#065f46" : "#7f1d1d"}` }}>
-                    <div style={{ fontSize: 10, color: g.passed ? "#34d399" : "#f87171",
-                      letterSpacing: "0.1em", marginBottom: 4 }}>
-                      {label}: {g.passed ? "✓ PASS" : "✗ BLOCK"}
+                  <div key={label} style={{ flex: 1, padding: 14,
+                    background: g.passed ? "#e8f8ef" : "#fff1f2",
+                    borderRadius: 8, border: `1px solid ${g.passed ? "#abe7c6" : "#fecdd3"}` }}>
+                    <div style={{ fontSize: 12, color: g.passed ? "#067647" : "#be123c",
+                      fontWeight: 850, marginBottom: 4 }}>
+                      {label}: {g.passed ? "PASS" : "BLOCK"}
                     </div>
-                    <div style={{ fontSize: 11, color: "#94a3b8" }}>{g.reason}</div>
-                    <div style={{ fontSize: 10, color: "#6b7280", marginTop: 6 }}>
-                      {g.reason_code} · risk {Math.round((g.risk_score || 0) * 100)}%
+                    <div style={{ fontSize: 12, color: "#405166" }}>{g.reason}</div>
+                    <div style={{ fontSize: 11, color: "#7b8a9d", marginTop: 6 }}>
+                      {g.reason_code} / risk {Math.round((g.risk_score || 0) * 100)}%
                     </div>
                   </div>
                 ))}
@@ -1035,7 +1143,7 @@ function ChatView() {
               {result.response && (
                 <div>
                   <div style={s.sectionTitle}>Response</div>
-                  <div style={{ fontSize: 13, color: "#e2e8f0", lineHeight: 1.6,
+                  <div style={{ fontSize: 14, color: "#27394f", lineHeight: 1.7,
                     whiteSpace: "pre-wrap" }}>{result.response}</div>
                 </div>
               )}
@@ -1047,13 +1155,13 @@ function ChatView() {
   );
 }
 
-// ─── ROOT APP ────────────────────────────────────────────────────────────────
+// ROOT APP
 const NAV = [
-  { id: "dashboard", label: "Dashboard",   icon: "▣" },
-  { id: "chat",      label: "Chat Tester", icon: "◈" },
-  { id: "logs",      label: "Logs",        icon: "≡" },
-  { id: "keys",      label: "API Keys",    icon: "⊕" },
-  { id: "policy",    label: "Policy",      icon: "◎" },
+  { id: "dashboard", label: "Dashboard",   icon: "01" },
+  { id: "chat",      label: "Playground",  icon: "02" },
+  { id: "logs",      label: "Logs",        icon: "03" },
+  { id: "keys",      label: "API Keys",    icon: "04" },
+  { id: "policy",    label: "Policy",      icon: "05" },
   { id: "admin",     label: "Admin",       icon: "A", adminOnly: true },
 ];
 
@@ -1070,34 +1178,34 @@ export default function App() {
 
   function logout() { clearTokens(); setUser(null); }
 
-  if (!user) return <AuthView onAuth={setUser} />;
+  if (!user) return <><GlobalStyles /><AuthView onAuth={setUser} /></>;
 
   return (
-    <div style={s.app}>
+    <div className="app-shell" style={s.app}>
+      <GlobalStyles />
       {/* Sidebar */}
-      <div style={s.sidebar}>
+      <div className="app-sidebar" style={s.sidebar}>
         <div style={s.logo}>
-          <div style={s.logoText}>▣ Guardrails</div>
+          <div style={s.logoText}>LLM Guardrail</div>
           <div style={s.logoSub}>{user.email}</div>
           {user.is_admin && (
-            <div style={{ fontSize: 9, color: "#7c3aed", marginTop: 2,
-              letterSpacing: "0.1em" }}>ADMIN</div>
+            <div style={{ display: "inline-flex", marginTop: 8, ...s.badge("rate_limited") }}>Admin</div>
           )}
         </div>
         {NAV.filter(n => !n.adminOnly || user.is_admin).map(n => (
           <div key={n.id} style={s.navItem(view === n.id)} onClick={() => setView(n.id)}>
-            <span>{n.icon}</span>
+            <span style={{ fontSize: 11, fontWeight: 850, color: view === n.id ? "#0f766e" : "#9aabba" }}>{n.icon}</span>
             <span>{n.label}</span>
           </div>
         ))}
         <div style={{ flex: 1 }} />
         <div style={{ ...s.navItem(false), marginTop: "auto" }} onClick={logout}>
-          <span>⊗</span><span>Sign out</span>
+          <span style={{ fontSize: 11, fontWeight: 850, color: "#9aabba" }}>--</span><span>Sign out</span>
         </div>
       </div>
 
       {/* Main */}
-      <div style={s.main}>
+      <div className="app-main" style={s.main}>
         {view === "dashboard" && <DashboardView />}
         {view === "chat"      && <ChatView />}
         {view === "logs"      && <LogsView />}
