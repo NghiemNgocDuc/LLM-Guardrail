@@ -178,7 +178,7 @@ DEMO_RATE_LIMIT_RPD=25
 DEMO_IP_RATE_LIMIT_RPM=20
 DEMO_IP_RATE_LIMIT_RPD=100
 DEMO_MAX_PROMPT_CHARS=2000
-DEMO_MAX_OUTPUT_TOKENS=256
+DEMO_MAX_OUTPUT_TOKENS=1024
 ```
 
 Demo mode adds stricter per-API-key and per-IP limits on top of organization limits, rejects oversized prompts, and rejects requests asking for too many output tokens before calling the LLM. To run a fixed shared demo account, create the account yourself and set:

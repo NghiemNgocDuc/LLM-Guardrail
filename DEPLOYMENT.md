@@ -48,6 +48,25 @@ RATE_LIMIT_REDIS_URL=rediss://:<password>@<host>:<port>
 
 Use the TLS `rediss://` URL when Upstash provides one. The app accepts both `redis://` and `rediss://`.
 
+## Email (signup confirmation and password reset)
+
+Configure SMTP so new users must confirm email before login.
+
+```env
+PUBLIC_APP_URL=https://your-render-service.onrender.com
+REQUIRE_EMAIL_VERIFICATION=true
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=587
+SMTP_USER=resend
+SMTP_PASSWORD=<your-smtp-password>
+SMTP_FROM=LLM Guardrail <onboarding@yourdomain.com>
+SMTP_USE_TLS=true
+```
+
+Works with Resend, SendGrid, Gmail SMTP, Amazon SES, and similar providers.
+
+In development, if SMTP is not configured, verification is skipped and links are printed in API logs.
+
 ## Required Runtime Env Vars
 
 Set these in Render or Koyeb, not in GitHub:
@@ -56,8 +75,13 @@ Set these in Render or Koyeb, not in GitHub:
 APP_ENV=production
 DEBUG=false
 SECRET_KEY=<long-random-secret>
+PUBLIC_APP_URL=https://your-render-service.onrender.com
 DATABASE_URL=postgresql+asyncpg://...
 RATE_LIMIT_REDIS_URL=redis://...
+SMTP_HOST=...
+SMTP_FROM=...
+SMTP_USER=...
+SMTP_PASSWORD=...
 
 DEFAULT_LLM_BACKEND=groq
 DEFAULT_MODEL=openai/gpt-oss-20b
@@ -111,7 +135,7 @@ DEMO_RATE_LIMIT_RPD=25
 DEMO_IP_RATE_LIMIT_RPM=20
 DEMO_IP_RATE_LIMIT_RPD=100
 DEMO_MAX_PROMPT_CHARS=2000
-DEMO_MAX_OUTPUT_TOKENS=256
+DEMO_MAX_OUTPUT_TOKENS=1024
 ```
 
 For a fixed shared demo account:
@@ -126,7 +150,7 @@ Suggested public-demo starting point:
 - `DEMO_RATE_LIMIT_RPD=20`
 - `DEMO_IP_RATE_LIMIT_RPM=10`
 - `DEMO_IP_RATE_LIMIT_RPD=50`
-- `DEMO_MAX_OUTPUT_TOKENS=128`
+- `DEMO_MAX_OUTPUT_TOKENS=1024` (lower to save Groq quota on a public demo)
 
 Raise those only after watching usage and cost.
 

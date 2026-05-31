@@ -26,6 +26,19 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
+    # Public URL of the dashboard (used in email links), e.g. https://your-app.onrender.com
+    PUBLIC_APP_URL: str = "http://localhost:8080"
+    REQUIRE_EMAIL_VERIFICATION: bool = True
+    EMAIL_VERIFICATION_EXPIRE_HOURS: int = 24
+    PASSWORD_RESET_EXPIRE_HOURS: int = 1
+
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+    SMTP_USE_TLS: bool = True
+
     DEFAULT_RATE_LIMIT_RPM: int = 60
     DEFAULT_RATE_LIMIT_RPD: int = 1000
     RATE_LIMIT_REDIS_URL: str = ""
@@ -37,7 +50,7 @@ class Settings(BaseSettings):
     DEMO_IP_RATE_LIMIT_RPM: int = 20
     DEMO_IP_RATE_LIMIT_RPD: int = 100
     DEMO_MAX_PROMPT_CHARS: int = 2_000
-    DEMO_MAX_OUTPUT_TOKENS: int = 256
+    DEMO_MAX_OUTPUT_TOKENS: int = 1024
 
     OPENAI_API_KEY: str = ""
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
@@ -59,6 +72,10 @@ class Settings(BaseSettings):
             return False
         return value
 
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.SMTP_HOST and self.SMTP_FROM)
+
     @model_validator(mode="after")
     def normalize_database_url(self) -> "Settings":
         if not self.DATABASE_URL and self.POSTGRES_USER and self.POSTGRES_PASSWORD and self.POSTGRES_DB:
@@ -70,6 +87,11 @@ class Settings(BaseSettings):
             self.DATABASE_URL = "postgresql+asyncpg://" + self.DATABASE_URL[len("postgres://") :]
         elif self.DATABASE_URL.startswith("postgresql://") and "+asyncpg" not in self.DATABASE_URL:
             self.DATABASE_URL = "postgresql+asyncpg://" + self.DATABASE_URL[len("postgresql://") :]
+
+        # Dev without SMTP: skip verification gate and log links from the email service.
+        if self.APP_ENV != "production" and not self.smtp_configured:
+            self.REQUIRE_EMAIL_VERIFICATION = False
+
         return self
 
     @model_validator(mode="after")
@@ -93,6 +115,12 @@ class Settings(BaseSettings):
             raise ValueError("RATE_LIMIT_REDIS_URL must be configured in production")
         if self.DEFAULT_LLM_BACKEND == "groq" and not self.GROQ_API_KEY:
             raise ValueError("GROQ_API_KEY must be configured when DEFAULT_LLM_BACKEND=groq")
+        if self.REQUIRE_EMAIL_VERIFICATION and not self.smtp_configured:
+            raise ValueError(
+                "SMTP_HOST and SMTP_FROM must be set when REQUIRE_EMAIL_VERIFICATION is enabled in production"
+            )
+        if not self.PUBLIC_APP_URL.startswith("http"):
+            raise ValueError("PUBLIC_APP_URL must be a full URL (used in verification and reset emails)")
         return self
 
 
