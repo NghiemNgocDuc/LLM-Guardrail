@@ -23,6 +23,11 @@ def get_engine():
             echo=settings.DEBUG,
             pool_size=10,
             max_overflow=20,
+            # asyncpg may use prepared statement caching which is incompatible
+            # with some TCP proxies / PgBouncer in transaction/statement mode.
+            # Disable asyncpg's statement cache to avoid
+            # asyncpg.exceptions.DuplicatePreparedStatementError.
+            connect_args={"statement_cache_size": 0},
         )
     return engine
 
