@@ -135,6 +135,22 @@ def _print_rejection(finding, *, github_actions: bool, path: Path | None) -> Non
         )
 
 
+def _parse_batch_command(raw: str) -> str | None:
+    cmd = raw.strip().lower().replace("  ", " ")
+    if cmd in (
+        "always allow",
+        "always allow all",
+        "allow all",
+        "allow always",
+        "a",
+        "aa",
+    ):
+        return "always_all"
+    if cmd in ("run once", "run once all", "allow once", "ro"):
+        return "run_once_all"
+    return None
+
+
 def _interactive_resolve(
     root: Path,
     blocking: list,
@@ -143,16 +159,39 @@ def _interactive_resolve(
     if os.environ.get("SKILL_GUARD_NON_INTERACTIVE") == "1":
         return overrides
 
-    print("\nSkill Guard: agent action blocked until you choose for each issue:")
-    print("  [R] Run once     — allow this time only, agent may continue")
-    print("  [A] Always allow — never block this rule again (saved to .cursor/skill-guard-overrides.json)")
-    print("  [E] Reject       — keep blocked; fix the skill or cancel push\n")
+    print(f"\nSkill Guard: {len(blocking)} issue(s) blocking.")
+    print('  Quick (chat-style): type "always allow" or "always allow all" once — no per-issue prompts.')
+    print("  Or press Enter to choose per issue: [R] run once  [A] always allow  [E] reject\n")
+
+    batch = input('Command ("always allow all" / Enter): ').strip()
+    action = _parse_batch_command(batch)
+    if action == "always_all":
+        for finding in blocking:
+            overrides.allow_always(finding)
+        _save_overrides(root, overrides)
+        print(f"  → Always allowed all {len(blocking)} issue(s); saved to {_overrides_path(root)}.\n")
+        return overrides
+    if action == "run_once_all":
+        for finding in blocking:
+            overrides.allow_once(finding)
+        print(f"  → Run once: allowed all {len(blocking)} issue(s) for this run only.\n")
+        return overrides
 
     for idx, finding in enumerate(blocking, start=1):
         print(f"--- Issue {idx}/{len(blocking)} ({finding_key(finding)}) ---")
         _print_rejection(finding, github_actions=False, path=None)
         while True:
-            choice = input("Choice [R/A/E]: ").strip().lower()
+            choice = input("Choice [R/A/E] or phrase: ").strip().lower()
+            batch_choice = _parse_batch_command(choice)
+            if batch_choice == "always_all":
+                overrides.allow_always(finding)
+                _save_overrides(root, overrides)
+                print(f"  → Always allowed; saved to {_overrides_path(root)}.\n")
+                break
+            if batch_choice == "run_once_all":
+                overrides.allow_once(finding)
+                print("  → Allowed for this run only.\n")
+                break
             if choice in ("r", "run", "run once", "1"):
                 overrides.allow_once(finding)
                 print("  → Allowed for this run only.\n")

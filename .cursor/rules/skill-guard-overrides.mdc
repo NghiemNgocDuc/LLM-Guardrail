@@ -1,0 +1,39 @@
+---
+description: When Skill Guard blocks an agent or git push, apply overrides from chat — do not send the user to the web dashboard.
+globs:
+  - .cursor/skills/**
+  - .cursor/skill-guard-overrides.json
+  - scripts/scan_agent_skills.py
+  - scripts/skill_guard_allow.py
+alwaysApply: false
+---
+
+# Skill Guard — overrides in chat
+
+When the user says **always allow**, **always allow all**, **allow all**, or names a rule (e.g. **always allow database_url**):
+
+1. Prefer updating `.cursor/skill-guard-overrides.json` (merge, do not wipe existing keys):
+   - `always_allow_reason_codes` — add the `reason_code` from the block message
+   - `always_allow_keys` — optional; format `reason_code:line_number`
+
+2. Or run from repo root:
+   ```bash
+   python scripts/skill_guard_allow.py always --scan path/to/SKILL.md
+   python scripts/skill_guard_allow.py always --reason database_url
+   ```
+
+3. For **run once** (this push/scan only): use `session_allow_keys` in overrides for CLI, or tell the user to type `run once` in the terminal when the pre-push hook prompts.
+
+4. Do **not** ask the user to click Run once / Always allow buttons in the web UI unless they explicitly want the dashboard.
+
+5. After saving overrides, re-run the scan or confirm `git push` can proceed.
+
+Example overrides file:
+
+```json
+{
+  "session_allow_keys": [],
+  "always_allow_keys": [],
+  "always_allow_reason_codes": ["database_url", "drop_sql"]
+}
+```

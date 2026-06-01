@@ -70,7 +70,7 @@ class SkillScanDecision:
         return (
             f"Agent skill blocked: {n} issue(s) — "
             f"{', '.join(kinds)}. "
-            "Choose Run once, Always allow, or Reject for each item below."
+            'Type "always allow" or "always allow all" in chat (or run scripts/skill_guard_allow.py).'
         )
 
 

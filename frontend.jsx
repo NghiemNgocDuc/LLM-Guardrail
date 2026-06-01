@@ -72,8 +72,8 @@ const PII_PATTERNS = [
 const INJECTION_KW = ["ignore previous instructions", "disregard your system prompt", "forget everything"];
 const JAILBREAK_KW = ["DAN mode", "developer mode", "pretend you have no restrictions"];
 
-const USER_PROMPT = "Can you explain what this platform does?";
-const AI_RESPONSE = "I protect LLM traffic and agent skills — blocking leaked credentials, PII, and internal details before they reach models or coding agents. You get a gateway for live prompts plus a scanner for skill files and instructions.";
+const USER_PROMPT = "What does AI Guardrails protect?";
+const AI_RESPONSE = "I secure AI workflows end to end: live model traffic, Cursor skills, MCP instructions, and agent system prompts. I block leaked credentials, PII, destructive shell/SQL, and jailbreaks before they reach providers or coding agents — with one dashboard and git hooks you control from chat.";
 
 const SKILL_SAMPLE_UNSAFE = `---
 name: prod-database-helper
@@ -193,8 +193,50 @@ function applySkillOverrides(scan, overrides, sessionAllow) {
     blocked: !agent_may_continue,
     rejection_summary: agent_may_continue
       ? null
-      : `Agent blocked: ${blocking.length} issue(s). Choose Run once, Always allow, or Reject for each item.`,
+      : `Agent blocked: ${blocking.length} issue(s). Type "always allow" or "always allow all" in the command box (or say it in Cursor chat).`,
   };
+}
+
+/** Parse chat-style override commands (web Skill Guard + same phrases in Cursor). */
+function parseSkillGuardCommand(raw, blocking) {
+  const cmd = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!cmd || !blocking?.length) return null;
+
+  if (
+    cmd === "always allow" ||
+    cmd === "always allow all" ||
+    cmd === "allow all" ||
+    cmd === "allow always" ||
+    cmd === "a" ||
+    cmd === "aa"
+  ) {
+    return { action: "always_all" };
+  }
+  const alwaysOne = cmd.match(/^(?:always allow|allow always|allow)\s+([a-z0-9_]+)$/);
+  if (alwaysOne) {
+    return { action: "always_reason", reason: alwaysOne[1] };
+  }
+  if (cmd === "run once" || cmd === "run once all" || cmd === "allow once" || cmd === "ro") {
+    return { action: "run_once_all" };
+  }
+  const runOne = cmd.match(/^run once\s+([a-z0-9_]+)$/);
+  if (runOne) {
+    return { action: "run_once_reason", reason: runOne[1] };
+  }
+  return { action: "unknown", cmd };
+}
+
+function applyAlwaysAllowFindings(findings, overrides, setOverrides) {
+  if (!findings.length) return overrides;
+  const next = { ...overrides };
+  for (const f of findings) {
+    const key = skillFindingKey(f);
+    next.always_allow_keys = [...new Set([...next.always_allow_keys, key])];
+    next.always_allow_reason_codes = [...new Set([...next.always_allow_reason_codes, f.reason_code])];
+  }
+  saveSkillOverrides(next);
+  setOverrides(next);
+  return next;
 }
 
 function clientSkillScan(content) {
@@ -394,17 +436,17 @@ function AuthTerminalIntro() {
 
       {responseDone && (
         <div style={{ marginTop: 28 }} className="auth-intro-copy">
-          <div style={authStyles.badge}>// live_gateway_active</div>
-          <h1 style={authStyles.headline}>Ship LLM & agent workflows safely.</h1>
+          <div style={authStyles.badge}>// ai_guardrails_active</div>
+          <h1 style={authStyles.headline}>Secure models, agents, and skills in one place.</h1>
         </div>
       )}
 
       {showFeatures && (
         <div style={{ ...authStyles.featureGrid, animation: "authFadeIn 0.5s ease forwards", marginTop: 20 }}>
           {[
-            ["LLM Gateway", "Blocks PII & injections"],
-            ["Skill Guard", "Scans agent instructions"],
-            ["Audit Log", "Tracks tokens & latency"],
+            ["LLM Gateway", "PII, jailbreaks, injections"],
+            ["Skill Guard", "Secrets & destructive cmds"],
+            ["Git & CI", "Pre-push + GitHub Actions"],
           ].map(([title, desc]) => (
             <div key={title} style={authStyles.featureCard}>
               <div style={{...authStyles.featureTitle, fontFamily: "inherit"}}>{title}</div>
@@ -1033,9 +1075,9 @@ function AuthView({ onAuth }) {
         <AuthTerminalIntro />
         <div style={authStyles.formShell}>
         <div style={{ marginBottom: 18 }}>
-          <div style={{ ...s.logoText, fontSize: 24 }}>LLM Guardrail</div>
+          <div style={{ ...s.logoText, fontSize: 24 }}>AI Guardrails</div>
           <div style={{ ...s.logoSub, fontSize: 13 }}>
-            Sign in to manage your workspace
+            LLM gateway, agent skills, and policy — one workspace
           </div>
         </div>
         <div style={authStyles.formCard}>
@@ -1188,7 +1230,7 @@ function DashboardView() {
           <div>
             <div style={{ ...s.pageTitle, marginBottom: 8 }}>Security Operations</div>
             <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6, maxWidth: 720 }}>
-              Live view of LLM gateway traffic plus tools to keep agent skills free of secrets and internal data.
+              Live view of model traffic, skill scans, and policy — gateway plus agent-context protection in one console.
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -2064,6 +2106,8 @@ function SkillGuardView() {
   const [error, setError] = useState("");
   const [overrides, setOverrides] = useState(() => loadSkillOverrides());
   const [sessionAllow, setSessionAllow] = useState([]);
+  const [guardCmd, setGuardCmd] = useState("");
+  const [guardCmdMsg, setGuardCmdMsg] = useState("");
 
   useEffect(() => {
     setPreview(clientSkillScan(content));
@@ -2096,20 +2140,34 @@ function SkillGuardView() {
     }
   }
 
-  function onRunOnce(finding) {
-    const key = skillFindingKey(finding);
-    setSessionAllow((prev) => (prev.includes(key) ? prev : [...prev, key]));
-  }
+  function submitGuardCommand(e) {
+    e?.preventDefault?.();
+    const blocking = effective?.blocking || [];
+    const parsed = parseSkillGuardCommand(guardCmd, blocking);
+    if (!parsed) return;
+    if (parsed.action === "unknown") {
+      setGuardCmdMsg('Try: "always allow", "always allow all", "always allow database_url", or "run once"');
+      return;
+    }
 
-  function onAlwaysAllow(finding) {
-    const key = skillFindingKey(finding);
-    const next = {
-      ...overrides,
-      always_allow_keys: [...new Set([...overrides.always_allow_keys, key])],
-      always_allow_reason_codes: [...new Set([...overrides.always_allow_reason_codes, finding.reason_code])],
-    };
-    saveSkillOverrides(next);
-    setOverrides(next);
+    let targets = blocking;
+    if (parsed.action === "always_reason" || parsed.action === "run_once_reason") {
+      targets = blocking.filter((f) => f.reason_code === parsed.reason);
+      if (!targets.length) {
+        setGuardCmdMsg(`No blocking issue with reason code "${parsed.reason}". Codes: ${[...new Set(blocking.map((f) => f.reason_code))].join(", ")}`);
+        return;
+      }
+    }
+
+    if (parsed.action === "always_all" || parsed.action === "always_reason") {
+      applyAlwaysAllowFindings(targets, overrides, setOverrides);
+      setGuardCmdMsg(`Always allowed ${targets.length} issue(s) — saved in this browser. For git push, say the same in Cursor chat or run: python scripts/skill_guard_allow.py always --scan .cursor/skills/...`);
+    } else {
+      const keys = targets.map(skillFindingKey);
+      setSessionAllow((prev) => [...new Set([...prev, ...keys])]);
+      setGuardCmdMsg(`Run once: allowed ${targets.length} issue(s) for this scan only.`);
+    }
+    setGuardCmd("");
   }
 
   const severityColor = { critical: "#be123c", high: "#c2410c", medium: "#b45309" };
@@ -2227,12 +2285,39 @@ function SkillGuardView() {
                 <div style={{ marginTop: 8, fontWeight: 500 }}>
                   {result?.rejection_summary || effective.rejection_summary}
                 </div>
-                <div style={{ marginTop: 8, fontSize: 13 }}>
-                  For each issue choose: <strong>Run once</strong> (allow this time),
-                  <strong> Always allow</strong> (skip this rule in future scans),
-                  or <strong> Reject</strong> (keep blocked until you fix the skill).
-                </div>
               </div>
+
+              <form onSubmit={submitGuardCommand} style={{
+                marginTop: 14, padding: 14, borderRadius: 10,
+                border: "1px solid #c7d8e8", background: "#f8fbff",
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#0f5f7a", marginBottom: 8 }}>
+                  Override in chat (no per-issue buttons)
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <input
+                    style={{ ...s.input, flex: "1 1 240px", marginBottom: 0, fontFamily: "inherit" }}
+                    value={guardCmd}
+                    onChange={(e) => { setGuardCmd(e.target.value); setGuardCmdMsg(""); }}
+                    placeholder='Type "always allow" or "always allow all" and Enter'
+                    aria-label="Skill guard override command"
+                  />
+                  <button type="submit" style={s.btn("primary")}>Apply</button>
+                </div>
+                <div style={{ fontSize: 11, color: "#607086", marginTop: 8, lineHeight: 1.5 }}>
+                  Same phrases work in <strong>Cursor chat</strong> — the agent updates{" "}
+                  <code style={{ fontSize: 10 }}>.cursor/skill-guard-overrides.json</code> or runs{" "}
+                  <code style={{ fontSize: 10 }}>python scripts/skill_guard_allow.py always --scan …</code>.
+                  One rule: <code style={{ fontSize: 10 }}>always allow database_url</code>.
+                  Temporary: <code style={{ fontSize: 10 }}>run once</code>.
+                </div>
+                {guardCmdMsg && (
+                  <div style={{ ...s.alert(guardCmdMsg.startsWith("Always") || guardCmdMsg.startsWith("Run") ? "success" : "error"), marginTop: 10, marginBottom: 0 }}>
+                    {guardCmdMsg}
+                  </div>
+                )}
+              </form>
+
               {effective.blocking.map((f, i) => (
                 <div key={skillFindingKey(f) + i} style={{
                   marginTop: 12, padding: 14, borderRadius: 8,
@@ -2243,7 +2328,7 @@ function SkillGuardView() {
                       [{f.severity}] {f.check}
                       {f.line_number ? ` · line ${f.line_number}` : ""}
                     </div>
-                    <code style={{ fontSize: 11, color: "#7b8a9d" }}>{skillFindingKey(f)}</code>
+                    <code style={{ fontSize: 11, color: "#7b8a9d" }}>{f.reason_code}</code>
                   </div>
                   <div style={{ fontSize: 13, color: "#405166", marginTop: 8, lineHeight: 1.5 }}>
                     {f.explanation || explainSkillFinding(f)}
@@ -2251,17 +2336,6 @@ function SkillGuardView() {
                   <div style={{ fontSize: 12, fontFamily: "monospace", color: "#607086", marginTop: 8,
                     padding: 8, background: "#f8fafc", borderRadius: 6 }}>
                     {f.snippet}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                    <button type="button" style={s.btn("primary")} onClick={() => onRunOnce(f)}>
-                      Run once
-                    </button>
-                    <button type="button" style={s.btn("secondary")} onClick={() => onAlwaysAllow(f)}>
-                      Always allow
-                    </button>
-                    <span style={{ fontSize: 12, color: "#7b8a9d", alignSelf: "center" }}>
-                      Reject = leave blocked (fix skill text)
-                    </span>
                   </div>
                 </div>
               ))}
@@ -2305,9 +2379,8 @@ function SkillGuardView() {
 .\\scripts\\install-git-hooks.ps1`}
         </pre>
         <div style={{ color: "#607086", fontSize: 12, marginTop: 8 }}>
-          On push, the hook explains each block and prompts:
-          <strong> Run once</strong>, <strong>Always allow</strong>, or <strong>Reject</strong>
-          (saved rules go to <code style={{ fontSize: 11 }}>.cursor/skill-guard-overrides.json</code>).
+          On push, type <strong>always allow</strong> or <strong>always allow all</strong> once (no per-issue keys).
+          Rules save to <code style={{ fontSize: 11 }}>.cursor/skill-guard-overrides.json</code>.
         </div>
       </div>
 
@@ -2363,7 +2436,7 @@ export default function App() {
       <div className="app-sidebar" style={s.sidebar}>
         <div style={s.logo}>
           <div style={s.logoText}>AI Guardrails</div>
-          <div style={{ fontSize: 11, color: "#7b8a9d", marginTop: 4 }}>LLM gateway · Agent skills</div>
+          <div style={{ fontSize: 11, color: "#7b8a9d", marginTop: 4 }}>Models · agents · skills</div>
           <div style={s.logoSub}>{user.email}</div>
           {user.is_admin && (
             <div style={{ display: "inline-flex", marginTop: 8, ...s.badge("rate_limited") }}>Admin</div>
