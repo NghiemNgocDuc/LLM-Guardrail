@@ -7,8 +7,15 @@ from pathlib import Path
 from fastapi import APIRouter
 
 from app.deps import CurrentUser
-from app.schemas import SkillFindingOut, SkillOverridesIn, SkillScanRequest, SkillScanResponse
+from app.schemas import (
+    SkillAgentDecisionIn,
+    SkillAgentPacketOut,
+    SkillFindingOut,
+    SkillScanRequest,
+    SkillScanResponse,
+)
 from guardrails.skill import SkillFinding, SkillGuardrail
+from guardrails.skill_agent_packet import build_agent_packet, format_packet_for_chat
 from guardrails.skill_messages import explain_finding
 from guardrails.skill_overrides import SkillOverrides, apply_overrides, finding_key
 
@@ -65,7 +72,38 @@ async def scan_skill(body: SkillScanRequest, _user: CurrentUser):
         filename=body.filename,
         blocked=decision.blocked,
         agent_may_continue=decision.safe,
+        agent_status="paused" if decision.blocked else "ok",
         rejection_summary=decision.rejection_summary,
         blocking_findings=blocking_out,
         overridden_findings=overridden_out,
     )
+
+
+def _findings_for_packet(body: SkillAgentDecisionIn) -> list[dict]:
+    out: list[dict] = []
+    codes = body.reason_codes or []
+    for i, key in enumerate(body.finding_keys):
+        code = codes[i] if i < len(codes) else (key.split(":")[0] if ":" in key else key)
+        line = 0
+        if ":" in key:
+            tail = key.rsplit(":", 1)[-1]
+            if tail.isdigit():
+                line = int(tail)
+        out.append({"finding_key": key, "reason_code": code, "line_number": line})
+    if not out and codes:
+        for code in codes:
+            out.append({"finding_key": f"{code}:0", "reason_code": code, "line_number": 0})
+    return out
+
+
+@router.post("/agent-packet", response_model=SkillAgentPacketOut)
+async def format_agent_packet(body: SkillAgentDecisionIn, _user: CurrentUser):
+    findings = _findings_for_packet(body)
+    packet = build_agent_packet(
+        body.action,
+        findings=findings,
+        scope=body.scope,
+        user_message=body.user_message,
+        filename=body.filename,
+    )
+    return SkillAgentPacketOut(packet=packet, chat_markdown=format_packet_for_chat(packet))

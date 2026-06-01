@@ -96,6 +96,45 @@ class User(Base):
     auth_tokens: Mapped[list["AuthToken"]] = relationship(
         "AuthToken", back_populates="user", cascade="all, delete-orphan"
     )
+    token_wallet: Mapped["TokenWallet | None"] = relationship(
+        "TokenWallet", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+    token_purchases: Mapped[list["TokenPurchase"]] = relationship(
+        "TokenPurchase", back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Token billing (gateway usage)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TokenWallet(Base):
+    __tablename__ = "token_wallets"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    balance_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    tokens_used_lifetime: Mapped[int] = mapped_column(BigInteger, default=0)
+    tokens_purchased_lifetime: Mapped[int] = mapped_column(BigInteger, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    user: Mapped["User"] = relationship("User", back_populates="token_wallet")
+
+
+class TokenPurchase(Base):
+    __tablename__ = "token_purchases"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    plan_slug: Mapped[str] = mapped_column(String(32), nullable=False)
+    tokens_granted: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="usd")
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | completed | failed
+    stripe_checkout_session_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped["User"] = relationship("User", back_populates="token_purchases")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

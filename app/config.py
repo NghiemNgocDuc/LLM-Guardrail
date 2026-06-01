@@ -52,6 +52,18 @@ class Settings(BaseSettings):
     DEMO_MAX_PROMPT_CHARS: int = 2_000
     DEMO_MAX_OUTPUT_TOKENS: int = 2048
 
+    # Token billing (gateway usage = input + output tokens per /chat request)
+    BILLING_ENABLED: bool = True
+    FREE_SIGNUP_TOKENS: int = 10_000
+
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_PUBLISHABLE_KEY: str = ""
+    STRIPE_PRICE_STARTER: str = ""
+    STRIPE_PRICE_GROWTH: str = ""
+    STRIPE_PRICE_SCALE: str = ""
+    STRIPE_PRICE_ENTERPRISE: str = ""
+
     OPENAI_API_KEY: str = ""
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     ANTHROPIC_API_KEY: str = ""

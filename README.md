@@ -203,6 +203,40 @@ For model changes, generate a migration locally:
 alembic revision --autogenerate -m "describe change"
 ```
 
+## Token billing (publish for paying users)
+
+Gateway `/chat` usage is metered in **tokens** (LLM input + output). Each new user gets a free wallet (`FREE_SIGNUP_TOKENS`, default 10,000). When balance is low, the API returns **402** with a link to buy more.
+
+| Plan | Tokens | Price (USD) |
+| --- | --- | --- |
+| Starter | 500K | $9 |
+| Growth | 2M | $29 |
+| Scale | 10M | $99 |
+| Enterprise | 50M | $399 |
+
+Dashboard: **Billing** in the sidebar — balance, buy packs, purchase history.
+
+### Stripe setup
+
+1. Create a [Stripe](https://stripe.com) account and add to `.env`:
+
+```env
+BILLING_ENABLED=true
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_PUBLISHABLE_KEY=pk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+```
+
+2. Stripe Dashboard → **Webhooks** → add endpoint `https://YOUR_DOMAIN/billing/webhook` with event `checkout.session.completed`.
+
+3. Run migration: `alembic upgrade head` (adds `token_wallets` and `token_purchases`).
+
+4. Optional: create Products/Prices in Stripe and set `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_GROWTH`, etc.
+
+**Development:** without Stripe keys, **Buy tokens** still credits the pack instantly for local testing.
+
+Disable metering entirely: `BILLING_ENABLED=false`.
+
 ## Production Notes
 
 - Rotate any API keys that were exposed during development.

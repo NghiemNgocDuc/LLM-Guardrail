@@ -43,6 +43,7 @@ from app.services.auth_tokens import (
     create_auth_token,
 )
 from app.services.email import send_password_reset_email, send_verification_email
+from app.services.token_wallet import ensure_wallet
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -154,6 +155,8 @@ async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
     )
     db.add(user)
     await db.flush()
+
+    await ensure_wallet(db, user.id)
 
     await _issue_verification_email(db, user)
 

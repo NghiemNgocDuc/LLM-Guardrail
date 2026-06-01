@@ -27,6 +27,12 @@ from app.middleware.rate_limit import check_rate_limit
 from app.models import OrgPolicy, RequestLog
 from app.schemas import ChatRequest, ChatResponse, GuardrailResult
 from app.services.llm import call_llm
+from app.services.token_wallet import (
+    deduct_tokens,
+    ensure_wallet,
+    estimate_request_tokens,
+    require_balance,
+)
 from app.config import get_settings
 from guardrails.input import InputGuardrail
 from guardrails.output import OutputGuardrail
@@ -122,9 +128,17 @@ async def chat(
     rpm = (policy.rate_limit_rpm if policy and policy.rate_limit_rpm else None) or settings.DEFAULT_RATE_LIMIT_RPM
     rpd = (policy.rate_limit_rpd if policy and policy.rate_limit_rpd else None) or settings.DEFAULT_RATE_LIMIT_RPD
 
-    # ── 2. Rate limit ─────────────────────────────────────────────────────
     max_tokens = _effective_max_tokens(body)
     enforce_demo_payload_limits(body.prompt, max_tokens)
+
+    # ── 2. Token balance (billing) ────────────────────────────────────────
+    wallet = await require_balance(
+        db,
+        api_key.owner_id,
+        estimate_request_tokens(body.prompt, max_tokens),
+    )
+
+    # ── 3. Rate limit ─────────────────────────────────────────────────────
     try:
         await check_rate_limit(api_key.id, rpm, rpd)
         await enforce_demo_rate_limits(api_key.id, client_ip(request))
@@ -146,7 +160,7 @@ async def chat(
         await db.commit()
         raise
 
-    # ── 3. Input guardrail ────────────────────────────────────────────────
+    # ── 4. Input guardrail ────────────────────────────────────────────────
     in_guard = InputGuardrail(input_rules)
     in_result = in_guard.check(body.prompt)
 
@@ -165,6 +179,8 @@ async def chat(
             status="input_blocked", latency_ms=latency_ms,
             input_tokens=0, output_tokens=0,
         )
+        await db.commit()
+        bal = (await ensure_wallet(db, api_key.owner_id)).balance_tokens
         return ChatResponse(
             request_id=request_id,
             response=None,
@@ -179,9 +195,10 @@ async def chat(
             output_guard=None,
             latency_ms=latency_ms,
             model="—", backend="—",
+            tokens_remaining=bal if settings.BILLING_ENABLED else None,
         )
 
-    # ── 4. Call LLM ───────────────────────────────────────────────────────
+    # ── 5. Call LLM ───────────────────────────────────────────────────────
     try:
         llm_resp = await call_llm(
             prompt=body.prompt,
@@ -207,7 +224,7 @@ async def chat(
         )
         raise HTTPException(status_code=502, detail=f"LLM backend error: {e}")
 
-    # ── 5. Output guardrail ───────────────────────────────────────────────
+    # ── 6. Output guardrail ───────────────────────────────────────────────
     out_guard = OutputGuardrail(output_rules, compliance_rules, topic_policy)
     out_result = out_guard.check(llm_resp.text)
 
@@ -226,6 +243,11 @@ async def chat(
         status=status_str, latency_ms=latency_ms,
         input_tokens=llm_resp.input_tokens, output_tokens=llm_resp.output_tokens,
     )
+
+    used = llm_resp.input_tokens + llm_resp.output_tokens
+    await deduct_tokens(db, wallet, used)
+    await db.commit()
+    bal = wallet.balance_tokens
 
     return ChatResponse(
         request_id=request_id,
@@ -248,6 +270,7 @@ async def chat(
         latency_ms=latency_ms,
         model=llm_resp.model,
         backend=llm_resp.backend,
+        tokens_remaining=bal if settings.BILLING_ENABLED else None,
     )
 
 

@@ -39,6 +39,7 @@ function clearTokens() {
 function formatApiError(detail) {
   if (!detail) return "Request failed";
   if (typeof detail === "string") return detail;
+  if (typeof detail === "object" && detail.message) return detail.message;
   if (Array.isArray(detail)) {
     return detail.map((item) => item.msg || JSON.stringify(item)).join("; ");
   }
@@ -191,10 +192,69 @@ function applySkillOverrides(scan, overrides, sessionAllow) {
     overridden,
     agent_may_continue,
     blocked: !agent_may_continue,
+    agent_status: agent_may_continue ? "ok" : "paused",
     rejection_summary: agent_may_continue
       ? null
-      : `Agent blocked: ${blocking.length} issue(s). Type "always allow" or "always allow all" in the command box (or say it in Cursor chat).`,
+      : `Skill Guard paused (${blocking.length} issue(s)). Choose Run once, Always allow, or Reject, then send your decision to the agent.`,
   };
+}
+
+function buildSkillGuardAgentPacket(action, findings, { scope = "all", userMessage = "", filename = null } = {}) {
+  const keys = findings.map(skillFindingKey);
+  const codes = [...new Set(findings.map((f) => f.reason_code))];
+  const mayContinue = action !== "reject";
+  let instruction = "";
+  const codesS = codes.join(", ") || "(none)";
+  const keysS = keys.join(", ") || "(none)";
+  const note = userMessage?.trim() ? `\nUser note: "${userMessage.trim()}"` : "";
+  if (action === "always_allow") {
+    instruction =
+      `Skill Guard: user chose ALWAYS ALLOW. Chat may continue. Persist overrides for [${codesS}]. You may use the skill content.${note}`;
+  } else if (action === "run_once") {
+    instruction =
+      `Skill Guard: user chose RUN ONCE. Chat may continue this session only for keys [${keysS}].${note}`;
+  } else {
+    instruction =
+      `Skill Guard: user chose REJECT. Do NOT use flagged content; help fix reason_codes [${codesS}].${note}`;
+  }
+  return {
+    type: "skill_guard_decision",
+    version: 1,
+    agent_status: mayContinue ? "paused_resolved" : "paused_rejected",
+    status: mayContinue ? "continuing" : "rejected",
+    action,
+    may_continue: mayContinue,
+    scope,
+    finding_keys: keys,
+    reason_codes: codes,
+    filename,
+    user_message: (userMessage || "").trim(),
+    instruction_for_agent: instruction,
+  };
+}
+
+function formatSkillGuardPacketForChat(packet) {
+  return (
+    "## Skill Guard — user decision (agent: read and continue)\n\n"
+    + `${packet.instruction_for_agent}\n\n`
+    + "```json\n"
+    + JSON.stringify(packet, null, 2)
+    + "\n```"
+  );
+}
+
+async function copySkillGuardToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return true;
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(ta);
+  return ok;
 }
 
 /** Parse chat-style override commands (web Skill Guard + same phrases in Cursor). */
@@ -2059,6 +2119,14 @@ function ChatView() {
                   <div style={s.statLabel}>Backend</div>
                   <div style={{ fontSize: 14, color: "#102033", marginTop: 4, fontWeight: 800 }}>{result.backend} / {result.model}</div>
                 </div>
+                {result.tokens_remaining != null && (
+                  <div>
+                    <div style={s.statLabel}>Tokens left</div>
+                    <div style={{ fontSize: 14, color: "#0f766e", marginTop: 4, fontWeight: 800 }}>
+                      {Number(result.tokens_remaining).toLocaleString()}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Guardrail results */}
@@ -2096,6 +2164,257 @@ function ChatView() {
   );
 }
 
+// BILLING VIEW
+function BillingView() {
+  const [wallet, setWallet] = useState(null);
+  const [plans, setPlans] = useState([]);
+  const [purchases, setPurchases] = useState([]);
+  const [config, setConfig] = useState(null);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [buying, setBuying] = useState(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError("");
+    Promise.all([
+      api("/billing/wallet"),
+      api("/billing/plans"),
+      api("/billing/purchases"),
+      api("/billing/config"),
+    ])
+      .then(([w, p, pur, c]) => {
+        setWallet(w);
+        setPlans(p);
+        setPurchases(pur);
+        setConfig(c);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("checkout") === "success") {
+      setInfo("Payment received — tokens are being added to your wallet (refresh in a few seconds).");
+      load();
+      window.history.replaceState({}, "", window.location.pathname + "?view=billing");
+    }
+    if (q.get("checkout") === "cancel") {
+      setInfo("Checkout cancelled.");
+      window.history.replaceState({}, "", window.location.pathname + "?view=billing");
+    }
+  }, [load]);
+
+  async function buyPlan(slug) {
+    setBuying(slug);
+    setError("");
+    setInfo("");
+    try {
+      const data = await api("/billing/checkout", { method: "POST", body: { plan_slug: slug } });
+      if (data.checkout_url) {
+        window.location.href = data.checkout_url;
+        return;
+      }
+      setInfo(data.message || "Tokens credited.");
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBuying(null);
+    }
+  }
+
+  function fmt(n) {
+    return Number(n || 0).toLocaleString();
+  }
+
+  if (loading) return <div style={s.muted}>Loading billing...</div>;
+
+  const balance = wallet?.balance_tokens ?? 0;
+  const pct = wallet?.billing_enabled
+    ? Math.min(100, Math.round((balance / Math.max(balance + (wallet?.tokens_used_lifetime || 0), 1)) * 100))
+    : 100;
+
+  return (
+    <div>
+      <div style={s.heroPanel}>
+        <div style={{ ...s.pageTitle, marginBottom: 8 }}>Token plans</div>
+        <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6, maxWidth: 720 }}>
+          Gateway usage is metered in <strong>tokens</strong> (LLM input + output per request).
+          New accounts receive {fmt(config?.free_signup_tokens)} free tokens; buy packs when you need more.
+        </div>
+      </div>
+
+      {error && <div style={{ ...s.alert("error"), marginBottom: 16 }}>{error}</div>}
+      {info && <div style={{ ...s.alert("success"), marginBottom: 16 }}>{info}</div>}
+
+      <div style={{ ...s.card, marginBottom: 16 }}>
+        <div style={s.sectionTitle}>Your balance</div>
+        <div style={{ fontSize: 32, fontWeight: 900, color: "#0f766e" }}>{fmt(balance)}</div>
+        <div style={{ fontSize: 13, color: "#607086", marginTop: 4 }}>
+          tokens remaining
+          {wallet?.billing_enabled && (
+            <> · {fmt(wallet.tokens_used_lifetime)} used · {fmt(wallet.tokens_purchased_lifetime)} purchased</>
+          )}
+        </div>
+        {wallet?.billing_enabled && (
+          <div style={{ marginTop: 12, height: 8, background: "#e2e8f0", borderRadius: 4, overflow: "hidden" }}>
+            <div style={{ width: `${pct}%`, height: "100%", background: "#0f766e" }} />
+          </div>
+        )}
+        {!config?.stripe_configured && (
+          <div style={{ ...s.alert("error"), marginTop: 12, marginBottom: 0, fontSize: 12 }}>
+            Stripe not configured on server — in development, Buy still credits tokens instantly.
+          </div>
+        )}
+      </div>
+
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
+        gap: 14,
+        marginBottom: 16,
+      }}>
+        {plans.map((p) => (
+          <div key={p.slug} style={{
+            ...s.card,
+            border: p.popular ? "2px solid #0f766e" : undefined,
+            position: "relative",
+          }}>
+            {p.popular && (
+              <div style={{
+                position: "absolute", top: -10, right: 12,
+                background: "#0f766e", color: "#fff", fontSize: 10, fontWeight: 800,
+                padding: "4px 8px", borderRadius: 4,
+              }}>POPULAR</div>
+            )}
+            <div style={{ fontWeight: 900, fontSize: 18, color: "#102033" }}>{p.name}</div>
+            <div style={{ fontSize: 28, fontWeight: 900, marginTop: 8, color: "#0f766e" }}>
+              {p.price_display}
+            </div>
+            <div style={{ fontSize: 13, color: "#607086", marginTop: 4 }}>{fmt(p.tokens)} tokens</div>
+            <div style={{ fontSize: 12, color: "#7b8a9d", marginTop: 8, lineHeight: 1.5, minHeight: 40 }}>
+              {p.description}
+            </div>
+            <button
+              type="button"
+              style={{ ...s.btn("primary"), width: "100%", marginTop: 14 }}
+              disabled={!!buying}
+              onClick={() => buyPlan(p.slug)}
+            >
+              {buying === p.slug ? "Please wait..." : "Buy tokens"}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div style={s.card}>
+        <div style={s.sectionTitle}>Purchase history</div>
+        {purchases.length === 0 ? (
+          <div style={s.muted}>No purchases yet.</div>
+        ) : (
+          <table style={s.table}>
+            <thead>
+              <tr>
+                {["Plan", "Tokens", "Amount", "Status", "Date"].map((h) => (
+                  <th key={h} style={s.th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {purchases.map((r) => (
+                <tr key={r.id}>
+                  <td style={s.td}>{r.plan_slug}</td>
+                  <td style={s.td}>{fmt(r.tokens_granted)}</td>
+                  <td style={s.td}>
+                    {r.amount_cents ? `$${(r.amount_cents / 100).toFixed(2)}` : "—"}
+                  </td>
+                  <td style={s.td}>
+                    <span style={s.badge(r.status === "completed" ? "delivered" : "rate_limited")}>
+                      {r.status}
+                    </span>
+                  </td>
+                  <td style={s.td}>{new Date(r.created_at).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div style={{ ...s.card, marginTop: 16 }}>
+        <div style={s.sectionTitle}>Publish checklist (Stripe)</div>
+        <pre style={{ margin: 0, fontSize: 12, lineHeight: 1.5, padding: 14, background: "#f1f5f9",
+          borderRadius: 8, border: "1px solid #dce7f0", overflow: "auto" }}>
+{`# .env on Render / production
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_PUBLISHABLE_KEY=pk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+BILLING_ENABLED=true
+FREE_SIGNUP_TOKENS=10000
+
+# Stripe Dashboard → Webhooks → endpoint:
+#   https://YOUR_APP/billing/webhook
+# Events: checkout.session.completed`}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+function SkillGuardPauseBar({
+  label,
+  targets,
+  scope,
+  filename,
+  agentNote,
+  pendingDecision,
+  onChoose,
+  onSend,
+  sendStatus,
+}) {
+  const pendingHere = pendingDecision
+    && pendingDecision.scope === scope
+    && pendingDecision.action;
+  return (
+    <div style={{
+      marginTop: 12, padding: 12, borderRadius: 8,
+      border: "1px solid #c7d8e8", background: "#f8fbff",
+    }}>
+      {label && (
+        <div style={{ fontSize: 11, fontWeight: 800, color: "#607086", marginBottom: 8 }}>{label}</div>
+      )}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button type="button" style={s.btn(pendingHere === "run_once" ? "primary" : "secondary")}
+          onClick={() => onChoose("run_once", targets, scope)}>
+          Run once
+        </button>
+        <button type="button" style={s.btn(pendingHere === "always_allow" ? "primary" : "secondary")}
+          onClick={() => onChoose("always_allow", targets, scope)}>
+          Always allow
+        </button>
+        <button type="button" style={s.btn(pendingHere === "reject" ? "primary" : "secondary")}
+          onClick={() => onChoose("reject", targets, scope)}>
+          Reject
+        </button>
+        <button type="button" style={s.btn("primary")} onClick={() => onSend(targets, scope)}
+          title="Copy decision + your message for Cursor agent chat">
+          Send to agent
+        </button>
+      </div>
+      {sendStatus && (
+        <div style={{ ...s.alert(sendStatus.ok ? "success" : "error"), marginTop: 10, marginBottom: 0, fontSize: 12 }}>
+          {sendStatus.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // SKILL GUARD VIEW
 function SkillGuardView() {
   const [content, setContent] = useState(SKILL_SAMPLE_UNSAFE);
@@ -2106,12 +2425,20 @@ function SkillGuardView() {
   const [error, setError] = useState("");
   const [overrides, setOverrides] = useState(() => loadSkillOverrides());
   const [sessionAllow, setSessionAllow] = useState([]);
-  const [guardCmd, setGuardCmd] = useState("");
-  const [guardCmdMsg, setGuardCmdMsg] = useState("");
+  const [agentNote, setAgentNote] = useState("");
+  const [pendingDecision, setPendingDecision] = useState(null);
+  const [sendStatus, setSendStatus] = useState(null);
+  const [lastAgentPacket, setLastAgentPacket] = useState(null);
 
   useEffect(() => {
     setPreview(clientSkillScan(content));
   }, [content]);
+
+  useEffect(() => {
+    setPendingDecision(null);
+    setSendStatus(null);
+    setLastAgentPacket(null);
+  }, [content, result?.findings?.length]);
 
   const rawDisplay = result || preview;
   const effective = rawDisplay
@@ -2140,37 +2467,49 @@ function SkillGuardView() {
     }
   }
 
-  function submitGuardCommand(e) {
-    e?.preventDefault?.();
-    const blocking = effective?.blocking || [];
-    const parsed = parseSkillGuardCommand(guardCmd, blocking);
-    if (!parsed) return;
-    if (parsed.action === "unknown") {
-      setGuardCmdMsg('Try: "always allow", "always allow all", "always allow database_url", or "run once"');
+  function choosePauseAction(action, targets, scope) {
+    setPendingDecision({ action, targets, scope });
+    setSendStatus(null);
+  }
+
+  async function sendDecisionToAgent(targets, scope) {
+    const decision = pendingDecision?.scope === scope ? pendingDecision : null;
+    if (!decision?.action) {
+      setSendStatus({
+        ok: false,
+        text: "Choose Run once, Always allow, or Reject first — then Send to agent.",
+      });
       return;
     }
-
-    let targets = blocking;
-    if (parsed.action === "always_reason" || parsed.action === "run_once_reason") {
-      targets = blocking.filter((f) => f.reason_code === parsed.reason);
-      if (!targets.length) {
-        setGuardCmdMsg(`No blocking issue with reason code "${parsed.reason}". Codes: ${[...new Set(blocking.map((f) => f.reason_code))].join(", ")}`);
-        return;
-      }
-    }
-
-    if (parsed.action === "always_all" || parsed.action === "always_reason") {
-      applyAlwaysAllowFindings(targets, overrides, setOverrides);
-      setGuardCmdMsg(`Always allowed ${targets.length} issue(s) — saved in this browser. For git push, say the same in Cursor chat or run: python scripts/skill_guard_allow.py always --scan .cursor/skills/...`);
-    } else {
-      const keys = targets.map(skillFindingKey);
+    const useTargets = decision.targets?.length ? decision.targets : targets;
+    if (decision.action === "always_allow") {
+      applyAlwaysAllowFindings(useTargets, overrides, setOverrides);
+    } else if (decision.action === "run_once") {
+      const keys = useTargets.map(skillFindingKey);
       setSessionAllow((prev) => [...new Set([...prev, ...keys])]);
-      setGuardCmdMsg(`Run once: allowed ${targets.length} issue(s) for this scan only.`);
     }
-    setGuardCmd("");
+    const packet = buildSkillGuardAgentPacket(decision.action, useTargets, {
+      scope,
+      userMessage: agentNote,
+      filename: filename.trim() || null,
+    });
+    const markdown = formatSkillGuardPacketForChat(packet);
+    try {
+      await copySkillGuardToClipboard(markdown);
+      localStorage.setItem("skill_guard_last_decision", JSON.stringify(packet));
+      setLastAgentPacket(packet);
+      const verb = packet.may_continue
+        ? "Agent may continue — decision copied. Paste into Cursor chat (or the agent reads skill_guard_last_decision)."
+        : "Reject sent to agent — do not use flagged content until fixed.";
+      setSendStatus({ ok: true, text: verb });
+    } catch {
+      setSendStatus({ ok: false, text: "Could not copy to clipboard. Copy the box below manually." });
+    }
   }
 
   const severityColor = { critical: "#be123c", high: "#c2410c", medium: "#b45309" };
+  const isPaused = effective && (effective.agent_status === "paused" || effective.blocked);
+  const showPausePanel = isPaused && !effective.agent_may_continue;
 
   return (
     <div>
@@ -2224,9 +2563,9 @@ function SkillGuardView() {
           <button style={s.btn("primary")} onClick={runServerScan} disabled={loading || !content.trim()}>
             {loading ? "Scanning..." : "Run server scan"}
           </button>
-          {effective && effective.blocked && (
+          {isPaused && !effective.agent_may_continue && (
             <span style={{ fontSize: 12, color: "#b45309", alignSelf: "center", fontWeight: 700 }}>
-              {effective.blocking.length} issue(s) blocking agent
+              {effective.blocking.length} issue(s) — agent paused
             </span>
           )}
         </div>
@@ -2239,8 +2578,14 @@ function SkillGuardView() {
           <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
             <div>
               <div style={s.statLabel}>Agent</div>
-              <span style={s.badge(effective.agent_may_continue ? "delivered" : "input_blocked")}>
-                {effective.agent_may_continue ? "May continue" : "Blocked"}
+              <span style={s.badge(
+                effective.agent_may_continue ? "delivered" : isPaused ? "rate_limited" : "input_blocked"
+              )}>
+                {effective.agent_may_continue
+                  ? "Continuing"
+                  : isPaused
+                    ? "Paused"
+                    : "Blocked"}
               </span>
             </div>
             <div>
@@ -2278,67 +2623,95 @@ function SkillGuardView() {
             </div>
           )}
 
-          {effective.blocked && (
+          {effective.agent_may_continue && lastAgentPacket && !effective.safe && (
+            <div style={s.alert("success")}>
+              Agent notified — chat may continue per your decision ({lastAgentPacket.action.replace("_", " ")}).
+            </div>
+          )}
+
+          {showPausePanel && (
             <>
-              <div style={s.alert("error")}>
-                <strong>Agent rejected — why:</strong>
+              <div style={{ ...s.alert("error"), borderColor: "#fed7aa", background: "#fffbeb" }}>
+                <strong>Agent paused (chat not ended)</strong>
                 <div style={{ marginTop: 8, fontWeight: 500 }}>
                   {result?.rejection_summary || effective.rejection_summary}
                 </div>
+                <div style={{ marginTop: 8, fontSize: 13 }}>
+                  Pick an action, add an optional note, then <strong>Send to agent</strong> so Cursor knows whether to continue.
+                </div>
               </div>
 
-              <form onSubmit={submitGuardCommand} style={{
+              <div style={{
                 marginTop: 14, padding: 14, borderRadius: 10,
-                border: "1px solid #c7d8e8", background: "#f8fbff",
+                border: "2px solid #0f766e", background: "#f0fdfa",
               }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: "#0f5f7a", marginBottom: 8 }}>
-                  Override in chat (no per-issue buttons)
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#0f766e", marginBottom: 8 }}>
+                  Message for agent (optional)
                 </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <input
-                    style={{ ...s.input, flex: "1 1 240px", marginBottom: 0, fontFamily: "inherit" }}
-                    value={guardCmd}
-                    onChange={(e) => { setGuardCmd(e.target.value); setGuardCmdMsg(""); }}
-                    placeholder='Type "always allow" or "always allow all" and Enter'
-                    aria-label="Skill guard override command"
-                  />
-                  <button type="submit" style={s.btn("primary")}>Apply</button>
-                </div>
-                <div style={{ fontSize: 11, color: "#607086", marginTop: 8, lineHeight: 1.5 }}>
-                  Same phrases work in <strong>Cursor chat</strong> — the agent updates{" "}
-                  <code style={{ fontSize: 10 }}>.cursor/skill-guard-overrides.json</code> or runs{" "}
-                  <code style={{ fontSize: 10 }}>python scripts/skill_guard_allow.py always --scan …</code>.
-                  One rule: <code style={{ fontSize: 10 }}>always allow database_url</code>.
-                  Temporary: <code style={{ fontSize: 10 }}>run once</code>.
-                </div>
-                {guardCmdMsg && (
-                  <div style={{ ...s.alert(guardCmdMsg.startsWith("Always") || guardCmdMsg.startsWith("Run") ? "success" : "error"), marginTop: 10, marginBottom: 0 }}>
-                    {guardCmdMsg}
-                  </div>
-                )}
-              </form>
+                <textarea
+                  style={{ ...s.input, minHeight: 56, resize: "vertical", marginBottom: 10, fontFamily: "inherit" }}
+                  value={agentNote}
+                  onChange={(e) => setAgentNote(e.target.value)}
+                  placeholder="e.g. This is a demo skill — safe to use for staging only"
+                />
+                <SkillGuardPauseBar
+                  label="All blocking issues"
+                  targets={effective.blocking}
+                  scope="all"
+                  filename={filename}
+                  agentNote={agentNote}
+                  pendingDecision={pendingDecision}
+                  onChoose={choosePauseAction}
+                  onSend={sendDecisionToAgent}
+                  sendStatus={pendingDecision?.scope === "all" ? sendStatus : null}
+                />
+              </div>
 
-              {effective.blocking.map((f, i) => (
-                <div key={skillFindingKey(f) + i} style={{
-                  marginTop: 12, padding: 14, borderRadius: 8,
-                  border: "1px solid #fecdd3", background: "#fffbfb",
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 800, color: severityColor[f.severity] || "#be123c" }}>
-                      [{f.severity}] {f.check}
-                      {f.line_number ? ` · line ${f.line_number}` : ""}
+              {effective.blocking.map((f, i) => {
+                const scope = skillFindingKey(f);
+                return (
+                  <div key={scope + i} style={{
+                    marginTop: 12, padding: 14, borderRadius: 8,
+                    border: "1px solid #fecdd3", background: "#fffbfb",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                      <div style={{ fontWeight: 800, color: severityColor[f.severity] || "#be123c" }}>
+                        [{f.severity}] {f.check}
+                        {f.line_number ? ` · line ${f.line_number}` : ""}
+                      </div>
+                      <code style={{ fontSize: 11, color: "#7b8a9d" }}>{f.reason_code}</code>
                     </div>
-                    <code style={{ fontSize: 11, color: "#7b8a9d" }}>{f.reason_code}</code>
+                    <div style={{ fontSize: 13, color: "#405166", marginTop: 8, lineHeight: 1.5 }}>
+                      {f.explanation || explainSkillFinding(f)}
+                    </div>
+                    <div style={{ fontSize: 12, fontFamily: "monospace", color: "#607086", marginTop: 8,
+                      padding: 8, background: "#f8fafc", borderRadius: 6 }}>
+                      {f.snippet}
+                    </div>
+                    <SkillGuardPauseBar
+                      label={null}
+                      targets={[f]}
+                      scope={scope}
+                      filename={filename}
+                      agentNote={agentNote}
+                      pendingDecision={pendingDecision}
+                      onChoose={choosePauseAction}
+                      onSend={sendDecisionToAgent}
+                      sendStatus={pendingDecision?.scope === scope ? sendStatus : null}
+                    />
                   </div>
-                  <div style={{ fontSize: 13, color: "#405166", marginTop: 8, lineHeight: 1.5 }}>
-                    {f.explanation || explainSkillFinding(f)}
-                  </div>
-                  <div style={{ fontSize: 12, fontFamily: "monospace", color: "#607086", marginTop: 8,
-                    padding: 8, background: "#f8fafc", borderRadius: 6 }}>
-                    {f.snippet}
-                  </div>
+                );
+              })}
+
+              {lastAgentPacket && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={s.sectionTitle}>Last message sent to agent</div>
+                  <pre style={{ margin: 0, fontSize: 11, lineHeight: 1.45, padding: 12, background: "#f1f5f9",
+                    borderRadius: 8, border: "1px solid #dce7f0", overflow: "auto", maxHeight: 200 }}>
+                    {formatSkillGuardPacketForChat(lastAgentPacket)}
+                  </pre>
                 </div>
-              ))}
+              )}
             </>
           )}
 
@@ -2408,6 +2781,7 @@ const NAV = [
   { id: "dashboard", label: "Dashboard",    icon: "01" },
   { id: "chat",      label: "LLM Playground", icon: "02" },
   { id: "skills",    label: "Skill Guard",  icon: "SG" },
+  { id: "billing",   label: "Billing",      icon: "$" },
   { id: "logs",      label: "Logs",         icon: "03" },
   { id: "keys",      label: "API Keys",     icon: "04" },
   { id: "policy",    label: "Policy",       icon: "05" },
@@ -2416,7 +2790,11 @@ const NAV = [
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [view, setView] = useState("dashboard");
+  const [view, setView] = useState(() => {
+    const q = new URLSearchParams(window.location.search);
+    const v = q.get("view");
+    return v && NAV.some((n) => n.id === v) ? v : "dashboard";
+  });
 
   // Try to restore session
   useEffect(() => {
@@ -2459,6 +2837,7 @@ export default function App() {
         {view === "dashboard" && <DashboardView />}
         {view === "chat"      && <ChatView />}
         {view === "skills"    && <SkillGuardView />}
+        {view === "billing"   && <BillingView />}
         {view === "logs"      && <LogsView />}
         {view === "keys"      && <ApiKeysView />}
         {view === "policy"    && <PolicyView user={user} />}

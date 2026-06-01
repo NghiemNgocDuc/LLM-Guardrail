@@ -124,6 +124,54 @@ class PolicyOut(PolicyUpdate):
     model_config = {"from_attributes": True}
 
 
+# ─── Billing (token packs) ────────────────────────────────────────────────────
+
+class BillingConfigOut(BaseModel):
+    billing_enabled: bool
+    free_signup_tokens: int
+    stripe_configured: bool
+    stripe_publishable_key: str | None = None
+
+
+class BillingPlanOut(BaseModel):
+    slug: str
+    name: str
+    tokens: int
+    price_cents: int
+    currency: str
+    description: str
+    popular: bool = False
+    price_display: str
+
+
+class BillingWalletOut(BaseModel):
+    balance_tokens: int
+    tokens_used_lifetime: int
+    tokens_purchased_lifetime: int
+    billing_enabled: bool
+
+
+class BillingPurchaseOut(BaseModel):
+    id: str
+    plan_slug: str
+    tokens_granted: int
+    amount_cents: int
+    currency: str
+    status: str
+    created_at: datetime
+    completed_at: datetime | None = None
+
+
+class BillingCheckoutRequest(BaseModel):
+    plan_slug: str = Field(min_length=1, max_length=32)
+
+
+class BillingCheckoutResponse(BaseModel):
+    checkout_url: str | None = None
+    purchase_id: str | None = None
+    message: str | None = None
+
+
 # ─── Chat ─────────────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
@@ -151,6 +199,7 @@ class ChatResponse(BaseModel):
     latency_ms:    int
     model:         str
     backend:       str
+    tokens_remaining: int | None = None
 
 
 # ─── Agent skill scan ─────────────────────────────────────────────────────────
@@ -181,6 +230,20 @@ class SkillFindingOut(BaseModel):
     allowed_by_override: bool = False
 
 
+class SkillAgentDecisionIn(BaseModel):
+    action: str = Field(description="run_once | always_allow | reject")
+    finding_keys: list[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+    scope: str = "all"
+    user_message: str = ""
+    filename: str | None = None
+
+
+class SkillAgentPacketOut(BaseModel):
+    packet: dict
+    chat_markdown: str
+
+
 class SkillScanResponse(BaseModel):
     safe: bool
     risk_score: float
@@ -190,6 +253,7 @@ class SkillScanResponse(BaseModel):
     filename: str | None = None
     blocked: bool = False
     agent_may_continue: bool = True
+    agent_status: str = "ok"
     rejection_summary: str | None = None
     blocking_findings: list[SkillFindingOut] = Field(default_factory=list)
     overridden_findings: list[SkillFindingOut] = Field(default_factory=list)

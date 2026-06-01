@@ -33,3 +33,5 @@ dev.db
 
 # Skill Guard per-developer allow list (always-allow rules)
 .cursor/skill-guard-overrides.json
+.cursor/skill-guard-decision.json
+.cursor/skill-guard-pause.json

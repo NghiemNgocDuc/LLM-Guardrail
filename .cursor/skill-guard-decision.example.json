@@ -1,0 +1,14 @@
+{
+  "type": "skill_guard_decision",
+  "version": 1,
+  "agent_status": "paused_resolved",
+  "status": "continuing",
+  "action": "always_allow",
+  "may_continue": true,
+  "scope": "all",
+  "finding_keys": ["database_url:12"],
+  "reason_codes": ["database_url"],
+  "filename": "SKILL.md",
+  "user_message": "Demo environment only — approved by user.",
+  "instruction_for_agent": "Skill Guard: user chose ALWAYS ALLOW. Chat may continue. ..."
+}

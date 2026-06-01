@@ -1,39 +1,64 @@
 ---
-description: When Skill Guard blocks an agent or git push, apply overrides from chat — do not send the user to the web dashboard.
+description: Skill Guard pause/resume — never end chat on block; wait for user decision and read the packet.
 globs:
   - .cursor/skills/**
-  - .cursor/skill-guard-overrides.json
+  - .cursor/skill-guard-*.json
   - scripts/scan_agent_skills.py
-  - scripts/skill_guard_allow.py
+  - scripts/skill_guard_*.py
 alwaysApply: false
 ---
 
-# Skill Guard — overrides in chat
+# Skill Guard — pause, do not stop
 
-When the user says **always allow**, **always allow all**, **allow all**, or names a rule (e.g. **always allow database_url**):
+When a skill scan would block the agent:
 
-1. Prefer updating `.cursor/skill-guard-overrides.json` (merge, do not wipe existing keys):
-   - `always_allow_reason_codes` — add the `reason_code` from the block message
-   - `always_allow_keys` — optional; format `reason_code:line_number`
+1. **Pause** the task — do not abandon the chat or tell the user the conversation ended.
+2. Briefly list each finding (severity, reason_code, line, snippet).
+3. Ask the user to choose: **Run once**, **Always allow**, or **Reject** (they can add a note in the dashboard or in chat).
+4. **Wait** for their answer. Do not proceed with flagged content until you have a decision.
 
-2. Or run from repo root:
-   ```bash
-   python scripts/skill_guard_allow.py always --scan path/to/SKILL.md
-   python scripts/skill_guard_allow.py always --reason database_url
-   ```
+## When the user decides
 
-3. For **run once** (this push/scan only): use `session_allow_keys` in overrides for CLI, or tell the user to type `run once` in the terminal when the pre-push hook prompts.
+Read their choice from (first available):
 
-4. Do **not** ask the user to click Run once / Always allow buttons in the web UI unless they explicitly want the dashboard.
+- `.cursor/skill-guard-decision.json` (written by dashboard copy, `scripts/skill_guard_decision.py`, or you after they answer in chat)
+- A pasted `skill_guard_decision` JSON block in chat
+- `localStorage` key `skill_guard_last_decision` is browser-only — prefer the JSON file in the repo
 
-5. After saving overrides, re-run the scan or confirm `git push` can proceed.
+Record decisions with:
 
-Example overrides file:
+```bash
+python scripts/skill_guard_decision.py always_allow --reason database_url --message "user approved for demo"
+python scripts/skill_guard_decision.py run_once --finding-key drop_sql:12
+python scripts/skill_guard_decision.py reject --reason rm_rf_destructive --print-chat
+```
+
+| Action | `may_continue` | What you do |
+| --- | --- | --- |
+| **run_once** | true | Continue this session only; do not persist override |
+| **always_allow** | true | Update `.cursor/skill-guard-overrides.json` and continue |
+| **reject** | false | Do not use flagged lines; help user fix the skill |
+
+Follow `instruction_for_agent` inside the JSON packet exactly.
+
+## Optional pause file
+
+You may write `.cursor/skill-guard-pause.json` while waiting:
+
+```json
+{ "agent_status": "paused", "blocking_count": 2, "message": "Waiting for user: Run once / Always allow / Reject" }
+```
+
+Delete it when `skill-guard-decision.json` exists.
+
+## Overrides file (always allow)
 
 ```json
 {
   "session_allow_keys": [],
   "always_allow_keys": [],
-  "always_allow_reason_codes": ["database_url", "drop_sql"]
+  "always_allow_reason_codes": ["database_url"]
 }
 ```
+
+Do not send users to click many web buttons — one decision + optional note is enough.
