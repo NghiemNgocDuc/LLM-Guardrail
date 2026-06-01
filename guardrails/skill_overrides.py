@@ -70,7 +70,7 @@ class SkillScanDecision:
         return (
             f"Agent skill blocked: {n} issue(s) — "
             f"{', '.join(kinds)}. "
-            "Skill Guard paused the agent — choose Run once, Always allow, or Reject, then send your decision to the agent."
+            "Skill Guard paused — reply in Cursor chat: Run once, Always allow, Reject, or your message."
         )
 
 

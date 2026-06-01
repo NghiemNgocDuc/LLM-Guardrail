@@ -102,6 +102,47 @@ class User(Base):
     token_purchases: Mapped[list["TokenPurchase"]] = relationship(
         "TokenPurchase", back_populates="user", cascade="all, delete-orphan"
     )
+    skill_rejections: Mapped[list["SkillAccessRejection"]] = relationship(
+        "SkillAccessRejection", back_populates="user", cascade="all, delete-orphan"
+    )
+    skill_guard_overrides: Mapped["UserSkillGuardOverrides | None"] = relationship(
+        "UserSkillGuardOverrides", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Skill Guard — rejected access queue (web review / unblock)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SkillAccessRejection(Base):
+    __tablename__ = "skill_access_rejections"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    org_id: Mapped[str | None] = mapped_column(ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default="api_scan")  # api_scan | git_push | cli | report
+    status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    # pending | unblocked_once | unblocked_always | kept_rejected
+    findings: Mapped[list] = mapped_column(JSON, default=list)
+    rejection_summary: Mapped[str] = mapped_column(Text, default="")
+    content_preview: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    resolved_action: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    resolver_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped["User"] = relationship("User", back_populates="skill_rejections")
+
+
+class UserSkillGuardOverrides(Base):
+    __tablename__ = "user_skill_guard_overrides"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    overrides: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    user: Mapped["User"] = relationship("User", back_populates="skill_guard_overrides")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

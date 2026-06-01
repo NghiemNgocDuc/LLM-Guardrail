@@ -21,7 +21,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from guardrails.skill import SkillGuardrail  # noqa: E402
 from guardrails.skill_messages import explain_finding  # noqa: E402
+from guardrails.skill_agent_packet import finding_to_dict, format_chat_control_prompt  # noqa: E402
 from guardrails.skill_overrides import SkillOverrides, apply_overrides, finding_key  # noqa: E402
+
+PAUSE_FILE = ".cursor/skill-guard-pause.json"
 
 OVERRIDES_FILENAME = ".cursor/skill-guard-overrides.json"
 
@@ -209,6 +212,28 @@ def _interactive_resolve(
     return overrides
 
 
+def _write_chat_pause(root: Path, entries: list[tuple[str, object]]) -> None:
+    """Write pause state so the Cursor chat control layer can take over."""
+    findings = [finding_to_dict(f) for _, f in entries]
+    sources = sorted({src for src, _ in entries})
+    source = ", ".join(sources[:3])
+    if len(sources) > 3:
+        source += f" (+{len(sources) - 3} more)"
+    payload = {
+        "agent_status": "paused",
+        "control_layer": "cursor_chat",
+        "source": source,
+        "blocking_count": len(findings),
+        "findings": findings,
+        "chat_prompt": format_chat_control_prompt(findings, source=source),
+    }
+    path = root / PAUSE_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print("\n" + payload["chat_prompt"])
+    print(f"\n↳ Wrote {path} — user must reply in **Cursor chat** (not the web dashboard).\n")
+
+
 def _scan_files(
     root: Path,
     files: list[Path],
@@ -223,6 +248,7 @@ def _scan_files(
     guard = SkillGuardrail()
     overrides = _load_overrides(root)
     any_blocking = False
+    pause_entries: list[tuple[str, object]] = []
 
     for path in files:
         try:
@@ -265,6 +291,8 @@ def _scan_files(
             continue
 
         any_blocking = True
+        for f in blocking:
+            pause_entries.append((str(display), f))
         print(f"\nREJECTED {display} — agent blocked ({len(blocking)} issue(s))")
         if decision.rejection_summary:
             print(decision.rejection_summary)
@@ -272,12 +300,14 @@ def _scan_files(
             _print_rejection(f, github_actions=github_actions, path=path)
 
     if any_blocking:
+        _write_chat_pause(root, pause_entries)
         if interactive and sys.stdin.isatty():
             print("\nSkill Guard: push blocked. Fix the skill or re-run and choose Run once / Always allow.")
         else:
             print(
-                "\nSkill Guard: push blocked. Fix findings, or run locally with "
-                "`python scripts/scan_agent_skills.py --interactive` to override."
+                "\nSkill Guard: push blocked. Review in dashboard → Rejected access, "
+                "or report: python scripts/report_skill_rejection.py --scan <file> "
+                "(with SKILL_GUARD_API_URL + SKILL_GUARD_ACCESS_TOKEN)."
             )
         return 1
 

@@ -149,6 +149,7 @@ class BillingWalletOut(BaseModel):
     tokens_used_lifetime: int
     tokens_purchased_lifetime: int
     billing_enabled: bool
+    unlimited: bool = False
 
 
 class BillingPurchaseOut(BaseModel):
@@ -230,20 +231,6 @@ class SkillFindingOut(BaseModel):
     allowed_by_override: bool = False
 
 
-class SkillAgentDecisionIn(BaseModel):
-    action: str = Field(description="run_once | always_allow | reject")
-    finding_keys: list[str] = Field(default_factory=list)
-    reason_codes: list[str] = Field(default_factory=list)
-    scope: str = "all"
-    user_message: str = ""
-    filename: str | None = None
-
-
-class SkillAgentPacketOut(BaseModel):
-    packet: dict
-    chat_markdown: str
-
-
 class SkillScanResponse(BaseModel):
     safe: bool
     risk_score: float
@@ -257,6 +244,36 @@ class SkillScanResponse(BaseModel):
     rejection_summary: str | None = None
     blocking_findings: list[SkillFindingOut] = Field(default_factory=list)
     overridden_findings: list[SkillFindingOut] = Field(default_factory=list)
+    rejection_id: str | None = None
+
+
+class SkillRejectionReportIn(BaseModel):
+    filename: str | None = None
+    source: str = Field(default="git_push", max_length=32)
+    rejection_summary: str | None = None
+    content_preview: str | None = Field(default=None, max_length=500)
+    findings: list[SkillFindingOut] = Field(min_length=1)
+
+
+class SkillRejectionOut(BaseModel):
+    id: str
+    filename: str | None
+    source: str
+    status: str
+    findings: list[dict]
+    rejection_summary: str
+    content_preview: str | None
+    resolved_action: str | None
+    resolver_note: str | None
+    created_at: datetime
+    resolved_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class SkillRejectionResolveIn(BaseModel):
+    action: str = Field(description="allow_once | allow_always | keep_rejected")
+    note: str | None = Field(default=None, max_length=2000)
 
 
 # ─── Analytics ────────────────────────────────────────────────────────────────

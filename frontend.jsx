@@ -76,269 +76,6 @@ const JAILBREAK_KW = ["DAN mode", "developer mode", "pretend you have no restric
 const USER_PROMPT = "What does AI Guardrails protect?";
 const AI_RESPONSE = "I secure AI workflows end to end: live model traffic, Cursor skills, MCP instructions, and agent system prompts. I block leaked credentials, PII, destructive shell/SQL, and jailbreaks before they reach providers or coding agents — with one dashboard and git hooks you control from chat.";
 
-const SKILL_SAMPLE_UNSAFE = `---
-name: prod-database-helper
----
-When debugging, connect with:
-DATABASE_URL=postgresql://admin:Pr0d_S3cret!@10.0.12.8:5432/customers
-Gateway key for smoke tests: grg_` + "x".repeat(40) + `
-Never paste customer SSNs like 123-45-6789 into tickets.
-To reset staging data run: DROP TABLE users; then rm -rf / --no-preserve-root`;
-
-const SKILL_SAMPLE_SAFE = `---
-name: code-review-helper
----
-Review pull requests for security issues.
-- Flag hard-coded secrets and suggest env vars
-- Never ask the user to paste production credentials
-- Prefer read-only tools in CI`;
-
-const SKILL_DANGEROUS_PATTERNS = [
-  { code: "rm_rf_destructive", check: "Destructive recursive delete", regex: /\brm\s+(-[a-zA-Z]+\s+)*-rf\b[^\n]*(\s+\/\s*|\s+\/\*|\s+~|--no-preserve-root|\s+\/(?:etc|usr|var|bin|sbin|boot|System32)(?:\s|$))/i, score: 0.98 },
-  { code: "drop_sql", check: "SQL DROP statement", regex: /\bDROP\s+(TABLE|DATABASE|SCHEMA)\b/i, score: 0.95 },
-  { code: "truncate_sql", check: "SQL TRUNCATE statement", regex: /\bTRUNCATE\s+TABLE\b/i, score: 0.9 },
-  { code: "delete_sql_unbounded", check: "SQL DELETE without WHERE", regex: /\bDELETE\s+FROM\s+[`'"]?\w+[`'"]?\s*;/i, score: 0.85 },
-  { code: "disk_wipe", check: "Disk overwrite / format", regex: /\bdd\s+if=[^\s]+\s+of=\/dev\/|\bmkfs\.|format\s+[a-z]:/i, score: 0.98 },
-  { code: "curl_pipe_shell", check: "Remote script piped to shell", regex: /\b(curl|wget)\s+[^\n|]+\|\s*(ba)?sh\b/i, score: 0.95 },
-  { code: "powershell_iex", check: "PowerShell invoke-expression", regex: /\bInvoke-Expression\b|\biex\s*\(/i, score: 0.92 },
-  { code: "powershell_rm_force", check: "PowerShell recursive force delete", regex: /Remove-Item\s+[^\n]*-Recurse[^\n]*-Force/i, score: 0.9 },
-  { code: "windows_del_force", check: "Windows forced delete", regex: /\bdel\s+\/[fq]s?\b|Format-Volume/i, score: 0.9 },
-  { code: "chmod_world_writable_root", check: "World-writable permissions on root", regex: /\bchmod\s+(-R\s+)?777\s+\//i, score: 0.88 },
-  { code: "git_destructive", check: "Destructive git operation", regex: /\bgit\s+push\s+[^\n]*--force|\bgit\s+reset\s+--hard|\bgit\s+clean\s+-[a-z]*f/i, score: 0.85 },
-  { code: "system_shutdown", check: "System shutdown or reboot", regex: /\b(shutdown|reboot|poweroff|halt)\s+(-[hfr]|\/s|now)\b/i, score: 0.88 },
-  { code: "fork_bomb", check: "Fork bomb pattern", regex: /:\(\)\s*\{\s*:\|:/, score: 0.99 },
-  { code: "eval_exec_injection", check: "Dynamic eval/exec of shell", regex: /\beval\s+[`$]|\bexec\s*\(\s*[`$]/i, score: 0.9 },
-  { code: "iptables_flush", check: "Flush firewall rules", regex: /\biptables\s+-F\b/i, score: 0.85 },
-  { code: "kill_all", check: "Kill all processes", regex: /\bkill(all)?\s+-9\s+(-1|0)\b|\bpkill\s+-9\b/i, score: 0.9 },
-];
-
-const SKILL_LINE_PATTERNS = [
-  { code: "gateway_api_key", check: "Gateway API key", regex: /\bgrg_[A-Za-z0-9_-]{20,}\b/, score: 0.95 },
-  { code: "database_url", check: "Database connection URL", regex: /\b(?:postgres(?:ql)?|mysql|mongodb|redis)(?:\+[a-z0-9]+)?:\/\/[^\s"']+/i, score: 0.92 },
-  { code: "credential_assignment", check: "Hard-coded credential", regex: /(?:api[_-]?key|secret|password|token|auth)\s*[:=]\s*['"]?[^\s'"#,]{8,}/i, score: 0.88 },
-  { code: "bearer_token", check: "Bearer token", regex: /Bearer\s+[A-Za-z0-9._-]{20,}/i, score: 0.9 },
-  { code: "env_assignment", check: ".env-style secret", regex: /^[A-Z][A-Z0-9_]*\s*=\s*\S+/m, score: 0.75 },
-  { code: "private_ip", check: "Private network address", regex: /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b/, score: 0.55 },
-  { code: "groq_api_key", check: "Groq API key", regex: /\bgsk_[A-Za-z0-9_-]{20,}\b/, score: 0.95 },
-  { code: "openai_api_key", check: "OpenAI API key", regex: /\bsk-[A-Za-z0-9_-]{20,}\b/, score: 0.95 },
-  { code: "ssn", check: "PII (SSN)", regex: /\b\d{3}-\d{2}-\d{4}\b/, score: 0.85 },
-  { code: "credit_card", check: "PII (card)", regex: /\b(?:\d[ -]?){13,16}\b/, score: 0.85 },
-];
-
-const SKILL_OVERRIDE_STORAGE = "skill_guard_overrides";
-
-const SKILL_EXPLANATIONS = {
-  gateway_api_key: "A gateway API key in the skill could be sent to the model or logs.",
-  groq_api_key: "A Groq API key in the skill can be exfiltrated through agent context.",
-  openai_api_key: "An OpenAI API key in the skill can leak via agent transcripts.",
-  secret_detected: "Credential-like material should live only in a secret manager.",
-  pii_detected: "Personal data in skills may be sent to external models.",
-  database_url: "A database URL with credentials allows data access if the agent runs tools.",
-  credential_assignment: "Hard-coded secrets in instructions are often copied by agents.",
-  rm_rf_destructive: "Recursive delete against system paths can wipe the machine.",
-  drop_sql: "DROP statements can destroy tables if the agent executes SQL.",
-  curl_pipe_shell: "Remote script piped to shell runs arbitrary code.",
-};
-
-function explainSkillFinding(f) {
-  return SKILL_EXPLANATIONS[f.reason_code]
-    || `${f.check}. This pattern can expose sensitive data or cause harmful actions when the agent runs tools.`;
-}
-
-function skillFindingKey(f) {
-  return f.finding_key || `${f.reason_code}:${f.line_number || 0}`;
-}
-
-function loadSkillOverrides() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(SKILL_OVERRIDE_STORAGE) || "{}");
-    return {
-      session_allow_keys: raw.session_allow_keys || [],
-      always_allow_keys: raw.always_allow_keys || [],
-      always_allow_reason_codes: raw.always_allow_reason_codes || [],
-    };
-  } catch {
-    return { session_allow_keys: [], always_allow_keys: [], always_allow_reason_codes: [] };
-  }
-}
-
-function saveSkillOverrides(overrides) {
-  localStorage.setItem(SKILL_OVERRIDE_STORAGE, JSON.stringify(overrides));
-}
-
-function isFindingAllowed(f, overrides, sessionAllow) {
-  const key = skillFindingKey(f);
-  if (sessionAllow.includes(key)) return true;
-  if (overrides.session_allow_keys.includes(key)) return true;
-  if (overrides.always_allow_keys.includes(key)) return true;
-  if (overrides.always_allow_reason_codes.includes(f.reason_code)) return true;
-  return false;
-}
-
-function applySkillOverrides(scan, overrides, sessionAllow) {
-  if (!scan?.findings?.length) {
-    return { ...scan, blocking: [], overridden: [], agent_may_continue: true, blocked: false };
-  }
-  const blocking = [];
-  const overridden = [];
-  for (const f of scan.findings) {
-    if (isFindingAllowed(f, overrides, sessionAllow)) overridden.push({ ...f, allowed_by_override: true });
-    else blocking.push(f);
-  }
-  const agent_may_continue = blocking.length === 0;
-  return {
-    ...scan,
-    blocking,
-    overridden,
-    agent_may_continue,
-    blocked: !agent_may_continue,
-    agent_status: agent_may_continue ? "ok" : "paused",
-    rejection_summary: agent_may_continue
-      ? null
-      : `Skill Guard paused (${blocking.length} issue(s)). Choose Run once, Always allow, or Reject, then send your decision to the agent.`,
-  };
-}
-
-function buildSkillGuardAgentPacket(action, findings, { scope = "all", userMessage = "", filename = null } = {}) {
-  const keys = findings.map(skillFindingKey);
-  const codes = [...new Set(findings.map((f) => f.reason_code))];
-  const mayContinue = action !== "reject";
-  let instruction = "";
-  const codesS = codes.join(", ") || "(none)";
-  const keysS = keys.join(", ") || "(none)";
-  const note = userMessage?.trim() ? `\nUser note: "${userMessage.trim()}"` : "";
-  if (action === "always_allow") {
-    instruction =
-      `Skill Guard: user chose ALWAYS ALLOW. Chat may continue. Persist overrides for [${codesS}]. You may use the skill content.${note}`;
-  } else if (action === "run_once") {
-    instruction =
-      `Skill Guard: user chose RUN ONCE. Chat may continue this session only for keys [${keysS}].${note}`;
-  } else {
-    instruction =
-      `Skill Guard: user chose REJECT. Do NOT use flagged content; help fix reason_codes [${codesS}].${note}`;
-  }
-  return {
-    type: "skill_guard_decision",
-    version: 1,
-    agent_status: mayContinue ? "paused_resolved" : "paused_rejected",
-    status: mayContinue ? "continuing" : "rejected",
-    action,
-    may_continue: mayContinue,
-    scope,
-    finding_keys: keys,
-    reason_codes: codes,
-    filename,
-    user_message: (userMessage || "").trim(),
-    instruction_for_agent: instruction,
-  };
-}
-
-function formatSkillGuardPacketForChat(packet) {
-  return (
-    "## Skill Guard — user decision (agent: read and continue)\n\n"
-    + `${packet.instruction_for_agent}\n\n`
-    + "```json\n"
-    + JSON.stringify(packet, null, 2)
-    + "\n```"
-  );
-}
-
-async function copySkillGuardToClipboard(text) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return true;
-  }
-  const ta = document.createElement("textarea");
-  ta.value = text;
-  document.body.appendChild(ta);
-  ta.select();
-  const ok = document.execCommand("copy");
-  document.body.removeChild(ta);
-  return ok;
-}
-
-/** Parse chat-style override commands (web Skill Guard + same phrases in Cursor). */
-function parseSkillGuardCommand(raw, blocking) {
-  const cmd = raw.trim().toLowerCase().replace(/\s+/g, " ");
-  if (!cmd || !blocking?.length) return null;
-
-  if (
-    cmd === "always allow" ||
-    cmd === "always allow all" ||
-    cmd === "allow all" ||
-    cmd === "allow always" ||
-    cmd === "a" ||
-    cmd === "aa"
-  ) {
-    return { action: "always_all" };
-  }
-  const alwaysOne = cmd.match(/^(?:always allow|allow always|allow)\s+([a-z0-9_]+)$/);
-  if (alwaysOne) {
-    return { action: "always_reason", reason: alwaysOne[1] };
-  }
-  if (cmd === "run once" || cmd === "run once all" || cmd === "allow once" || cmd === "ro") {
-    return { action: "run_once_all" };
-  }
-  const runOne = cmd.match(/^run once\s+([a-z0-9_]+)$/);
-  if (runOne) {
-    return { action: "run_once_reason", reason: runOne[1] };
-  }
-  return { action: "unknown", cmd };
-}
-
-function applyAlwaysAllowFindings(findings, overrides, setOverrides) {
-  if (!findings.length) return overrides;
-  const next = { ...overrides };
-  for (const f of findings) {
-    const key = skillFindingKey(f);
-    next.always_allow_keys = [...new Set([...next.always_allow_keys, key])];
-    next.always_allow_reason_codes = [...new Set([...next.always_allow_reason_codes, f.reason_code])];
-  }
-  saveSkillOverrides(next);
-  setOverrides(next);
-  return next;
-}
-
-function clientSkillScan(content) {
-  if (!content.trim()) return { safe: true, risk_score: 0, findings: [] };
-  const lines = content.split("\n");
-  const findings = [];
-  const seen = new Set();
-  lines.forEach((line, idx) => {
-    const lineNo = idx + 1;
-    for (const p of [...SKILL_DANGEROUS_PATTERNS, ...SKILL_LINE_PATTERNS]) {
-      if (p.regex.test(line)) {
-        const key = `${p.code}:${lineNo}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const snippet = line.trim().length > 72 ? line.trim().slice(0, 69) + "..." : line.trim();
-        const category = SKILL_DANGEROUS_PATTERNS.some((d) => d.code === p.code)
-          ? "destructive_command"
-          : p.code.startsWith("ssn") || p.code === "credit_card"
-            ? "pii"
-            : ["groq_api_key", "openai_api_key"].includes(p.code)
-              ? "secret"
-              : "agent_context";
-        const row = {
-          finding_key: key,
-          category,
-          severity: p.score >= 0.9 ? "critical" : p.score >= 0.75 ? "high" : "medium",
-          check: p.check,
-          reason: `${p.check} on line ${lineNo}`,
-          reason_code: p.code,
-          line_number: lineNo,
-          snippet,
-          risk_score: p.score,
-        };
-        row.explanation = explainSkillFinding(row);
-        findings.push(row);
-      }
-    }
-  });
-  const risk = findings.reduce((m, f) => Math.max(m, f.risk_score), 0);
-  return { safe: findings.length === 0, risk_score: risk, findings };
-}
-
 /** Type text character-by-character or word-by-word when `active` becomes true. */
 function useTypewriter(text, { speed = 36, delay = 0, active = false, wordByWord = false } = {}) {
   const [displayed, setDisplayed] = useState("");
@@ -2234,8 +1971,9 @@ function BillingView() {
 
   if (loading) return <div style={s.muted}>Loading billing...</div>;
 
+  const unlimited = wallet?.unlimited;
   const balance = wallet?.balance_tokens ?? 0;
-  const pct = wallet?.billing_enabled
+  const pct = wallet?.billing_enabled && !unlimited
     ? Math.min(100, Math.round((balance / Math.max(balance + (wallet?.tokens_used_lifetime || 0), 1)) * 100))
     : 100;
 
@@ -2254,14 +1992,16 @@ function BillingView() {
 
       <div style={{ ...s.card, marginBottom: 16 }}>
         <div style={s.sectionTitle}>Your balance</div>
-        <div style={{ fontSize: 32, fontWeight: 900, color: "#0f766e" }}>{fmt(balance)}</div>
+        <div style={{ fontSize: 32, fontWeight: 900, color: "#0f766e" }}>
+          {unlimited ? "Unlimited" : fmt(balance)}
+        </div>
         <div style={{ fontSize: 13, color: "#607086", marginTop: 4 }}>
-          tokens remaining
-          {wallet?.billing_enabled && (
+          {unlimited ? "gateway tokens (owner account)" : "tokens remaining"}
+          {wallet?.billing_enabled && !unlimited && (
             <> · {fmt(wallet.tokens_used_lifetime)} used · {fmt(wallet.tokens_purchased_lifetime)} purchased</>
           )}
         </div>
-        {wallet?.billing_enabled && (
+        {wallet?.billing_enabled && !unlimited && (
           <div style={{ marginTop: 12, height: 8, background: "#e2e8f0", borderRadius: 4, overflow: "hidden" }}>
             <div style={{ width: `${pct}%`, height: "100%", background: "#0f766e" }} />
           </div>
@@ -2366,412 +2106,187 @@ FREE_SIGNUP_TOKENS=10000
   );
 }
 
-function SkillGuardPauseBar({
-  label,
-  targets,
-  scope,
-  filename,
-  agentNote,
-  pendingDecision,
-  onChoose,
-  onSend,
-  sendStatus,
-}) {
-  const pendingHere = pendingDecision
-    && pendingDecision.scope === scope
-    && pendingDecision.action;
-  return (
-    <div style={{
-      marginTop: 12, padding: 12, borderRadius: 8,
-      border: "1px solid #c7d8e8", background: "#f8fbff",
-    }}>
-      {label && (
-        <div style={{ fontSize: 11, fontWeight: 800, color: "#607086", marginBottom: 8 }}>{label}</div>
-      )}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <button type="button" style={s.btn(pendingHere === "run_once" ? "primary" : "secondary")}
-          onClick={() => onChoose("run_once", targets, scope)}>
-          Run once
-        </button>
-        <button type="button" style={s.btn(pendingHere === "always_allow" ? "primary" : "secondary")}
-          onClick={() => onChoose("always_allow", targets, scope)}>
-          Always allow
-        </button>
-        <button type="button" style={s.btn(pendingHere === "reject" ? "primary" : "secondary")}
-          onClick={() => onChoose("reject", targets, scope)}>
-          Reject
-        </button>
-        <button type="button" style={s.btn("primary")} onClick={() => onSend(targets, scope)}
-          title="Copy decision + your message for Cursor agent chat">
-          Send to agent
-        </button>
-      </div>
-      {sendStatus && (
-        <div style={{ ...s.alert(sendStatus.ok ? "success" : "error"), marginTop: 10, marginBottom: 0, fontSize: 12 }}>
-          {sendStatus.text}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// SKILL GUARD VIEW
+// REJECTED ACCESS — review and unblock (web control layer)
 function SkillGuardView() {
-  const [content, setContent] = useState(SKILL_SAMPLE_UNSAFE);
-  const [filename, setFilename] = useState("SKILL.md");
-  const [preview, setPreview] = useState(null);
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState([]);
+  const [filter, setFilter] = useState("pending");
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [overrides, setOverrides] = useState(() => loadSkillOverrides());
-  const [sessionAllow, setSessionAllow] = useState([]);
-  const [agentNote, setAgentNote] = useState("");
-  const [pendingDecision, setPendingDecision] = useState(null);
-  const [sendStatus, setSendStatus] = useState(null);
-  const [lastAgentPacket, setLastAgentPacket] = useState(null);
+  const [info, setInfo] = useState("");
+  const [resolving, setResolving] = useState(null);
+  const [notes, setNotes] = useState({});
 
-  useEffect(() => {
-    setPreview(clientSkillScan(content));
-  }, [content]);
-
-  useEffect(() => {
-    setPendingDecision(null);
-    setSendStatus(null);
-    setLastAgentPacket(null);
-  }, [content, result?.findings?.length]);
-
-  const rawDisplay = result || preview;
-  const effective = rawDisplay
-    ? applySkillOverrides(rawDisplay, overrides, sessionAllow)
-    : null;
-
-  async function runServerScan() {
-    if (!content.trim()) return;
+  const load = useCallback(() => {
     setLoading(true);
     setError("");
-    setResult(null);
+    api(`/skills/rejections?status=${encodeURIComponent(filter)}`)
+      .then(setItems)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [filter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function resolve(id, action) {
+    setResolving(id + action);
+    setError("");
+    setInfo("");
     try {
-      const data = await api("/skills/scan", {
+      await api(`/skills/rejections/${id}/resolve`, {
         method: "POST",
-        body: {
-          content,
-          filename: filename.trim() || null,
-          overrides: { ...overrides, session_allow_keys: sessionAllow },
-        },
+        body: { action, note: notes[id] || "" },
       });
-      setResult(data);
+      const labels = {
+        allow_once: "Unblocked for this request (run once).",
+        allow_always: "Unblocked permanently (always allow).",
+        keep_rejected: "Kept rejected.",
+      };
+      setInfo(labels[action] || "Updated.");
+      load();
     } catch (e) {
       setError(e.message);
     } finally {
-      setLoading(false);
-    }
-  }
-
-  function choosePauseAction(action, targets, scope) {
-    setPendingDecision({ action, targets, scope });
-    setSendStatus(null);
-  }
-
-  async function sendDecisionToAgent(targets, scope) {
-    const decision = pendingDecision?.scope === scope ? pendingDecision : null;
-    if (!decision?.action) {
-      setSendStatus({
-        ok: false,
-        text: "Choose Run once, Always allow, or Reject first — then Send to agent.",
-      });
-      return;
-    }
-    const useTargets = decision.targets?.length ? decision.targets : targets;
-    if (decision.action === "always_allow") {
-      applyAlwaysAllowFindings(useTargets, overrides, setOverrides);
-    } else if (decision.action === "run_once") {
-      const keys = useTargets.map(skillFindingKey);
-      setSessionAllow((prev) => [...new Set([...prev, ...keys])]);
-    }
-    const packet = buildSkillGuardAgentPacket(decision.action, useTargets, {
-      scope,
-      userMessage: agentNote,
-      filename: filename.trim() || null,
-    });
-    const markdown = formatSkillGuardPacketForChat(packet);
-    try {
-      await copySkillGuardToClipboard(markdown);
-      localStorage.setItem("skill_guard_last_decision", JSON.stringify(packet));
-      setLastAgentPacket(packet);
-      const verb = packet.may_continue
-        ? "Agent may continue — decision copied. Paste into Cursor chat (or the agent reads skill_guard_last_decision)."
-        : "Reject sent to agent — do not use flagged content until fixed.";
-      setSendStatus({ ok: true, text: verb });
-    } catch {
-      setSendStatus({ ok: false, text: "Could not copy to clipboard. Copy the box below manually." });
+      setResolving(null);
     }
   }
 
   const severityColor = { critical: "#be123c", high: "#c2410c", medium: "#b45309" };
-  const isPaused = effective && (effective.agent_status === "paused" || effective.blocked);
-  const showPausePanel = isPaused && !effective.agent_may_continue;
+  const statusBadge = {
+    pending: "input_blocked",
+    unblocked_once: "delivered",
+    unblocked_always: "delivered",
+    kept_rejected: "rate_limited",
+  };
 
   return (
     <div>
       <div style={s.heroPanel}>
-        <div style={{ ...s.pageTitle, marginBottom: 8 }}>Agent Skill Guard</div>
-        <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6, maxWidth: 820 }}>
-          Scan Cursor skills, MCP instructions, and system prompts before agents load them.
-          Catch leaked secrets and PII, plus shell/SQL commands that could damage the host (rm -rf /, DROP TABLE, curl | bash, etc.).
+        <div style={{ ...s.pageTitle, marginBottom: 8 }}>Rejected access</div>
+        <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6, maxWidth: 720 }}>
+          Blocked skill and agent requests appear here after you review them.
+          Unblock when you are satisfied — overrides are saved for git push and Cursor agents.
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
         {[
-          ["01", "Paste skill", "Markdown or YAML instructions"],
-          ["02", "Instant preview", "Client-side pattern match"],
-          ["03", "Server scan", "Full policy-backed audit"],
-          ["04", "Ship safe", "Redact findings before publish"],
-        ].map(([num, title, desc]) => (
-          <div key={title} style={{ border: "1px solid #dce7f0", background: "#f8fbff", borderRadius: 8, padding: 12 }}>
-            <div style={{ color: "#0f766e", fontWeight: 850, fontSize: 12 }}>{num}</div>
-            <div style={{ color: "#27394f", fontWeight: 800, fontSize: 13, marginTop: 4 }}>{title}</div>
-            <div style={{ color: "#607086", fontSize: 11, marginTop: 4 }}>{desc}</div>
-          </div>
+          ["pending", "Awaiting review"],
+          ["all", "All"],
+          ["unblocked_once", "Unblocked once"],
+          ["unblocked_always", "Always allowed"],
+          ["kept_rejected", "Kept rejected"],
+        ].map(([val, label]) => (
+          <button
+            key={val}
+            type="button"
+            style={s.btn(filter === val ? "primary" : "secondary")}
+            onClick={() => setFilter(val)}
+          >
+            {label}
+          </button>
         ))}
+        <button type="button" style={s.btn("secondary")} onClick={load} disabled={loading}>
+          Refresh
+        </button>
       </div>
 
-      <div style={s.card}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          <button type="button" style={s.btn("secondary")} onClick={() => setContent(SKILL_SAMPLE_UNSAFE)}>
-            Load risky example
-          </button>
-          <button type="button" style={s.btn("secondary")} onClick={() => setContent(SKILL_SAMPLE_SAFE)}>
-            Load safe example
-          </button>
-        </div>
-        <label style={s.label}>Filename (optional)</label>
-        <input
-          style={{ ...s.input, marginBottom: 10, fontFamily: "monospace" }}
-          value={filename}
-          onChange={(e) => setFilename(e.target.value)}
-          placeholder="SKILL.md"
-        />
-        <label style={s.label}>Skill / instruction content</label>
-        <textarea
-          style={{ ...s.input, minHeight: 220, resize: "vertical", fontFamily: "ui-monospace, monospace", fontSize: 13 }}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="Paste your agent skill, rules file, or system prompt..."
-        />
-        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-          <button style={s.btn("primary")} onClick={runServerScan} disabled={loading || !content.trim()}>
-            {loading ? "Scanning..." : "Run server scan"}
-          </button>
-          {isPaused && !effective.agent_may_continue && (
-            <span style={{ fontSize: 12, color: "#b45309", alignSelf: "center", fontWeight: 700 }}>
-              {effective.blocking.length} issue(s) — agent paused
-            </span>
-          )}
-        </div>
-      </div>
+      {error && <div style={{ ...s.alert("error"), marginBottom: 16 }}>{error}</div>}
+      {info && <div style={{ ...s.alert("success"), marginBottom: 16 }}>{info}</div>}
 
-      {error && <div style={{ ...s.alert("error"), marginTop: 16 }}>{error}</div>}
-
-      {effective && (
-        <div style={{ ...s.card, marginTop: 16 }}>
-          <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
-            <div>
-              <div style={s.statLabel}>Agent</div>
-              <span style={s.badge(
-                effective.agent_may_continue ? "delivered" : isPaused ? "rate_limited" : "input_blocked"
-              )}>
-                {effective.agent_may_continue
-                  ? "Continuing"
-                  : isPaused
-                    ? "Paused"
-                    : "Blocked"}
-              </span>
-            </div>
-            <div>
-              <div style={s.statLabel}>Raw scan</div>
-              <span style={s.badge(effective.safe ? "delivered" : "input_blocked")}>
-                {effective.safe ? "Clean" : `${effective.findings.length} finding(s)`}
-              </span>
-            </div>
-            <div>
-              <div style={s.statLabel}>Risk score</div>
-              <div style={{ fontSize: 14, fontWeight: 800, marginTop: 4 }}>
-                {Math.round((effective.risk_score || 0) * 100)}%
-              </div>
-            </div>
-            {effective.line_count != null && (
+      {loading ? (
+        <div style={s.muted}>Loading rejected access...</div>
+      ) : items.length === 0 ? (
+        <div style={s.card}>
+          <div style={{ color: "#607086", fontSize: 14 }}>
+            {filter === "pending"
+              ? "No rejected access waiting for review."
+              : "No records for this filter."}
+          </div>
+          <div style={{ fontSize: 12, color: "#7b8a9d", marginTop: 8 }}>
+            Blocks from git push or scans are recorded when Skill Guard rejects access.
+          </div>
+        </div>
+      ) : (
+        items.map((row) => (
+          <div key={row.id} style={{ ...s.card, marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <div>
-                <div style={s.statLabel}>Size</div>
-                <div style={{ fontSize: 14, fontWeight: 800, marginTop: 4 }}>
-                  {effective.line_count} lines · {(effective.char_count || content.length).toLocaleString()} chars
+                <div style={{ fontWeight: 800, color: "#102033" }}>
+                  {row.filename || "Unknown file"}
+                </div>
+                <div style={{ fontSize: 12, color: "#607086", marginTop: 4 }}>
+                  {row.source} · {new Date(row.created_at).toLocaleString()}
+                </div>
+              </div>
+              <span style={s.badge(statusBadge[row.status] || "input_blocked")}>{row.status}</span>
+            </div>
+
+            <div style={{ marginTop: 10, fontSize: 14, color: "#405166" }}>{row.rejection_summary}</div>
+
+            {(row.findings || []).map((f, i) => (
+              <div key={(f.finding_key || i) + i} style={{
+                marginTop: 10, padding: 12, borderRadius: 8,
+                border: "1px solid #fecdd3", background: "#fffbfb",
+              }}>
+                <div style={{ fontWeight: 800, color: severityColor[f.severity] || "#be123c", fontSize: 13 }}>
+                  [{f.severity}] {f.check}
+                  {f.line_number ? ` · line ${f.line_number}` : ""}
+                  <code style={{ marginLeft: 8, fontSize: 11, color: "#7b8a9d" }}>{f.reason_code}</code>
+                </div>
+                <div style={{ fontSize: 12, fontFamily: "monospace", color: "#607086", marginTop: 6 }}>
+                  {f.snippet}
+                </div>
+              </div>
+            ))}
+
+            {row.status === "pending" && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #e2e8f0" }}>
+                <label style={s.label}>Note (optional)</label>
+                <input
+                  style={{ ...s.input, marginBottom: 10 }}
+                  value={notes[row.id] || ""}
+                  onChange={(e) => setNotes((n) => ({ ...n, [row.id]: e.target.value }))}
+                  placeholder="Why you are allowing or rejecting..."
+                />
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    style={s.btn("primary")}
+                    disabled={!!resolving}
+                    onClick={() => resolve(row.id, "allow_once")}
+                  >
+                    {resolving === row.id + "allow_once" ? "..." : "Unblock once"}
+                  </button>
+                  <button
+                    type="button"
+                    style={s.btn("primary")}
+                    disabled={!!resolving}
+                    onClick={() => resolve(row.id, "allow_always")}
+                  >
+                    {resolving === row.id + "allow_always" ? "..." : "Always allow"}
+                  </button>
+                  <button
+                    type="button"
+                    style={s.btn("secondary")}
+                    disabled={!!resolving}
+                    onClick={() => resolve(row.id, "keep_rejected")}
+                  >
+                    {resolving === row.id + "keep_rejected" ? "..." : "Keep rejected"}
+                  </button>
                 </div>
               </div>
             )}
+
+            {row.status !== "pending" && row.resolved_at && (
+              <div style={{ fontSize: 12, color: "#607086", marginTop: 10 }}>
+                Resolved {new Date(row.resolved_at).toLocaleString()}
+                {row.resolved_action ? ` · ${row.resolved_action.replace("_", " ")}` : ""}
+                {row.resolver_note ? ` — ${row.resolver_note}` : ""}
+              </div>
+            )}
           </div>
-
-          {effective.agent_may_continue && !effective.safe && (
-            <div style={s.alert("success")}>
-              Agent may continue — {effective.overridden.length} issue(s) allowed via Run once / Always allow.
-              Review overrides before publishing to production.
-            </div>
-          )}
-
-          {effective.safe && (
-            <div style={s.alert("success")}>
-              No blocking issues. Agent may continue; still review for business-sensitive prose.
-            </div>
-          )}
-
-          {effective.agent_may_continue && lastAgentPacket && !effective.safe && (
-            <div style={s.alert("success")}>
-              Agent notified — chat may continue per your decision ({lastAgentPacket.action.replace("_", " ")}).
-            </div>
-          )}
-
-          {showPausePanel && (
-            <>
-              <div style={{ ...s.alert("error"), borderColor: "#fed7aa", background: "#fffbeb" }}>
-                <strong>Agent paused (chat not ended)</strong>
-                <div style={{ marginTop: 8, fontWeight: 500 }}>
-                  {result?.rejection_summary || effective.rejection_summary}
-                </div>
-                <div style={{ marginTop: 8, fontSize: 13 }}>
-                  Pick an action, add an optional note, then <strong>Send to agent</strong> so Cursor knows whether to continue.
-                </div>
-              </div>
-
-              <div style={{
-                marginTop: 14, padding: 14, borderRadius: 10,
-                border: "2px solid #0f766e", background: "#f0fdfa",
-              }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: "#0f766e", marginBottom: 8 }}>
-                  Message for agent (optional)
-                </div>
-                <textarea
-                  style={{ ...s.input, minHeight: 56, resize: "vertical", marginBottom: 10, fontFamily: "inherit" }}
-                  value={agentNote}
-                  onChange={(e) => setAgentNote(e.target.value)}
-                  placeholder="e.g. This is a demo skill — safe to use for staging only"
-                />
-                <SkillGuardPauseBar
-                  label="All blocking issues"
-                  targets={effective.blocking}
-                  scope="all"
-                  filename={filename}
-                  agentNote={agentNote}
-                  pendingDecision={pendingDecision}
-                  onChoose={choosePauseAction}
-                  onSend={sendDecisionToAgent}
-                  sendStatus={pendingDecision?.scope === "all" ? sendStatus : null}
-                />
-              </div>
-
-              {effective.blocking.map((f, i) => {
-                const scope = skillFindingKey(f);
-                return (
-                  <div key={scope + i} style={{
-                    marginTop: 12, padding: 14, borderRadius: 8,
-                    border: "1px solid #fecdd3", background: "#fffbfb",
-                  }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                      <div style={{ fontWeight: 800, color: severityColor[f.severity] || "#be123c" }}>
-                        [{f.severity}] {f.check}
-                        {f.line_number ? ` · line ${f.line_number}` : ""}
-                      </div>
-                      <code style={{ fontSize: 11, color: "#7b8a9d" }}>{f.reason_code}</code>
-                    </div>
-                    <div style={{ fontSize: 13, color: "#405166", marginTop: 8, lineHeight: 1.5 }}>
-                      {f.explanation || explainSkillFinding(f)}
-                    </div>
-                    <div style={{ fontSize: 12, fontFamily: "monospace", color: "#607086", marginTop: 8,
-                      padding: 8, background: "#f8fafc", borderRadius: 6 }}>
-                      {f.snippet}
-                    </div>
-                    <SkillGuardPauseBar
-                      label={null}
-                      targets={[f]}
-                      scope={scope}
-                      filename={filename}
-                      agentNote={agentNote}
-                      pendingDecision={pendingDecision}
-                      onChoose={choosePauseAction}
-                      onSend={sendDecisionToAgent}
-                      sendStatus={pendingDecision?.scope === scope ? sendStatus : null}
-                    />
-                  </div>
-                );
-              })}
-
-              {lastAgentPacket && (
-                <div style={{ marginTop: 14 }}>
-                  <div style={s.sectionTitle}>Last message sent to agent</div>
-                  <pre style={{ margin: 0, fontSize: 11, lineHeight: 1.45, padding: 12, background: "#f1f5f9",
-                    borderRadius: 8, border: "1px solid #dce7f0", overflow: "auto", maxHeight: 200 }}>
-                    {formatSkillGuardPacketForChat(lastAgentPacket)}
-                  </pre>
-                </div>
-              )}
-            </>
-          )}
-
-          {effective.overridden.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <div style={s.sectionTitle}>Allowed by override ({effective.overridden.length})</div>
-              <table style={s.table}>
-                <thead>
-                  <tr>
-                    {["Check", "Line", "Snippet"].map((h) => (
-                      <th key={h} style={s.th}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {effective.overridden.map((f, i) => (
-                    <tr key={`ov-${skillFindingKey(f)}-${i}`}>
-                      <td style={s.td}>{f.check}</td>
-                      <td style={s.td}>{f.line_number || "—"}</td>
-                      <td style={{ ...s.td, fontFamily: "monospace", fontSize: 11 }}>{f.snippet}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        ))
       )}
-
-      <div style={{ ...s.card, marginTop: 16 }}>
-        <div style={s.sectionTitle}>Block pushes to GitHub (recommended)</div>
-        <pre style={{ margin: 0, fontSize: 12, lineHeight: 1.5, padding: 14, background: "#f1f5f9",
-          borderRadius: 8, border: "1px solid #dce7f0", overflow: "auto" }}>
-{`# Once per clone — runs before every git push
-./scripts/install-git-hooks.sh
-
-# Windows
-.\\scripts\\install-git-hooks.ps1`}
-        </pre>
-        <div style={{ color: "#607086", fontSize: 12, marginTop: 8 }}>
-          On push, type <strong>always allow</strong> or <strong>always allow all</strong> once (no per-issue keys).
-          Rules save to <code style={{ fontSize: 11 }}>.cursor/skill-guard-overrides.json</code>.
-        </div>
-      </div>
-
-      <div style={{ ...s.card, marginTop: 16 }}>
-        <div style={s.sectionTitle}>GitHub Actions (server-side)</div>
-        <pre style={{ margin: 0, fontSize: 12, lineHeight: 1.5, padding: 14, background: "#f1f5f9",
-          borderRadius: 8, border: "1px solid #dce7f0", overflow: "auto" }}>
-{`# Workflow: .github/workflows/scan-agent-skills.yml
-# - pull_request → scan all skills
-# - push → scan only changed skill files
-
-python scripts/scan_agent_skills.py
-python scripts/scan_agent_skills.py --git-range origin/main..HEAD`}
-        </pre>
-        <div style={{ color: "#607086", fontSize: 12, marginTop: 8 }}>
-          Catches issues even if a teammate skipped the local hook. Same rules as the dashboard scan.
-        </div>
-      </div>
     </div>
   );
 }
@@ -2780,7 +2295,7 @@ python scripts/scan_agent_skills.py --git-range origin/main..HEAD`}
 const NAV = [
   { id: "dashboard", label: "Dashboard",    icon: "01" },
   { id: "chat",      label: "LLM Playground", icon: "02" },
-  { id: "skills",    label: "Skill Guard",  icon: "SG" },
+  { id: "skills",    label: "Rejected access",  icon: "SG" },
   { id: "billing",   label: "Billing",      icon: "$" },
   { id: "logs",      label: "Logs",         icon: "03" },
   { id: "keys",      label: "API Keys",     icon: "04" },

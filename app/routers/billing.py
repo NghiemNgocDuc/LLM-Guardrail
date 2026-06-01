@@ -27,7 +27,7 @@ from app.services.stripe_billing import (
     create_checkout_session,
     stripe_configured,
 )
-from app.services.token_wallet import credit_tokens, ensure_wallet, get_wallet
+from app.services.token_wallet import credit_tokens, ensure_wallet, user_has_unlimited_tokens
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -64,11 +64,13 @@ async def list_plans():
 @router.get("/wallet", response_model=BillingWalletOut)
 async def get_my_wallet(current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
     wallet = await ensure_wallet(db, current_user.id)
+    unlimited = await user_has_unlimited_tokens(db, current_user.id)
     return BillingWalletOut(
         balance_tokens=wallet.balance_tokens,
         tokens_used_lifetime=wallet.tokens_used_lifetime,
         tokens_purchased_lifetime=wallet.tokens_purchased_lifetime,
         billing_enabled=settings.BILLING_ENABLED,
+        unlimited=unlimited,
     )
 
 

@@ -10,9 +10,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.models import TokenPurchase, TokenWallet
+from app.models import TokenPurchase, TokenWallet, User
 
 settings = get_settings()
+
+
+def unlimited_email_set() -> set[str]:
+    return {e.strip().lower() for e in settings.BILLING_UNLIMITED_EMAILS.split(",") if e.strip()}
+
+
+async def user_has_unlimited_tokens(db: AsyncSession, user_id: str) -> bool:
+    user = await db.get(User, user_id)
+    if not user:
+        return False
+    return user.email.lower() in unlimited_email_set()
 
 
 async def get_wallet(db: AsyncSession, user_id: str) -> TokenWallet | None:
@@ -43,6 +54,9 @@ async def require_balance(db: AsyncSession, user_id: str, needed: int) -> TokenW
     if not settings.BILLING_ENABLED:
         return await ensure_wallet(db, user_id)
 
+    if await user_has_unlimited_tokens(db, user_id):
+        return await ensure_wallet(db, user_id)
+
     wallet = await ensure_wallet(db, user_id)
     if wallet.balance_tokens < needed:
         raise HTTPException(
@@ -59,6 +73,8 @@ async def require_balance(db: AsyncSession, user_id: str, needed: int) -> TokenW
 
 async def deduct_tokens(db: AsyncSession, wallet: TokenWallet, amount: int) -> None:
     if not settings.BILLING_ENABLED or amount <= 0:
+        return
+    if await user_has_unlimited_tokens(db, wallet.user_id):
         return
     wallet.balance_tokens = max(0, wallet.balance_tokens - amount)
     wallet.tokens_used_lifetime += amount

@@ -1,0 +1,42 @@
+---
+description: Skill Guard control layer lives in Cursor chat — show 4 choices and wait; never use web UI buttons.
+alwaysApply: true
+---
+
+# Skill Guard — chat control layer (not the web app)
+
+When a skill scan, pre-push hook, or `.cursor/skill-guard-pause.json` indicates the agent is **paused**:
+
+## You MUST do this in the chat thread
+
+1. **Pause** — do not end the conversation or say "go to the website."
+2. Post the control prompt (see `chat_prompt` in `.cursor/skill-guard-pause.json` if present, or build from findings).
+3. Present exactly these **four** user actions (they reply in **this chat**):
+
+| # | User replies | You do |
+|---|----------------|--------|
+| 1 | `Run once` | Continue this task only; no permanent override |
+| 2 | `Always allow` | Update `.cursor/skill-guard-overrides.json` and continue |
+| 3 | `Reject` | Do not use flagged secrets/commands; help fix the skill |
+| 4 | Any other text | Treat as `user_message` + apply their intent (then record decision) |
+
+4. **Wait** for the user's message. Do not use blocked skill content until they choose.
+
+## After the user replies
+
+1. Map their message to `run_once`, `always_allow`, or `reject` (or parse custom note for option 4).
+2. Run:
+   ```bash
+   python scripts/skill_guard_decision.py always_allow --reason <code> --message "..."
+   ```
+3. Read `.cursor/skill-guard-decision.json` and follow `instruction_for_agent`.
+4. Delete or ignore `.cursor/skill-guard-pause.json` and **continue** the original task.
+
+## Web dashboard
+
+- **Rejected access** page lists blocks only — user unblocks there after review (Unblock once / Always allow / Keep rejected).
+- Do not use the web for scanning; chat is for immediate decisions, web is for the review queue.
+
+## Never
+
+- Proceed with leaked credentials, destructive shell/SQL, or PII in agent context without an explicit allow.

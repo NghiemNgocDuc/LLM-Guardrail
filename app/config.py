@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     # Token billing (gateway usage = input + output tokens per /chat request)
     BILLING_ENABLED: bool = True
     FREE_SIGNUP_TOKENS: int = 10_000
+    # Comma-separated emails with unlimited gateway tokens (no deduct, no 402)
+    BILLING_UNLIMITED_EMAILS: str = "dnghiem@umass.edu"
 
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""

@@ -32,6 +32,7 @@ from app.services.token_wallet import (
     ensure_wallet,
     estimate_request_tokens,
     require_balance,
+    user_has_unlimited_tokens,
 )
 from app.config import get_settings
 from guardrails.input import InputGuardrail
@@ -247,6 +248,7 @@ async def chat(
     used = llm_resp.input_tokens + llm_resp.output_tokens
     await deduct_tokens(db, wallet, used)
     await db.commit()
+    unlimited = await user_has_unlimited_tokens(db, api_key.owner_id)
     bal = wallet.balance_tokens
 
     return ChatResponse(
@@ -270,7 +272,7 @@ async def chat(
         latency_ms=latency_ms,
         model=llm_resp.model,
         backend=llm_resp.backend,
-        tokens_remaining=bal if settings.BILLING_ENABLED else None,
+        tokens_remaining=bal if settings.BILLING_ENABLED and not unlimited else None,
     )
 
 
