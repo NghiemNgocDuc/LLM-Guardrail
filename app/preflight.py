@@ -19,6 +19,9 @@ def main() -> None:
     print(f"database_url={_mask_url(settings.DATABASE_URL)}", flush=True)
     print(f"rate_limit_redis_url={_mask_url(settings.RATE_LIMIT_REDIS_URL)}", flush=True)
     print(f"groq_api_key_configured={bool(settings.GROQ_API_KEY)}", flush=True)
+    print(f"smtp_configured={settings.smtp_configured}", flush=True)
+    print(f"require_email_verification={settings.REQUIRE_EMAIL_VERIFICATION}", flush=True)
+    print(f"demo_max_output_tokens={settings.DEMO_MAX_OUTPUT_TOKENS}", flush=True)
     print(f"allowed_origins={settings.ALLOWED_ORIGINS}", flush=True)
 
 

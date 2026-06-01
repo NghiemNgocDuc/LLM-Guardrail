@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     DEMO_IP_RATE_LIMIT_RPM: int = 20
     DEMO_IP_RATE_LIMIT_RPD: int = 100
     DEMO_MAX_PROMPT_CHARS: int = 2_000
-    DEMO_MAX_OUTPUT_TOKENS: int = 1024
+    DEMO_MAX_OUTPUT_TOKENS: int = 2048
 
     OPENAI_API_KEY: str = ""
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
@@ -88,8 +88,8 @@ class Settings(BaseSettings):
         elif self.DATABASE_URL.startswith("postgresql://") and "+asyncpg" not in self.DATABASE_URL:
             self.DATABASE_URL = "postgresql+asyncpg://" + self.DATABASE_URL[len("postgresql://") :]
 
-        # Dev without SMTP: skip verification gate and log links from the email service.
-        if self.APP_ENV != "production" and not self.smtp_configured:
+        # Without SMTP, email verification cannot run — allow sign-in without blocking startup.
+        if not self.smtp_configured:
             self.REQUIRE_EMAIL_VERIFICATION = False
 
         if self.GROQ_API_KEY:
@@ -126,10 +126,6 @@ class Settings(BaseSettings):
             raise ValueError("RATE_LIMIT_REDIS_URL must be configured in production")
         if self.DEFAULT_LLM_BACKEND == "groq" and not self.GROQ_API_KEY:
             raise ValueError("GROQ_API_KEY must be configured when DEFAULT_LLM_BACKEND=groq")
-        if self.REQUIRE_EMAIL_VERIFICATION and not self.smtp_configured:
-            raise ValueError(
-                "SMTP_HOST and SMTP_FROM must be set when REQUIRE_EMAIL_VERIFICATION is enabled in production"
-            )
         if not self.PUBLIC_APP_URL.startswith("http"):
             raise ValueError("PUBLIC_APP_URL must be a full URL (used in verification and reset emails)")
         return self

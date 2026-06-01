@@ -55,6 +55,7 @@ Configure SMTP so new users must confirm email before login.
 ```env
 PUBLIC_APP_URL=https://your-render-service.onrender.com
 REQUIRE_EMAIL_VERIFICATION=true
+# Only works when SMTP_HOST and SMTP_FROM are set. Without SMTP, the app auto-disables verification so it can start.
 SMTP_HOST=smtp.resend.com
 SMTP_PORT=587
 SMTP_USER=resend
@@ -135,7 +136,7 @@ DEMO_RATE_LIMIT_RPD=25
 DEMO_IP_RATE_LIMIT_RPM=20
 DEMO_IP_RATE_LIMIT_RPD=100
 DEMO_MAX_PROMPT_CHARS=2000
-DEMO_MAX_OUTPUT_TOKENS=1024
+DEMO_MAX_OUTPUT_TOKENS=2048
 ```
 
 For a fixed shared demo account:
@@ -150,7 +151,7 @@ Suggested public-demo starting point:
 - `DEMO_RATE_LIMIT_RPD=20`
 - `DEMO_IP_RATE_LIMIT_RPM=10`
 - `DEMO_IP_RATE_LIMIT_RPD=50`
-- `DEMO_MAX_OUTPUT_TOKENS=1024` (lower to save Groq quota on a public demo)
+- `DEMO_MAX_OUTPUT_TOKENS=2048` (lower to save Groq quota on a public demo)
 
 Raise those only after watching usage and cost.
 
