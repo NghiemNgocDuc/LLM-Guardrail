@@ -701,7 +701,8 @@ function GlobalStyles() {
           linear-gradient(rgba(100, 116, 139, 0.05) 1px, transparent 1px),
           linear-gradient(90deg, rgba(100, 116, 139, 0.05) 1px, transparent 1px);
         background-size: 48px 48px;
-        mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 20%, transparent 75%);
+        -webkit-mask: radial-gradient(ellipse 80% 70% at 50% 50%, black 20%, transparent 75%);
+        mask: radial-gradient(ellipse 80% 70% at 50% 50%, black 20%, transparent 75%);
         animation: authGridScroll 40s linear infinite;
       }
       @keyframes authGridScroll {
