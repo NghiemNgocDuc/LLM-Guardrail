@@ -30,3 +30,6 @@ Thumbs.db
 *.log
 guardrails.db
 dev.db
+
+# Skill Guard per-developer allow list (always-allow rules)
+.cursor/skill-guard-overrides.json

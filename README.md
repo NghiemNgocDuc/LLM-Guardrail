@@ -1,6 +1,6 @@
-# LLM Guardrails Gateway
+# AI Guardrails Platform
 
-Production-ready Docker stack for a multi-tenant LLM safety gateway with:
+Production-ready Docker stack for a multi-tenant **LLM safety gateway** and **agent skill leak scanner** with:
 
 - FastAPI API gateway
 - React dashboard
@@ -8,6 +8,7 @@ Production-ready Docker stack for a multi-tenant LLM safety gateway with:
 - Redis-backed rate limiting
 - Per-organization guardrail policy
 - Groq/OpenAI-compatible LLM backend support
+- Agent skill / instruction scanner (`POST /skills/scan`) for Cursor skills, MCP rules, and system prompts
 
 ## Architecture
 
@@ -117,6 +118,49 @@ curl -X POST http://localhost:8080/chat \
   -H "Content-Type: application/json" \
   -d '{"prompt":"What is the capital of France?"}'
 ```
+
+Scan an agent skill or instruction file before publishing (dashboard: **Skill Guard**):
+
+```bash
+curl -X POST http://localhost:8080/skills/scan \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"content":"---\nname: my-skill\n---\nDo not embed secrets here.","filename":"SKILL.md"}'
+```
+
+Returns `safe`, `risk_score`, and per-line `findings` (secrets, PII, DB URLs, env assignments, internal paths, destructive shell/SQL commands).
+
+### Before `git push` (local hook)
+
+Install once per clone so sensitive or destructive skill content cannot be pushed to GitHub:
+
+```bash
+./scripts/install-git-hooks.sh
+```
+
+Windows:
+
+```powershell
+.\scripts\install-git-hooks.ps1
+```
+
+The **pre-push** hook scans only `.cursor/skills/` files in the commits you are pushing. If the push does not touch that folder, it skips instantly.
+
+### GitHub (pull requests and pushes)
+
+[`.github/workflows/scan-agent-skills.yml`](.github/workflows/scan-agent-skills.yml) runs on:
+
+- Every pull request to `main`
+- Every **push** that changes `.cursor/skills/**` (any branch) — backup if someone skips the local hook
+
+Scan manually anytime:
+
+```bash
+python scripts/scan_agent_skills.py
+python scripts/scan_agent_skills.py --git-range origin/main..HEAD
+```
+
+See [.githooks/README.md](.githooks/README.md) for details.
 
 Client examples:
 

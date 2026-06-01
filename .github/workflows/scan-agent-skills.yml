@@ -1,0 +1,54 @@
+name: Scan agent skills
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    paths:
+      - ".cursor/skills/**"
+      - "guardrails/**"
+      - "scripts/scan_agent_skills.py"
+      - "scripts/install-git-hooks.*"
+      - ".githooks/**"
+      - ".github/workflows/scan-agent-skills.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  skill-guard:
+    name: Skill Guard (.cursor/skills)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Scan skill files in this push
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            python scripts/scan_agent_skills.py --github-actions
+            exit $?
+          fi
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "First push or empty before SHA — scanning all skills"
+            python scripts/scan_agent_skills.py --github-actions
+            exit $?
+          fi
+          CHANGED=$(git diff --name-only "$BEFORE" "$AFTER" -- '.cursor/skills/' || true)
+          if [ -z "$CHANGED" ]; then
+            echo "Skill Guard: no .cursor/skills/ changes in this push."
+            exit 0
+          fi
+          echo "Skill Guard: scanning changed skill files:"
+          echo "$CHANGED"
+          python scripts/scan_agent_skills.py --github-actions $CHANGED

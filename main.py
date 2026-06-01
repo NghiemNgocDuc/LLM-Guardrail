@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.database import create_all_tables
 from app.middleware.request_logging import RequestLoggingMiddleware
-from app.routers import admin, auth, api_keys, chat, analytics, policy
+from app.routers import admin, auth, api_keys, chat, analytics, policy, skills
 
 settings = get_settings()
 logging.basicConfig(
@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    description="Safety & compliance middleware for any LLM backend.",
+    description="Safety middleware for LLM traffic and agent skills — gateway, policy, and leak scanning.",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs",
@@ -56,6 +56,7 @@ app.include_router(admin.router)
 app.include_router(chat.router)
 app.include_router(analytics.router)
 app.include_router(policy.router)
+app.include_router(skills.router)
 
 
 @app.get("/health", tags=["Meta"])

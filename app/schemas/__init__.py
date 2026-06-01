@@ -153,6 +153,48 @@ class ChatResponse(BaseModel):
     backend:       str
 
 
+# ─── Agent skill scan ─────────────────────────────────────────────────────────
+
+class SkillOverridesIn(BaseModel):
+    session_allow_keys: list[str] = Field(default_factory=list)
+    always_allow_keys: list[str] = Field(default_factory=list)
+    always_allow_reason_codes: list[str] = Field(default_factory=list)
+
+
+class SkillScanRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=256_000)
+    filename: str | None = Field(default=None, max_length=255)
+    overrides: SkillOverridesIn | None = None
+
+
+class SkillFindingOut(BaseModel):
+    finding_key: str
+    category: str
+    severity: str
+    check: str
+    reason: str
+    reason_code: str
+    explanation: str
+    line_number: int | None = None
+    snippet: str = ""
+    risk_score: float = 0.0
+    allowed_by_override: bool = False
+
+
+class SkillScanResponse(BaseModel):
+    safe: bool
+    risk_score: float
+    findings: list[SkillFindingOut]
+    line_count: int
+    char_count: int
+    filename: str | None = None
+    blocked: bool = False
+    agent_may_continue: bool = True
+    rejection_summary: str | None = None
+    blocking_findings: list[SkillFindingOut] = Field(default_factory=list)
+    overridden_findings: list[SkillFindingOut] = Field(default_factory=list)
+
+
 # ─── Analytics ────────────────────────────────────────────────────────────────
 
 class UsageSummary(BaseModel):

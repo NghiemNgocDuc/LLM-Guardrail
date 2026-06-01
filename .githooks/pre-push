@@ -1,0 +1,14 @@
+#!/bin/sh
+# Block git push when agent skills under .cursor/skills/ contain leaks or destructive commands.
+set -e
+
+ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+PYTHON="${PYTHON:-python3}"
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
+  PYTHON=python
+fi
+
+echo "Skill Guard: checking agent skills before push to GitHub..."
+exec "$PYTHON" scripts/scan_agent_skills.py --pre-push
