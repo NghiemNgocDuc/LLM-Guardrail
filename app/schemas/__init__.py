@@ -20,6 +20,29 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class EmailRequest(BaseModel):
+    email: EmailStr
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(min_length=16, max_length=256)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=16, max_length=256)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class SignupResponse(BaseModel):
+    message: str
+    email: str
+    verification_required: bool = True
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
@@ -33,6 +56,7 @@ class UserOut(BaseModel):
     full_name: str
     is_admin: bool
     is_active: bool = True
+    email_verified: bool = False
     org_id: str | None
     created_at: datetime
 

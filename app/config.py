@@ -92,6 +92,17 @@ class Settings(BaseSettings):
         if self.APP_ENV != "production" and not self.smtp_configured:
             self.REQUIRE_EMAIL_VERIFICATION = False
 
+        if self.GROQ_API_KEY:
+            self.GROQ_API_KEY = self.GROQ_API_KEY.strip()
+        if self.OPENAI_API_KEY:
+            self.OPENAI_API_KEY = self.OPENAI_API_KEY.strip()
+        if self.ANTHROPIC_API_KEY:
+            self.ANTHROPIC_API_KEY = self.ANTHROPIC_API_KEY.strip()
+        if self.GEMINI_API_KEY:
+            self.GEMINI_API_KEY = self.GEMINI_API_KEY.strip()
+        if self.OPENAI_COMPATIBLE_API_KEY:
+            self.OPENAI_COMPATIBLE_API_KEY = self.OPENAI_COMPATIBLE_API_KEY.strip()
+
         return self
 
     @model_validator(mode="after")

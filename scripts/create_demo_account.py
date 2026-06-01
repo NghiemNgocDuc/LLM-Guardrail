@@ -52,6 +52,7 @@ async def create_demo_account(email: str, password: str, org_name: str) -> None:
             hashed_password=hash_password(password),
             full_name="Demo User",
             is_admin=True,
+            email_verified=True,
             org_id=org.id,
         )
         db.add(user)
