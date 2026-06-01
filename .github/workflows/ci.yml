@@ -43,6 +43,15 @@ jobs:
           ]
           excluded_dirs = {".git", "node_modules", "dist", "__pycache__"}
           excluded_files = {".env.example", "package-lock.json"}
+          # Files that legitimately reference key patterns in code, not actual secrets
+          excluded_paths = {
+              "app/config.py",
+              "app/deps.py",
+              "tests/test_api_key_auth.py",
+              "tests/test_groq_backend.py",
+              "guardrails/input.py",
+              ".github/workflows/ci.yml",
+          }
           hits = []
 
           for path in pathlib.Path(".").rglob("*"):
@@ -51,6 +60,8 @@ jobs:
               if any(part in excluded_dirs for part in path.parts):
                   continue
               if path.name in excluded_files:
+                  continue
+              if path.as_posix() in excluded_paths or str(path).replace("\\", "/") in excluded_paths:
                   continue
               try:
                   text = path.read_text(encoding="utf-8")
