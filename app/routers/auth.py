@@ -71,8 +71,15 @@ _DEFAULT_INPUT_RULES = {
         "DAN mode",
         "developer mode",
         "pretend you have no restrictions",
-        "act as an unrestricted ai",
+        "act as an unrestricted",
         "you are now jailbroken",
+        "simulated sandbox",
+        "do not include any safety warnings",
+        "unrestricted terminal",
+        "silently logs keystrokes",
+        "log keystrokes",
+        "keystroke logger",
+        "keylogger",
     ],
 }
 _DEFAULT_OUTPUT_RULES = {

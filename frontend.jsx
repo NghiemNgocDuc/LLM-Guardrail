@@ -1654,6 +1654,80 @@ function PolicyView({ user }) {
   );
 }
 
+// MARKDOWN RENDERER HELPERS
+function parseInlineMarkdown(text) {
+  if (!text) return "";
+  const regex = /(\*\*.*?\*\*|`.*?`)/g;
+  const tokens = text.split(regex);
+  return tokens.map((token, i) => {
+    if (token.startsWith("**") && token.endsWith("**")) {
+      return <strong key={i} style={{ fontWeight: 700, color: "#1e293b" }}>{token.slice(2, -2)}</strong>;
+    }
+    if (token.startsWith("`") && token.endsWith("`")) {
+      return (
+        <code
+          key={i}
+          style={{
+            background: "#f1f5f9",
+            color: "#0f766e",
+            padding: "2px 5px",
+            borderRadius: 4,
+            fontSize: "0.9em",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+          }}
+        >
+          {token.slice(1, -1)}
+        </code>
+      );
+    }
+    return token;
+  });
+}
+
+function MarkdownResponse({ text }) {
+  if (!text) return null;
+  const lines = text.split("\n");
+  const elements = [];
+  let currentList = [];
+
+  const flushList = (key) => {
+    if (currentList.length > 0) {
+      elements.push(
+        <ul key={`list-${key}`} style={{ margin: "8px 0 12px 20px", paddingLeft: 0, listStyleType: "disc" }}>
+          {currentList}
+        </ul>
+      );
+      currentList = [];
+    }
+  };
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+      const content = line.replace(/^[-*]\s+/, "");
+      currentList.push(
+        <li key={`li-${index}`} style={{ marginBottom: 6, lineHeight: 1.6 }}>
+          {parseInlineMarkdown(content)}
+        </li>
+      );
+    } else {
+      flushList(index);
+      if (trimmed === "") {
+        elements.push(<div key={`space-${index}`} style={{ height: 8 }} />);
+      } else {
+        elements.push(
+          <p key={`p-${index}`} style={{ margin: "0 0 12px 0", lineHeight: 1.65 }}>
+            {parseInlineMarkdown(line)}
+          </p>
+        );
+      }
+    }
+  });
+
+  flushList(lines.length);
+  return <div style={{ color: "#27394f", fontSize: 14 }}>{elements}</div>;
+}
+
 // CHAT TESTER VIEW
 function ChatView() {
   const [prompt, setPrompt] = useState("");
@@ -1806,8 +1880,7 @@ function ChatView() {
               {result.response && (
                 <div>
                   <div style={s.sectionTitle}>Response</div>
-                  <div style={{ fontSize: 14, color: "#27394f", lineHeight: 1.7,
-                    whiteSpace: "pre-wrap" }}>{result.response}</div>
+                  <MarkdownResponse text={result.response} />
                 </div>
               )}
             </>

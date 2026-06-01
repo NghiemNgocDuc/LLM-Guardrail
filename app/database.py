@@ -26,13 +26,19 @@ def get_engine():
     if engine is None:
         if not settings.DATABASE_URL:
             raise RuntimeError("DATABASE_URL is not configured")
+        
+        # Only pass asyncpg-specific arguments if using a PostgreSQL dialect
+        connect_args = {}
+        if "postgresql" in settings.DATABASE_URL or settings.DATABASE_URL.startswith("postgres"):
+            connect_args = dict(ASYNCPG_CONNECT_ARGS)
+
         engine = create_async_engine(
             settings.DATABASE_URL,
             echo=settings.DEBUG,
             pool_pre_ping=True,
             pool_size=10,
             max_overflow=20,
-            connect_args=dict(ASYNCPG_CONNECT_ARGS),
+            connect_args=connect_args,
         )
     return engine
 

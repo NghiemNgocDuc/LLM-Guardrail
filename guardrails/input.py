@@ -70,8 +70,20 @@ class InputGuardrail:
 
     def _check_injection(self, prompt):
         lower = prompt.lower()
-        for kw in self.policy.get("injection_keywords", []):
-            if kw.lower() in lower:
+        built_in = [
+            "ignore previous instructions",
+            "disregard your system prompt",
+            "forget everything",
+            "reveal your system prompt",
+            "print your hidden instructions",
+            "bypass the policy",
+            "disable safety",
+        ]
+        keywords = set(kw.lower() for kw in self.policy.get("injection_keywords", []))
+        keywords.update(built_in)
+
+        for kw in keywords:
+            if kw in lower:
                 return GuardrailResult(
                     allowed=False,
                     check="Injection Detection",
@@ -83,8 +95,25 @@ class InputGuardrail:
 
     def _check_jailbreak(self, prompt):
         lower = prompt.lower()
-        for p in self.policy.get("jailbreak_patterns", []):
-            if p.lower() in lower:
+        built_in = [
+            "dan mode",
+            "developer mode",
+            "pretend you have no restrictions",
+            "act as an unrestricted",
+            "you are now jailbroken",
+            "simulated sandbox",
+            "do not include any safety warnings",
+            "unrestricted terminal",
+            "silently logs keystrokes",
+            "log keystrokes",
+            "keystroke logger",
+            "keylogger",
+        ]
+        patterns = set(p.lower() for p in self.policy.get("jailbreak_patterns", []))
+        patterns.update(built_in)
+
+        for p in patterns:
+            if p in lower:
                 return GuardrailResult(
                     allowed=False,
                     check="Jailbreak Detection",
