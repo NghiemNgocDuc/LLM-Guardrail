@@ -124,34 +124,71 @@ function TypeCursor({ visible }) {
 }
 
 function AuthFlowBackground() {
-  const particles = [
-    { left: "8%", delay: "0s", dur: "14s" },
-    { left: "22%", delay: "2s", dur: "18s" },
-    { left: "38%", delay: "4s", dur: "16s" },
-    { left: "55%", delay: "1s", dur: "20s" },
-    { left: "72%", delay: "3s", dur: "15s" },
-    { left: "88%", delay: "5s", dur: "17s" },
-  ];
-
   return (
-    <div className="auth-flow-bg" aria-hidden>
-      <div className="auth-flow-orb auth-flow-orb-1" />
-      <div className="auth-flow-orb auth-flow-orb-2" />
-      <div className="auth-flow-orb auth-flow-orb-3" />
-      <svg className="auth-flow-svg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice">
-        <path className="auth-flow-path auth-flow-path-1" d="M-80 520 C 220 120, 420 680, 720 380 S 1180 180, 1320 420" />
-        <path className="auth-flow-path auth-flow-path-2" d="M-60 180 C 280 420, 520 40, 760 260 S 1100 620, 1280 300" />
-        <path className="auth-flow-path auth-flow-path-3" d="M 80 720 C 360 520, 600 760, 880 540 S 1240 320, 1320 580" />
+    <div className="auth-hero-bg" aria-hidden>
+      <div className="auth-hero-noise" />
+      <div className="auth-hero-orb auth-hero-orb-1" />
+      <div className="auth-hero-orb auth-hero-orb-2" />
+      <div className="auth-hero-orb auth-hero-orb-3" />
+      <div className="auth-hero-orb auth-hero-orb-4" />
+      <svg className="auth-hero-svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+        <path className="auth-hero-path auth-hero-path-1" d="M-100 600 C 200 100, 500 700, 800 350 S 1300 150, 1540 450" />
+        <path className="auth-hero-path auth-hero-path-2" d="M-80 200 C 300 500, 600 50, 900 300 S 1200 650, 1540 280" />
+        <path className="auth-hero-path auth-hero-path-3" d="M100 800 C 400 550, 700 820, 1000 580 S 1350 350, 1540 620" />
       </svg>
-      <div className="auth-flow-grid" />
-      {particles.map((p, i) => (
-        <span
-          key={i}
-          className="auth-flow-particle"
-          style={{ left: p.left, animationDelay: p.delay, animationDuration: p.dur }}
-        />
-      ))}
+      <div className="auth-hero-grid" />
+      <div className="auth-hero-glow" />
     </div>
+  );
+}
+
+function AnimatedCounter({ end, suffix = "", duration = 2000, delay = 0, active = false }) {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    if (!active) { setValue(0); return; }
+    const startTime = Date.now() + delay;
+    const tick = () => {
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 0) { requestAnimationFrame(tick); return; }
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setValue(Math.round(end * eased));
+      if (progress < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, [end, duration, delay, active]);
+  return <>{value.toLocaleString()}{suffix}</>;
+}
+
+function ShieldIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+    </svg>
+  );
+}
+
+function ChartIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+    </svg>
+  );
+}
+
+function ZapIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    </svg>
   );
 }
 
@@ -161,13 +198,14 @@ function AuthTerminalIntro() {
   const [showResponse, setShowResponse] = useState(false);
   const [responseDone, setResponseDone] = useState(false);
   const [showFeatures, setShowFeatures] = useState(false);
+  const [showMetrics, setShowMetrics] = useState(false);
 
   const promptText = useTypewriter(USER_PROMPT, {
-    speed: 30, delay: 600, active: showPrompt, wordByWord: false
+    speed: 28, delay: 500, active: showPrompt, wordByWord: false
   });
 
   const responseText = useTypewriter(AI_RESPONSE, {
-    speed: 25, delay: 0, active: showResponse, wordByWord: false
+    speed: 22, delay: 0, active: showResponse, wordByWord: false
   });
 
   useEffect(() => {
@@ -180,7 +218,7 @@ function AuthTerminalIntro() {
       const id = window.setTimeout(() => {
         setShowThinking(false);
         setShowResponse(true);
-      }, 800);
+      }, 700);
       return () => window.clearTimeout(id);
     }
   }, [promptText.done]);
@@ -188,26 +226,69 @@ function AuthTerminalIntro() {
   useEffect(() => {
     if (responseText.done) {
       setResponseDone(true);
-      const id = window.setTimeout(() => setShowFeatures(true), 400);
-      return () => window.clearTimeout(id);
+      const id1 = window.setTimeout(() => setShowMetrics(true), 300);
+      const id2 = window.setTimeout(() => setShowFeatures(true), 600);
+      return () => { window.clearTimeout(id1); window.clearTimeout(id2); };
     }
   }, [responseText.done]);
 
+  const features = [
+    { Icon: ShieldIcon, title: "LLM Gateway", desc: "Block PII, jailbreaks, and prompt injections in real-time", color: "#2dd4bf" },
+    { Icon: LockIcon, title: "Skill Guard", desc: "Detect secrets and destructive commands in agent context", color: "#818cf8" },
+    { Icon: ChartIcon, title: "Policy Engine", desc: "Customizable rules for input, output, and compliance", color: "#60a5fa" },
+    { Icon: ZapIcon, title: "Git & CI", desc: "Pre-push hooks and GitHub Actions integration", color: "#fbbf24" },
+  ];
+
   return (
-    <div style={authStyles.introPanel}>
-      <div style={authStyles.terminal}>
-        <div style={authStyles.terminalBar}>
-          <span style={authStyles.dot("#ff5f57")} />
-          <span style={authStyles.dot("#febc2e")} />
-          <span style={authStyles.dot("#28c840")} />
-          <span style={{...authStyles.terminalTitle, fontWeight: 600, fontFamily: "inherit"}}>AI Assistant</span>
+    <div className="auth-intro-panel">
+      {/* Badge */}
+      <div className="auth-hero-badge">
+        <span className="auth-hero-badge-dot" />
+        AI Guardrails Platform
+      </div>
+
+      {/* Headline */}
+      <h1 className="auth-hero-headline">
+        Secure every AI workflow<br />
+        <span className="auth-hero-headline-gradient">before it ships.</span>
+      </h1>
+
+      <p className="auth-hero-subhead">
+        Enterprise-grade protection for LLM traffic, agent skills,
+        and system prompts — from one unified dashboard.
+      </p>
+
+      {/* Animated metrics */}
+      {showMetrics && (
+        <div className="auth-metrics-row">
+          {[
+            { value: 99.9, suffix: "%", label: "Uptime SLA" },
+            { value: 12, suffix: "ms", label: "Avg Latency" },
+            { value: 847, suffix: "K", label: "Threats Blocked" },
+          ].map((m, i) => (
+            <div key={m.label} className="auth-metric-item">
+              <div className="auth-metric-value">
+                <AnimatedCounter end={m.value} suffix={m.suffix} delay={i * 200} active={showMetrics} />
+              </div>
+              <div className="auth-metric-label">{m.label}</div>
+            </div>
+          ))}
         </div>
-        <div style={{ ...authStyles.terminalBody, padding: "24px", fontFamily: "inherit" }}>
-          
+      )}
+
+      {/* Terminal */}
+      <div className="auth-terminal">
+        <div className="auth-terminal-bar">
+          <span className="auth-terminal-dot" style={{ background: "#ff5f57" }} />
+          <span className="auth-terminal-dot" style={{ background: "#febc2e" }} />
+          <span className="auth-terminal-dot" style={{ background: "#28c840" }} />
+          <span className="auth-terminal-title">AI Assistant</span>
+        </div>
+        <div className="auth-terminal-body">
           {showPrompt && (
-            <div style={{ display: "flex", gap: 14, marginBottom: 20 }}>
-              <div style={{ flexShrink: 0, width: 32, height: 32, borderRadius: "50%", background: "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "#64748b" }}>U</div>
-              <div style={{ flex: 1, background: "rgba(241, 245, 249, 0.6)", padding: "12px 16px", borderRadius: "12px", borderTopLeftRadius: "2px", color: "#334155", fontSize: 14, lineHeight: 1.5, border: "1px solid rgba(200, 215, 235, 0.4)", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
+            <div className="auth-chat-bubble auth-chat-user">
+              <div className="auth-chat-avatar auth-chat-avatar-user">U</div>
+              <div className="auth-chat-content auth-chat-content-user">
                 {promptText.displayed}
                 {!promptText.done && <TypeCursor visible />}
               </div>
@@ -215,10 +296,10 @@ function AuthTerminalIntro() {
           )}
 
           {(showThinking || showResponse) && (
-            <div style={{ display: "flex", gap: 14, animation: "authFadeIn 0.3s ease forwards" }}>
-              <div style={{ flexShrink: 0, width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #6366f1, #a855f7)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 700, boxShadow: "0 4px 10px rgba(99, 102, 241, 0.3)" }}>AI</div>
-              <div style={{ flex: 1, color: "#1e293b", fontSize: 14, lineHeight: 1.6, paddingTop: 5 }}>
-                {showThinking && <span style={{ color: "#94a3b8", fontStyle: "italic", animation: "authBlink 1.5s infinite" }}>Analyzing request...</span>}
+            <div className="auth-chat-bubble auth-chat-ai" style={{ animation: "authFadeIn 0.3s ease forwards" }}>
+              <div className="auth-chat-avatar auth-chat-avatar-ai">AI</div>
+              <div className="auth-chat-content auth-chat-content-ai">
+                {showThinking && <span className="auth-thinking">Analyzing request...</span>}
                 {showResponse && (
                   <>
                     {responseText.displayed}
@@ -231,25 +312,29 @@ function AuthTerminalIntro() {
         </div>
       </div>
 
-      {responseDone && (
-        <div style={{ marginTop: 28 }} className="auth-intro-copy">
-          <div style={authStyles.badge}>// ai_guardrails_active</div>
-          <h1 style={authStyles.headline}>Secure models, agents, and skills in one place.</h1>
+      {/* Feature cards */}
+      {showFeatures && (
+        <div className="auth-features-grid">
+          {features.map(({ Icon, title, desc, color }, i) => (
+            <div key={title} className="auth-feature-card" style={{ animationDelay: `${i * 100}ms` }}>
+              <div className="auth-feature-icon" style={{ color }}>
+                <Icon />
+              </div>
+              <div className="auth-feature-title">{title}</div>
+              <div className="auth-feature-desc">{desc}</div>
+            </div>
+          ))}
         </div>
       )}
 
-      {showFeatures && (
-        <div style={{ ...authStyles.featureGrid, animation: "authFadeIn 0.5s ease forwards", marginTop: 20 }}>
-          {[
-            ["LLM Gateway", "PII, jailbreaks, injections"],
-            ["Skill Guard", "Secrets & destructive cmds"],
-            ["Git & CI", "Pre-push + GitHub Actions"],
-          ].map(([title, desc]) => (
-            <div key={title} style={authStyles.featureCard}>
-              <div style={{...authStyles.featureTitle, fontFamily: "inherit"}}>{title}</div>
-              <div style={{...authStyles.featureDesc, fontFamily: "inherit"}}>{desc}</div>
-            </div>
-          ))}
+      {/* Trust bar */}
+      {responseDone && (
+        <div className="auth-trust-bar">
+          <span className="auth-trust-item">🔒 SOC 2 Ready</span>
+          <span className="auth-trust-divider" />
+          <span className="auth-trust-item">⚡ Sub-15ms Latency</span>
+          <span className="auth-trust-divider" />
+          <span className="auth-trust-item">🛡️ Zero Data Retention</span>
         </div>
       )}
     </div>
@@ -260,116 +345,30 @@ const authStyles = {
   page: {
     position: "relative",
     minHeight: "100vh",
-    background: "#f4f7fb",
+    background: "#f0fdf4",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
+    padding: "40px 24px",
     overflow: "hidden",
   },
   pageInner: {
     position: "relative",
     zIndex: 1,
-    width: "min(1100px, 100%)",
+    width: "min(1200px, 100%)",
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))",
-    gap: 28,
+    gridTemplateColumns: "1fr 420px",
+    gap: 48,
     alignItems: "center",
   },
-  introPanel: { color: "#102033" },
-  terminal: {
-    background: "rgba(255, 255, 255, 0.6)",
-    border: "1px solid rgba(255, 255, 255, 0.8)",
-    backdropFilter: "blur(24px)",
-    borderRadius: 12,
-    overflow: "hidden",
-    boxShadow: "0 24px 60px rgba(32, 48, 80, 0.08)",
-  },
-  terminalBar: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "10px 14px",
-    background: "rgba(255, 255, 255, 0.4)",
-    borderBottom: "1px solid rgba(200, 215, 235, 0.4)",
-  },
-  dot: (color) => ({
-    width: 10,
-    height: 10,
-    borderRadius: "50%",
-    background: color,
-    display: "inline-block",
-  }),
-  terminalTitle: {
-    marginLeft: 8,
-    fontSize: 11,
-    color: "#607086",
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-  },
-  terminalBody: {
-    margin: 0,
-    padding: "16px 18px 20px",
-    fontSize: 12.5,
-    lineHeight: 1.65,
-    color: "#304050",
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-    minHeight: 148,
-  },
-  badge: {
-    display: "inline-flex",
-    padding: "5px 10px",
-    borderRadius: 6,
-    background: "linear-gradient(135deg, #f0f5ff, #f5f3ff)",
-    border: "1px solid #d8b4fe",
-    color: "#7c3aed",
-    fontSize: 11,
-    fontWeight: 700,
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-    marginBottom: 14,
-  },
-  headline: {
-    margin: 0,
-    fontSize: "clamp(28px, 4vw, 40px)",
-    lineHeight: 1.15,
-    fontWeight: 800,
-    color: "#102033",
-    minHeight: "1.2em",
-    letterSpacing: "-0.02em",
-  },
-  subhead: {
-    margin: "14px 0 0",
-    color: "#475569",
-    fontSize: 15,
-    lineHeight: 1.7,
-    minHeight: 0,
-  },
-  featureGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
-    gap: 12,
-    marginTop: 24,
-  },
-  featureCard: {
-    background: "rgba(255, 255, 255, 0.6)",
-    border: "1px solid rgba(200, 215, 235, 0.6)",
-    backdropFilter: "blur(12px)",
-    borderRadius: 8,
-    padding: 14,
-  },
-  featureTitle: {
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-    fontWeight: 700,
-    color: "#6366f1",
-    fontSize: 13,
-  },
-  featureDesc: { color: "#64748b", fontSize: 12, marginTop: 6 },
-  formShell: { color: "#102033" },
+  formShell: {},
   formCard: {
-    background: "rgba(255,255,255,0.97)",
-    border: "1px solid #dce7f0",
-    borderRadius: 10,
-    padding: 24,
-    boxShadow: "0 20px 50px rgba(0,0,0,0.25)",
+    background: "rgba(255, 255, 255, 0.9)",
+    border: "1px solid rgba(15, 118, 110, 0.15)",
+    borderRadius: 16,
+    padding: "32px 28px",
+    boxShadow: "0 24px 64px rgba(15, 118, 110, 0.12), inset 0 1px 0 rgba(255,255,255,0.5)",
+    backdropFilter: "blur(20px)",
   },
   codeLabel: {
     fontSize: 11,
@@ -390,7 +389,7 @@ const authStyles = {
     transform: "translateY(-50%)",
     border: "none",
     background: "transparent",
-    color: "#607086",
+    color: "#64748b",
     fontSize: 11,
     fontWeight: 700,
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
@@ -446,21 +445,25 @@ function clientGuardrail(prompt) {
 const s = {
   app: {
     minHeight: "100vh",
-    background: "linear-gradient(135deg, #f8fbff 0%, #eef7f3 42%, #f7f9ff 100%)",
+    position: "relative",
+    overflow: "hidden",
+    background: "transparent",
     color: "#102033",
     fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     display: "flex",
   },
   sidebar: {
     width: 260,
-    background: "rgba(255,255,255,0.88)",
-    borderRight: "1px solid #dbe8f3",
+    position: "relative",
+    zIndex: 1,
+    background: "rgba(255, 255, 255, 0.9)",
+    borderRight: "1px solid rgba(15, 118, 110, 0.15)",
     padding: "22px 14px",
     display: "flex",
     flexDirection: "column",
     flexShrink: 0,
-    boxShadow: "12px 0 40px rgba(17, 39, 68, 0.06)",
-    backdropFilter: "blur(16px)",
+    boxShadow: "12px 0 64px rgba(15, 118, 110, 0.12), inset 0 1px 0 rgba(255,255,255,0.5)",
+    backdropFilter: "blur(20px)",
   },
   logo: {
     padding: "0 10px 20px",
@@ -481,33 +484,35 @@ const s = {
     fontSize: 14,
     fontWeight: active ? 750 : 650,
     letterSpacing: 0,
-    color: active ? "#0f5f7a" : "#607086",
-    background: active ? "linear-gradient(135deg, #e8f8f3, #eef5ff)" : "transparent",
-    border: active ? "1px solid #bfe8dd" : "1px solid transparent",
+    color: active ? "#0f766e" : "#607086",
+    background: active ? "rgba(45, 212, 191, 0.1)" : "transparent",
+    border: active ? "1px solid rgba(15, 118, 110, 0.15)" : "1px solid transparent",
     borderRadius: 8,
     transition: "all 0.18s ease",
     userSelect: "none",
     marginBottom: 6,
   }),
-  main: { flex: 1, overflow: "auto", padding: 32, maxWidth: 1520, margin: "0 auto" },
+  main: { flex: 1, overflow: "auto", padding: 32, maxWidth: 1520, margin: "0 auto", position: "relative", zIndex: 1 },
   pageTitle: {
     fontSize: 28, fontWeight: 850, marginBottom: 22,
     color: "#102033", letterSpacing: 0,
   },
   card: {
-    background: "rgba(255,255,255,0.92)",
-    border: "1px solid #dce7f0",
-    borderRadius: 8,
+    background: "rgba(255, 255, 255, 0.9)",
+    border: "1px solid rgba(15, 118, 110, 0.15)",
+    borderRadius: 16,
     padding: 22,
-    boxShadow: "0 16px 42px rgba(16, 32, 51, 0.07)",
+    boxShadow: "0 24px 64px rgba(15, 118, 110, 0.08), inset 0 1px 0 rgba(255,255,255,0.5)",
+    backdropFilter: "blur(20px)",
   },
   statGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(185px,1fr))", gap: 16, marginBottom: 24 },
   statCard: {
-    background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-    border: "1px solid #dce7f0",
-    borderRadius: 8,
+    background: "rgba(255, 255, 255, 0.9)",
+    border: "1px solid rgba(15, 118, 110, 0.15)",
+    borderRadius: 16,
     padding: 20,
-    boxShadow: "0 12px 28px rgba(16, 32, 51, 0.06)",
+    boxShadow: "0 16px 42px rgba(15, 118, 110, 0.06), inset 0 1px 0 rgba(255,255,255,0.5)",
+    backdropFilter: "blur(20px)",
   },
   statLabel: { fontSize: 12, color: "#607086", letterSpacing: 0, fontWeight: 750 },
   statValue: { fontSize: 32, fontWeight: 850, marginTop: 6, color: "#102033" },
@@ -539,14 +544,14 @@ const s = {
     borderRadius: 8, padding: "11px 12px", color: "#102033",
     fontFamily: "inherit", fontSize: 14, outline: "none",
     boxSizing: "border-box",
-    boxShadow: "0 1px 0 rgba(16,32,51,0.03)",
+    boxShadow: "0 1px 0 rgba(15,118,110,0.03)",
   },
   btn: (variant = "primary") => ({
     padding: "10px 16px", borderRadius: 8, border: "1px solid transparent", cursor: "pointer",
     fontSize: 13, fontWeight: 800, letterSpacing: 0,
     fontFamily: "inherit",
     ...(variant === "primary"
-      ? { background: "linear-gradient(135deg, #0f766e, #2563eb)", color: "#fff", boxShadow: "0 10px 22px rgba(37, 99, 235, 0.18)" }
+      ? { background: "linear-gradient(135deg, #0f766e, #047857)", color: "#fff", boxShadow: "0 10px 22px rgba(15, 118, 110, 0.18)" }
       : variant === "danger"
       ? { background: "#fff1f2", color: "#be123c", border: "1px solid #fecdd3" }
       : { background: "#ffffff", color: "#405166", border: "1px solid #ccd9e6" }),
@@ -580,159 +585,543 @@ const s = {
   muted: { color: "#7b8a9d", fontSize: 13 },
   label: { fontSize: 12, color: "#607086", fontWeight: 750, marginBottom: 6 },
   heroPanel: {
-    background: "linear-gradient(135deg, #ffffff 0%, #ecfdf7 52%, #eff6ff 100%)",
+    background: "linear-gradient(135deg, #ffffff 0%, #ecfdf7 52%, #f0fdf4 100%)",
     border: "1px solid #d3eadf",
     borderRadius: 8,
     padding: 24,
     marginBottom: 24,
-    boxShadow: "0 18px 50px rgba(16, 32, 51, 0.08)",
+    boxShadow: "0 18px 50px rgba(15, 118, 110, 0.08)",
   },
 };
 
 function GlobalStyles() {
   return (
     <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
       * { box-sizing: border-box; }
-      body { margin: 0; background: #f8fbff; }
+      body { margin: 0; background: #f8fbff; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
       button, input, textarea, select { transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease; }
       button:hover:not(:disabled) { transform: translateY(-1px); }
       button:disabled { opacity: .58; cursor: not-allowed; }
       input:focus, textarea:focus, select:focus { border-color: #0f766e !important; box-shadow: 0 0 0 3px rgba(15,118,110,.12) !important; }
-      .auth-password-toggle:hover { color: #0f766e; background: rgba(15, 118, 110, 0.08); }
-      .auth-password-toggle:focus-visible { outline: 2px solid #0f766e; outline-offset: 2px; }
+      .auth-password-toggle:hover { color: #2dd4bf; background: rgba(45, 212, 191, 0.1); }
+      .auth-password-toggle:focus-visible { outline: 2px solid #2dd4bf; outline-offset: 2px; }
       tr:last-child td { border-bottom: none !important; }
+
       @media (max-width: 760px) {
         .app-shell { flex-direction: column; }
         .app-sidebar { width: 100% !important; border-right: 0 !important; border-bottom: 1px solid #dbe8f3; }
         .app-main { padding: 18px !important; }
       }
+
+      /* ───── Auth page cursor ───── */
       .auth-cursor {
         display: inline-block;
         margin-left: 2px;
-        color: #6366f1;
+        color: #818cf8;
         animation: authBlink 1s step-end infinite;
       }
-      @keyframes authBlink {
-        50% { opacity: 0; }
-      }
+      @keyframes authBlink { 50% { opacity: 0; } }
       @keyframes authFadeIn {
-        from { opacity: 0; transform: translateY(8px); }
+        from { opacity: 0; transform: translateY(12px); }
         to { opacity: 1; transform: translateY(0); }
       }
-      .auth-intro-copy {
-        animation: authFadeIn 0.35s ease forwards;
+      @keyframes authFadeInScale {
+        from { opacity: 0; transform: translateY(8px) scale(0.97); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      @keyframes authSlideUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
       }
 
-      .auth-flow-bg {
+      /* ───── Auth Hero Background ───── */
+      .auth-hero-bg {
         position: absolute;
         inset: 0;
         z-index: 0;
         pointer-events: none;
         overflow: hidden;
-        background: linear-gradient(145deg, #f4f7fb 0%, #ffffff 42%, #f5f3ff 100%);
+        background: radial-gradient(ellipse 120% 80% at 20% 30%, #ecfdf5 0%, #f8fafc 100%);
       }
-      .auth-flow-orb {
+      .auth-hero-noise {
+        position: absolute;
+        inset: 0;
+        opacity: 0.05;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+        background-size: 128px 128px;
+      }
+      .auth-hero-orb {
         position: absolute;
         border-radius: 50%;
-        filter: blur(80px);
-        opacity: 0.85;
+        filter: blur(100px);
         will-change: transform;
       }
-      .auth-flow-orb-1 {
-        width: 420px;
-        height: 420px;
-        background: radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, transparent 70%);
-        top: -12%;
-        left: -8%;
-        animation: authOrbDrift1 22s ease-in-out infinite;
+      .auth-hero-orb-1 {
+        width: 500px; height: 500px;
+        background: radial-gradient(circle, rgba(45, 212, 191, 0.45) 0%, transparent 70%);
+        top: -15%; left: -10%;
+        animation: authOrbDrift1 24s ease-in-out infinite;
       }
-      .auth-flow-orb-2 {
-        width: 520px;
-        height: 520px;
-        background: radial-gradient(circle, rgba(59, 130, 246, 0.35) 0%, transparent 70%);
-        bottom: -18%;
-        right: -10%;
-        animation: authOrbDrift2 26s ease-in-out infinite;
+      .auth-hero-orb-2 {
+        width: 600px; height: 600px;
+        background: radial-gradient(circle, rgba(16, 185, 129, 0.3) 0%, transparent 70%);
+        bottom: -20%; right: -12%;
+        animation: authOrbDrift2 28s ease-in-out infinite;
       }
-      .auth-flow-orb-3 {
-        width: 360px;
-        height: 360px;
-        background: radial-gradient(circle, rgba(16, 185, 129, 0.30) 0%, transparent 70%);
-        top: 40%;
-        left: 45%;
-        animation: authOrbDrift3 20s ease-in-out infinite;
+      .auth-hero-orb-3 {
+        width: 400px; height: 400px;
+        background: radial-gradient(circle, rgba(20, 184, 166, 0.35) 0%, transparent 70%);
+        top: 50%; left: 50%;
+        animation: authOrbDrift3 22s ease-in-out infinite;
+      }
+      .auth-hero-orb-4 {
+        width: 300px; height: 300px;
+        background: radial-gradient(circle, rgba(52, 211, 153, 0.3) 0%, transparent 70%);
+        top: 10%; right: 20%;
+        animation: authOrbDrift1 20s ease-in-out infinite reverse;
       }
       @keyframes authOrbDrift1 {
         0%, 100% { transform: translate(0, 0) scale(1); }
-        50% { transform: translate(80px, 60px) scale(1.08); }
+        50% { transform: translate(60px, 40px) scale(1.06); }
       }
       @keyframes authOrbDrift2 {
         0%, 100% { transform: translate(0, 0) scale(1); }
-        50% { transform: translate(-70px, -50px) scale(1.1); }
+        50% { transform: translate(-50px, -40px) scale(1.08); }
       }
       @keyframes authOrbDrift3 {
         0%, 100% { transform: translate(-50%, -50%) scale(1); }
-        50% { transform: translate(calc(-50% + 40px), calc(-50% - 30px)) scale(0.92); }
+        50% { transform: translate(calc(-50% + 30px), calc(-50% - 20px)) scale(0.94); }
       }
-      .auth-flow-svg {
+      .auth-hero-svg {
         position: absolute;
         inset: -10%;
-        width: 120%;
-        height: 120%;
-        opacity: 0.35;
+        width: 120%; height: 120%;
+        opacity: 0.4;
       }
-      .auth-flow-path {
+      .auth-hero-path {
         fill: none;
         stroke-width: 1.5;
         stroke-linecap: round;
-        stroke-dasharray: 12 18;
+        stroke-dasharray: 8 16;
         animation: authPathFlow 24s linear infinite;
       }
-      .auth-flow-path-1 { stroke: rgba(139, 92, 246, 0.5); animation-duration: 28s; }
-      .auth-flow-path-2 { stroke: rgba(59, 130, 246, 0.45); animation-duration: 22s; animation-direction: reverse; }
-      .auth-flow-path-3 { stroke: rgba(45, 212, 191, 0.4); animation-duration: 32s; }
+      .auth-hero-path-1 { stroke: rgba(15, 118, 110, 0.3); animation-duration: 30s; }
+      .auth-hero-path-2 { stroke: rgba(4, 120, 87, 0.2); animation-duration: 24s; animation-direction: reverse; }
+      .auth-hero-path-3 { stroke: rgba(20, 184, 166, 0.25); animation-duration: 36s; }
       @keyframes authPathFlow {
         from { stroke-dashoffset: 0; }
         to { stroke-dashoffset: -600; }
       }
-      .auth-flow-grid {
+      .auth-hero-grid {
         position: absolute;
         inset: 0;
         background-image:
-          linear-gradient(rgba(100, 116, 139, 0.05) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(100, 116, 139, 0.05) 1px, transparent 1px);
-        background-size: 48px 48px;
-        -webkit-mask: radial-gradient(ellipse 80% 70% at 50% 50%, black 20%, transparent 75%);
-        mask: radial-gradient(ellipse 80% 70% at 50% 50%, black 20%, transparent 75%);
-        animation: authGridScroll 40s linear infinite;
+          linear-gradient(rgba(15, 118, 110, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(15, 118, 110, 0.05) 1px, transparent 1px);
+        background-size: 56px 56px;
+        -webkit-mask: radial-gradient(ellipse 70% 60% at 40% 45%, black 10%, transparent 70%);
+        mask: radial-gradient(ellipse 70% 60% at 40% 45%, black 10%, transparent 70%);
       }
-      @keyframes authGridScroll {
-        from { background-position: 0 0, 0 0; }
-        to { background-position: 0 48px, 48px 0; }
-      }
-      .auth-flow-particle {
+      .auth-hero-glow {
         position: absolute;
-        bottom: -20px;
-        width: 4px;
-        height: 4px;
+        top: 30%; left: 25%;
+        width: 50%; height: 40%;
+        background: radial-gradient(ellipse, rgba(45, 212, 191, 0.15) 0%, transparent 70%);
+        filter: blur(60px);
+      }
+
+      /* ───── Auth Intro Panel ───── */
+      .auth-intro-panel {
+        color: #0f172a;
+      }
+      .auth-hero-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        background: rgba(15, 118, 110, 0.08);
+        border: 1px solid rgba(15, 118, 110, 0.2);
+        color: #0f766e;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        margin-bottom: 20px;
+        animation: authFadeIn 0.5s ease forwards;
+      }
+      .auth-hero-badge-dot {
+        width: 6px; height: 6px;
         border-radius: 50%;
-        background: rgba(139, 92, 246, 0.5);
-        box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
-        animation-name: authParticleRise;
-        animation-timing-function: linear;
-        animation-iteration-count: infinite;
+        background: #10b981;
+        box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+        animation: authBadgePulse 2s ease-in-out infinite;
       }
-      @keyframes authParticleRise {
-        0% { transform: translateY(0) scale(0.6); opacity: 0; }
-        10% { opacity: 0.9; }
-        90% { opacity: 0.35; }
-        100% { transform: translateY(-110vh) scale(1); opacity: 0; }
+      @keyframes authBadgePulse {
+        0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6); }
+        50% { opacity: 0.6; box-shadow: 0 0 16px rgba(16, 185, 129, 0.8); }
       }
+      .auth-hero-headline {
+        margin: 0 0 16px;
+        font-size: clamp(32px, 4.5vw, 52px);
+        line-height: 1.1;
+        font-weight: 800;
+        color: #0f172a;
+        letter-spacing: -0.03em;
+        animation: authSlideUp 0.6s ease forwards;
+      }
+      .auth-hero-headline-gradient {
+        background: linear-gradient(135deg, #0f766e 0%, #047857 50%, #0369a1 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .auth-hero-subhead {
+        margin: 0 0 28px;
+        font-size: 16px;
+        line-height: 1.7;
+        color: #475569;
+        max-width: 520px;
+        animation: authSlideUp 0.7s ease forwards;
+      }
+
+      /* ───── Auth Metrics ───── */
+      .auth-metrics-row {
+        display: flex;
+        gap: 24px;
+        margin-bottom: 28px;
+        animation: authFadeIn 0.5s ease forwards;
+      }
+      .auth-metric-item {
+        padding: 12px 0;
+      }
+      .auth-metric-value {
+        font-size: 28px;
+        font-weight: 800;
+        color: #0f172a;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+      }
+      .auth-metric-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-top: 2px;
+      }
+
+      /* ───── Auth Terminal ───── */
+      .auth-terminal {
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(15, 118, 110, 0.15);
+        backdrop-filter: blur(24px);
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 24px 80px rgba(15, 118, 110, 0.1);
+        margin-bottom: 24px;
+        animation: authFadeInScale 0.8s ease forwards;
+      }
+      .auth-terminal-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+        background: rgba(248, 250, 252, 0.9);
+        border-bottom: 1px solid rgba(15, 118, 110, 0.1);
+      }
+      .auth-terminal-dot {
+        width: 10px; height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .auth-terminal-title {
+        margin-left: 8px;
+        font-size: 11px;
+        color: #64748b;
+        font-weight: 700;
+      }
+      .auth-terminal-body {
+        padding: 20px 22px 24px;
+        min-height: 140px;
+      }
+
+      /* ───── Auth Chat Bubbles ───── */
+      .auth-chat-bubble {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .auth-chat-bubble:last-child { margin-bottom: 0; }
+      .auth-chat-avatar {
+        flex-shrink: 0;
+        width: 30px; height: 30px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 800;
+      }
+      .auth-chat-avatar-user {
+        background: #f1f5f9;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+      }
+      .auth-chat-avatar-ai {
+        background: linear-gradient(135deg, #0f766e, #10b981);
+        color: #fff;
+        font-size: 10px;
+        box-shadow: 0 4px 12px rgba(15, 118, 110, 0.3);
+      }
+      .auth-chat-content {
+        flex: 1;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      .auth-chat-content-user {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        padding: 10px 14px;
+        border-radius: 12px;
+        border-top-left-radius: 2px;
+        color: #334155;
+      }
+      .auth-chat-content-ai {
+        color: #475569;
+        padding-top: 4px;
+      }
+      .auth-thinking {
+        color: #94a3b8;
+        font-style: italic;
+        animation: authBlink 1.5s infinite;
+      }
+
+      /* ───── Auth Feature Cards ───── */
+      .auth-features-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        margin-bottom: 24px;
+      }
+      .auth-feature-card {
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid rgba(15, 118, 110, 0.1);
+        backdrop-filter: blur(12px);
+        border-radius: 12px;
+        padding: 16px;
+        transition: all 0.25s ease;
+        animation: authFadeInScale 0.4s ease both;
+        cursor: default;
+      }
+      .auth-feature-card:hover {
+        border-color: rgba(15, 118, 110, 0.3);
+        background: rgba(255, 255, 255, 0.95);
+        transform: translateY(-2px);
+        box-shadow: 0 12px 32px rgba(15, 118, 110, 0.12);
+      }
+      .auth-feature-icon {
+        width: 36px; height: 36px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(15, 118, 110, 0.05);
+        border: 1px solid rgba(15, 118, 110, 0.1);
+        margin-bottom: 10px;
+      }
+      .auth-feature-title {
+        font-weight: 800;
+        color: #0f766e;
+        font-size: 13px;
+        margin-bottom: 4px;
+      }
+      .auth-feature-desc {
+        color: #475569;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      /* ───── Auth Trust Bar ───── */
+      .auth-trust-bar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 0;
+        animation: authFadeIn 0.6s ease forwards;
+      }
+      .auth-trust-item {
+        font-size: 12px;
+        color: #64748b;
+        font-weight: 600;
+      }
+      .auth-trust-divider {
+        width: 1px;
+        height: 14px;
+        background: rgba(15, 118, 110, 0.15);
+      }
+
+      /* ───── Auth Form (Light Green Premium context) ───── */
+      .auth-form-title {
+        font-size: 18px;
+        font-weight: 800;
+        color: #0f172a;
+        margin-bottom: 20px;
+      }
+      .auth-form-tabs {
+        display: flex;
+        margin-bottom: 24px;
+        background: rgba(241, 245, 249, 0.8);
+        border-radius: 10px;
+        padding: 4px;
+        border: 1px solid rgba(226, 232, 240, 0.8);
+      }
+      .auth-form-tab {
+        flex: 1;
+        text-align: center;
+        padding: 9px;
+        border-radius: 7px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        color: #64748b;
+      }
+      .auth-form-tab-active {
+        background: #ffffff;
+        color: #0f766e;
+        box-shadow: 0 2px 8px rgba(15, 118, 110, 0.08);
+      }
+      .auth-form-input {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 12px 14px;
+        color: #0f172a;
+        font-family: inherit;
+        font-size: 14px;
+        outline: none;
+        box-sizing: border-box;
+        transition: all 0.2s ease;
+      }
+      .auth-form-input:focus {
+        border-color: #0f766e !important;
+        box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15) !important;
+      }
+      .auth-form-input::placeholder { color: #94a3b8; }
+      .auth-form-label {
+        font-size: 12px;
+        color: #475569;
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+      .auth-form-btn-primary {
+        width: 100%;
+        padding: 12px 16px;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 800;
+        font-family: inherit;
+        background: linear-gradient(135deg, #0f766e 0%, #047857 100%);
+        color: #fff;
+        box-shadow: 0 8px 24px rgba(15, 118, 110, 0.25);
+        transition: all 0.2s ease;
+      }
+      .auth-form-btn-primary:hover:not(:disabled) {
+        box-shadow: 0 12px 32px rgba(15, 118, 110, 0.35);
+        transform: translateY(-1px);
+      }
+      .auth-form-btn-secondary {
+        width: 100%;
+        padding: 10px 16px;
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 700;
+        font-family: inherit;
+        background: #ffffff;
+        color: #475569;
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      }
+      .auth-form-btn-secondary:hover:not(:disabled) {
+        background: #f8fafc;
+        color: #0f172a;
+        border-color: #94a3b8;
+      }
+      .auth-form-alert-error {
+        padding: 12px 14px;
+        border-radius: 10px;
+        font-size: 13px;
+        margin-bottom: 14px;
+        background: rgba(254, 226, 226, 0.8);
+        border: 1px solid #fecaca;
+        color: #b91c1c;
+        line-height: 1.5;
+        font-weight: 500;
+      }
+      .auth-form-alert-success {
+        padding: 12px 14px;
+        border-radius: 10px;
+        font-size: 13px;
+        margin-bottom: 14px;
+        background: rgba(209, 250, 229, 0.8);
+        border: 1px solid #a7f3d0;
+        color: #047857;
+        line-height: 1.5;
+        font-weight: 500;
+      }
+      .auth-form-footer {
+        text-align: center;
+        margin-top: 16px;
+        font-size: 11px;
+        color: #64748b;
+        font-family: ui-monospace, SFMono-Regular, monospace;
+      }
+
+      /* ───── Auth Logo ───── */
+      .auth-form-logo {
+        margin-bottom: 24px;
+      }
+      .auth-form-logo-title {
+        font-size: 22px;
+        font-weight: 900;
+        color: #0f172a;
+        letter-spacing: -0.02em;
+      }
+      .auth-form-logo-sub {
+        font-size: 13px;
+        color: #64748b;
+        margin-top: 4px;
+      }
+
+      /* ───── Responsive ───── */
+      @media (max-width: 900px) {
+        .auth-page-inner {
+          grid-template-columns: 1fr !important;
+          gap: 32px !important;
+          max-width: 480px !important;
+          margin: 0 auto;
+        }
+        .auth-features-grid { grid-template-columns: 1fr 1fr; }
+        .auth-metrics-row { gap: 16px; }
+        .auth-metric-value { font-size: 22px; }
+      }
+      @media (max-width: 520px) {
+        .auth-features-grid { grid-template-columns: 1fr; }
+        .auth-metrics-row { flex-wrap: wrap; }
+      }
+
       @media (prefers-reduced-motion: reduce) {
-        .auth-flow-orb,
-        .auth-flow-path,
-        .auth-flow-grid,
-        .auth-flow-particle {
+        .auth-hero-orb,
+        .auth-hero-path,
+        .auth-hero-grid,
+        .auth-feature-card {
           animation: none !important;
         }
       }
@@ -866,135 +1255,141 @@ function AuthView({ onAuth }) {
   return (
     <>
     <GlobalStyles />
-    <div style={authStyles.page}>
+    <div className="auth-page" style={authStyles.page}>
+      <div style={{ position: "absolute", top: 24, left: 32, zIndex: 10, fontSize: 13, fontWeight: 700, color: "#0f766e", letterSpacing: "0.02em" }}>
+        Ngoc Duc Nghiem
+      </div>
       <AuthFlowBackground />
-      <div style={authStyles.pageInner}>
+      <div className="auth-page-inner" style={authStyles.pageInner}>
         <AuthTerminalIntro />
-        <div style={authStyles.formShell}>
-        <div style={{ marginBottom: 18 }}>
-          <div style={{ ...s.logoText, fontSize: 24 }}>AI Guardrails</div>
-          <div style={{ ...s.logoSub, fontSize: 13 }}>
-            LLM gateway, agent skills, and policy — one workspace
-          </div>
-        </div>
-        <div style={authStyles.formCard}>
-          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: "#102033" }}>
-            {screen === "verify" ? "Verify Email" :
-             screen === "reset" ? "Reset Password" :
-             tab === "forgot" ? "Reset Password" :
-             tab === "signup" ? "Create an Account" : "Welcome Back"}
+
+        <div className="auth-form-shell" style={authStyles.formShell}>
+          <div className="auth-form-logo">
+            <div className="auth-form-logo-title">AI Guardrails</div>
+            <div className="auth-form-logo-sub">
+              LLM gateway, agent skills, and policy — one workspace
+            </div>
           </div>
 
-          {screen === "auth" && (
-            <div style={{ display: "flex", marginBottom: 24, background: "#eef3f8", borderRadius: 8, padding: 4 }}>
-              {["login", "signup"].map((t) => (
-                <div key={t} onClick={() => { setTab(t); setError(""); setInfo(""); }} style={{
-                  flex: 1, textAlign: "center", padding: "9px", borderRadius: 7,
-                  fontSize: 13, fontWeight: 850, cursor: "pointer",
-                  background: tab === t ? "#ffffff" : "transparent",
-                  color: tab === t ? "#0f5f7a" : "#607086",
-                  boxShadow: tab === t ? "0 6px 18px rgba(16,32,51,0.08)" : "none",
-                }}>{t === "login" ? "Sign in" : "Sign up"}</div>
-              ))}
+          <div className="auth-form-card" style={authStyles.formCard}>
+            <div className="auth-form-title">
+              {screen === "verify" ? "Verify Email" :
+               screen === "reset" ? "Reset Password" :
+               tab === "forgot" ? "Reset Password" :
+               tab === "signup" ? "Create an Account" : "Welcome Back"}
             </div>
-          )}
 
-          {error && <div style={s.alert("error")}>{error}</div>}
-          {info && <div style={s.alert("success")}>{info}</div>}
+            {screen === "auth" && (
+              <div className="auth-form-tabs">
+                {["login", "signup"].map((t) => (
+                  <div
+                    key={t}
+                    onClick={() => { setTab(t); setError(""); setInfo(""); }}
+                    className={`auth-form-tab ${tab === t ? "auth-form-tab-active" : ""}`}
+                  >
+                    {t === "login" ? "Sign in" : "Sign up"}
+                  </div>
+                ))}
+              </div>
+            )}
 
-          {screen === "verify" && (
-            <div style={{ color: "#607086", fontSize: 14 }}>
-              {loading ? "Verifying your email…" : "Verification complete. You can sign in."}
-            </div>
-          )}
+            {error && <div className="auth-form-alert-error">{error}</div>}
+            {info && <div className="auth-form-alert-success">{info}</div>}
 
-          {screen === "reset" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <label style={s.label}>New Password</label>
-              <PasswordInput
-                placeholder="Min 8 characters"
-                value={form.new_password}
-                onChange={set("new_password")}
-                autoComplete="new-password"
-              />
-              <label style={s.label}>Confirm Password</label>
-              <PasswordInput
-                placeholder="Confirm new password"
-                value={form.confirm_password}
-                onChange={set("confirm_password")}
-                autoComplete="new-password"
-              />
-              <button style={{ ...s.btn("primary"), marginTop: 8 }} onClick={submitReset} disabled={loading}>
-                {loading ? "Resetting..." : "Reset Password"}
-              </button>
-              <button type="button" style={s.btn("secondary")} onClick={goHome}>Back to sign in</button>
-            </div>
-          )}
+            {screen === "verify" && (
+              <div style={{ color: "#94a3b8", fontSize: 14 }}>
+                {loading ? "Verifying your email…" : "Verification complete. You can sign in."}
+              </div>
+            )}
 
-          {screen === "auth" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {tab === "signup" && (
-                <>
-                  <label style={s.label}>Full Name</label>
-                  <input style={s.input} placeholder="Jane Developer"
-                    value={form.full_name} onChange={set("full_name")} />
-                </>
-              )}
-              {(tab === "login" || tab === "signup" || tab === "forgot") && (
-                <>
-                  <label style={s.label}>Email Address</label>
-                  <input style={s.input} placeholder="dev@acme.corp"
-                    type="email" value={form.email} onChange={set("email")} autoComplete="email" />
-                </>
-              )}
-              {tab !== "forgot" && (
-                <>
-                  <label style={s.label}>Password</label>
-                  <PasswordInput
-                    placeholder="••••••••"
-                    value={form.password}
-                    onChange={set("password")}
-                    autoComplete={tab === "login" ? "current-password" : "new-password"}
-                  />
-                </>
-              )}
-              {tab === "signup" && (
-                <>
-                  <label style={s.label}>Organization Name (Optional)</label>
-                  <input style={s.input} placeholder="Acme Corp"
-                    value={form.org_name} onChange={set("org_name")} />
-                </>
-              )}
-              <button style={{ ...s.btn("primary"), marginTop: 8 }} onClick={submit} disabled={loading}>
-                {loading ? "Please wait..." :
-                  tab === "login" ? "Sign In" :
-                  tab === "forgot" ? "Send Reset Link" : "Create Account"}
-              </button>
-              {tab === "login" && (
-                <button type="button" style={{ ...s.btn("secondary"), fontSize: 13 }}
-                  onClick={() => { setTab("forgot"); setError(""); setInfo(""); }}>
-                  Forgot password?
+            {screen === "reset" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <label className="auth-form-label">New Password</label>
+                <PasswordInput
+                  placeholder="Min 8 characters"
+                  value={form.new_password}
+                  onChange={set("new_password")}
+                  autoComplete="new-password"
+                />
+                <label className="auth-form-label">Confirm Password</label>
+                <PasswordInput
+                  placeholder="Confirm new password"
+                  value={form.confirm_password}
+                  onChange={set("confirm_password")}
+                  autoComplete="new-password"
+                />
+                <button className="auth-form-btn-primary" style={{ marginTop: 8 }} onClick={submitReset} disabled={loading}>
+                  {loading ? "Resetting..." : "Reset Password"}
                 </button>
-              )}
-              {tab === "forgot" && (
-                <button type="button" style={{ ...s.btn("secondary"), fontSize: 13 }}
-                  onClick={() => { setTab("login"); setError(""); setInfo(""); }}>
-                  Back to login
+                <button type="button" className="auth-form-btn-secondary" onClick={goHome}>Back to sign in</button>
+              </div>
+            )}
+
+            {screen === "auth" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {tab === "signup" && (
+                  <>
+                    <label className="auth-form-label">Full Name</label>
+                    <input className="auth-form-input" placeholder="Jane Developer"
+                      value={form.full_name} onChange={set("full_name")} />
+                  </>
+                )}
+                {(tab === "login" || tab === "signup" || tab === "forgot") && (
+                  <>
+                    <label className="auth-form-label">Email Address</label>
+                    <input className="auth-form-input" placeholder="dev@acme.corp"
+                      type="email" value={form.email} onChange={set("email")} autoComplete="email" />
+                  </>
+                )}
+                {tab !== "forgot" && (
+                  <>
+                    <label className="auth-form-label">Password</label>
+                    <PasswordInput
+                      placeholder="••••••••"
+                      value={form.password}
+                      onChange={set("password")}
+                      autoComplete={tab === "login" ? "current-password" : "new-password"}
+                    />
+                  </>
+                )}
+                {tab === "signup" && (
+                  <>
+                    <label className="auth-form-label">Organization Name (Optional)</label>
+                    <input className="auth-form-input" placeholder="Acme Corp"
+                      value={form.org_name} onChange={set("org_name")} />
+                  </>
+                )}
+                <button className="auth-form-btn-primary" style={{ marginTop: 8 }} onClick={submit} disabled={loading}>
+                  {loading ? "Please wait..." :
+                    tab === "login" ? "Sign In" :
+                    tab === "forgot" ? "Send Reset Link" : "Create Account"}
                 </button>
-              )}
-              {(tab === "login" || tab === "forgot") && (
-                <button type="button" style={{ ...s.btn("secondary"), fontSize: 13 }}
-                  onClick={resendVerification} disabled={loading}>
-                  Resend verification email
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-        <div style={{ textAlign:"center", marginTop:14, fontSize:11, color:"#607086",
-          fontFamily: "ui-monospace, monospace" }}>
-          {"// demo_mode: rate limits active"}
-        </div>
+
+                {tab === "login" && (
+                  <button type="button" className="auth-form-btn-secondary"
+                    onClick={() => { setTab("forgot"); setError(""); setInfo(""); }}>
+                    Forgot password?
+                  </button>
+                )}
+                {tab === "forgot" && (
+                  <button type="button" className="auth-form-btn-secondary"
+                    onClick={() => { setTab("login"); setError(""); setInfo(""); }}>
+                    Back to login
+                  </button>
+                )}
+                {(tab === "login" || tab === "forgot") && (
+                  <button type="button" className="auth-form-btn-secondary"
+                    onClick={resendVerification} disabled={loading}>
+                    Resend verification email
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          
+          <div className="auth-form-footer">
+            {"// demo_mode: rate limits active"}
+          </div>
         </div>
       </div>
     </div>
@@ -2945,9 +3340,13 @@ export default function App() {
   return (
     <div className="app-shell" style={s.app}>
       <GlobalStyles />
+      <AuthFlowBackground />
       {/* Sidebar */}
       <div className="app-sidebar" style={s.sidebar}>
         <div style={s.logo}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#0f766e", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+            Ngoc Duc Nghiem
+          </div>
           <div style={s.logoText}>AI Guardrails</div>
           <div style={{ fontSize: 11, color: "#7b8a9d", marginTop: 4 }}>Models · agents · skills</div>
           <div style={s.logoSub}>{user.email}</div>
