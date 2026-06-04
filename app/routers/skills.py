@@ -4,13 +4,14 @@ Agent skill scanner — find secrets, PII, and internal details before they ship
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import CurrentUser
 from app.schemas import (
     SkillFindingOut,
+    SkillRejectionCreateIn,
     SkillRejectionOut,
     SkillRejectionReportIn,
     SkillRejectionResolveIn,
@@ -89,6 +90,36 @@ async def report_rejection(
         findings=[f.model_dump() for f in body.findings],
         summary=body.rejection_summary,
         content_preview=body.content_preview,
+    )
+    await db.commit()
+    return row
+
+
+@router.post("/rejections/create", response_model=SkillRejectionOut, status_code=201)
+async def create_rejection_from_content(
+    body: SkillRejectionCreateIn,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Web helper: submit skill content, auto-scan, and add only blocked findings
+    into the rejected-access review queue.
+    """
+    result = SkillGuardrail().scan(body.content)
+    if result.safe:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No rejected findings to add. The content scanned as safe.",
+        )
+
+    row = await record_rejection(
+        db,
+        user=current_user,
+        filename=body.filename,
+        source=body.source,
+        findings=result.findings,
+        summary=body.rejection_summary or f"Rejected access: {len(result.findings)} issue(s)",
+        content_preview=body.content_preview or body.content[:500],
     )
     await db.commit()
     return row

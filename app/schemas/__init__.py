@@ -255,6 +255,14 @@ class SkillRejectionReportIn(BaseModel):
     findings: list[SkillFindingOut] = Field(min_length=1)
 
 
+class SkillRejectionCreateIn(BaseModel):
+    content: str = Field(min_length=1, max_length=256_000)
+    filename: str | None = Field(default=None, max_length=255)
+    source: str = Field(default="web_manual", max_length=32)
+    rejection_summary: str | None = None
+    content_preview: str | None = Field(default=None, max_length=500)
+
+
 class SkillRejectionOut(BaseModel):
     id: str
     filename: str | None
