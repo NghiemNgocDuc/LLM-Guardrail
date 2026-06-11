@@ -37,6 +37,7 @@ from app.services.token_wallet import (
 from app.config import get_settings
 from guardrails.input import InputGuardrail
 from guardrails.output import OutputGuardrail
+from guardrails.pii_redactor import PIIRedactor
 
 settings = get_settings()
 router = APIRouter(prefix="/chat", tags=["Gateway"])
@@ -129,6 +130,9 @@ async def chat(
     rpm = (policy.rate_limit_rpm if policy and policy.rate_limit_rpm else None) or settings.DEFAULT_RATE_LIMIT_RPM
     rpd = (policy.rate_limit_rpd if policy and policy.rate_limit_rpd else None) or settings.DEFAULT_RATE_LIMIT_RPD
 
+    # PII redaction mode: "block" (default), "redact", or "off"
+    pii_mode = input_rules.get("pii_redaction_mode", "block")
+
     max_tokens = _effective_max_tokens(body)
     enforce_demo_payload_limits(body.prompt, max_tokens)
 
@@ -151,6 +155,7 @@ async def chat(
             db=db, api_key=api_key,
             prompt_hash=_sha256(body.prompt),
             prompt_preview=_safe_preview(body.prompt, False),
+            full_prompt=body.prompt if compliance_rules.get("full_prompt_logging") else None,
             model=body.model or "-", backend=body.backend or settings.DEFAULT_LLM_BACKEND,
             input_passed=True, input_block_reason=None,
             output_passed=None, output_block_reason=None,
@@ -161,11 +166,27 @@ async def chat(
         await db.commit()
         raise
 
-    # ── 4. Input guardrail ────────────────────────────────────────────────
-    in_guard = InputGuardrail(input_rules)
-    in_result = in_guard.check(body.prompt)
+    # ── 4a. PII Redaction (if mode == "redact") ────────────────────────────
+    redaction_result = None
+    prompt_for_llm = body.prompt
 
-    pii_found = (not in_result.allowed and "PII" in (in_result.reason or ""))
+    if pii_mode == "redact":
+        redactor = PIIRedactor(
+            extra_patterns=input_rules.get("pii_patterns")
+        )
+        redaction_result = redactor.redact(body.prompt)
+        prompt_for_llm = redaction_result.redacted_text
+
+    # ── 4b. Input guardrail ───────────────────────────────────────────────
+    # When in "redact" mode, skip the PII check (we already handled it)
+    guardrail_rules = dict(input_rules)
+    if pii_mode == "redact":
+        guardrail_rules["block_pii"] = False
+
+    in_guard = InputGuardrail(guardrail_rules)
+    in_result = in_guard.check(prompt_for_llm)
+
+    pii_found = (redaction_result is not None and redaction_result.pii_found)
 
     if not in_result.allowed:
         latency_ms = int((time.monotonic() - start) * 1000)
@@ -173,6 +194,7 @@ async def chat(
             db=db, api_key=api_key,
             prompt_hash=_sha256(body.prompt),
             prompt_preview=_safe_preview(body.prompt, pii_found),
+            full_prompt=body.prompt if compliance_rules.get("full_prompt_logging") else None,
             model="—", backend="—",
             input_passed=False, input_block_reason=in_result.reason,
             output_passed=None, output_block_reason=None,
@@ -199,10 +221,10 @@ async def chat(
             tokens_remaining=bal if settings.BILLING_ENABLED else None,
         )
 
-    # ── 5. Call LLM ───────────────────────────────────────────────────────
+    # ── 5. Call LLM (with redacted prompt if applicable) ─────────────────
     try:
         llm_resp = await call_llm(
-            prompt=body.prompt,
+            prompt=prompt_for_llm,
             temperature=body.temperature,
             max_tokens=max_tokens,
             request_backend=body.backend,
@@ -216,6 +238,7 @@ async def chat(
             db=db, api_key=api_key,
             prompt_hash=_sha256(body.prompt),
             prompt_preview=_safe_preview(body.prompt, False),
+            full_prompt=body.prompt if compliance_rules.get("full_prompt_logging") else None,
             model=body.model or "—", backend=body.backend or settings.DEFAULT_LLM_BACKEND,
             input_passed=True, input_block_reason=None,
             output_passed=None, output_block_reason=None,
@@ -236,6 +259,7 @@ async def chat(
         db=db, api_key=api_key,
         prompt_hash=_sha256(body.prompt),
         prompt_preview=_safe_preview(body.prompt, False),
+        full_prompt=body.prompt if compliance_rules.get("full_prompt_logging") else None,
         model=llm_resp.model, backend=llm_resp.backend,
         input_passed=True, input_block_reason=None,
         output_passed=out_result.allowed,
@@ -251,16 +275,22 @@ async def chat(
     unlimited = await user_has_unlimited_tokens(db, api_key.owner_id)
     bal = wallet.balance_tokens
 
+    # If we redacted PII, report it in the input guard reason
+    if redaction_result and redaction_result.pii_found:
+        in_reason = f"PII redacted: {', '.join(redaction_result.pii_types)} ({redaction_result.pii_count} items)"
+    else:
+        in_reason = in_result.reason or ""
+
     return ChatResponse(
         request_id=request_id,
         response=llm_resp.text if out_result.allowed else None,
         status=status_str,
         input_guard=GuardrailResult(
             passed=True,
-            check=in_result.check,
-            reason=in_result.reason or "",
-            reason_code=in_result.reason_code,
-            risk_score=in_result.risk_score,
+            check="PII Redaction + Input Checks" if pii_found else in_result.check,
+            reason=in_reason,
+            reason_code="pii_redacted" if pii_found else in_result.reason_code,
+            risk_score=0.4 if pii_found else in_result.risk_score,
         ),
         output_guard=GuardrailResult(
             passed=out_result.allowed,
@@ -277,7 +307,7 @@ async def chat(
 
 
 async def _log_request(
-    db, api_key, prompt_hash, prompt_preview,
+    db, api_key, prompt_hash, prompt_preview, full_prompt,
     model, backend, input_passed, input_block_reason,
     output_passed, output_block_reason, fired_rule,
     status, latency_ms, input_tokens, output_tokens,
@@ -287,6 +317,7 @@ async def _log_request(
         org_id=api_key.org_id,
         prompt_hash=prompt_hash,
         prompt_preview=prompt_preview,
+        full_prompt=full_prompt,
         model=model, backend=backend,
         input_passed=input_passed,
         input_block_reason=input_block_reason,

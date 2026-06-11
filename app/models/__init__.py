@@ -246,6 +246,7 @@ class RequestLog(Base):
     # Request
     prompt_hash:    Mapped[str]      = mapped_column(String(64))    # SHA-256 of prompt (never store raw PII)
     prompt_preview: Mapped[str]      = mapped_column(String(120))   # first 120 chars, redacted if PII found
+    full_prompt:    Mapped[str | None] = mapped_column(Text, nullable=True) # Optional full raw prompt
     model:          Mapped[str]      = mapped_column(String(80))
     backend:        Mapped[str]      = mapped_column(String(32))
 

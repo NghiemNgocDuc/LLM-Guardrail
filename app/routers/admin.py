@@ -1,12 +1,18 @@
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.deps import CurrentUser
+from app.deps import CurrentUser, hash_password
 from app.models import APIKey, User
-from app.schemas import AdminUserUpdate, APIKeyOut, UserOut
+from app.schemas import AdminInviteUser, AdminUserUpdate, APIKeyOut, UserOut
+from app.config import get_settings
+from app.services.auth_tokens import TOKEN_PURPOSE_RESET, build_action_url, create_auth_token
+from app.services.email import send_password_reset_email
+from app.services.token_wallet import ensure_wallet
 
+settings = get_settings()
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
@@ -14,6 +20,43 @@ def require_org_admin(user: User) -> None:
     if not user.is_admin or not user.org_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization admin access required")
 
+
+@router.post("/users/invite", response_model=UserOut)
+async def invite_user(
+    body: AdminInviteUser,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    require_org_admin(current_user)
+
+    existing = await db.execute(select(User).where(User.email == body.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    temp_password = secrets.token_urlsafe(16)
+    user = User(
+        email=body.email,
+        hashed_password=hash_password(temp_password),
+        full_name=body.full_name,
+        is_admin=body.is_admin,
+        org_id=current_user.org_id,
+        email_verified=False,  # They will verify when setting password
+    )
+    db.add(user)
+    await db.flush()
+
+    await ensure_wallet(db, user.id)
+
+    raw = await create_auth_token(
+        db,
+        user_id=user.id,
+        purpose=TOKEN_PURPOSE_RESET,
+        expire_hours=settings.PASSWORD_RESET_EXPIRE_HOURS,
+    )
+    reset_url = build_action_url(settings.PUBLIC_APP_URL, "/reset-password", raw)
+    await send_password_reset_email(user.email, reset_url)
+
+    return user
 
 @router.get("/users", response_model=list[UserOut])
 async def list_org_users(current_user: CurrentUser, db: AsyncSession = Depends(get_db)):

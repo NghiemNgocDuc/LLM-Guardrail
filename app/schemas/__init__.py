@@ -89,6 +89,11 @@ class APIKeyCreated(APIKeyOut):
     raw_key: str
 
 
+class AdminInviteUser(BaseModel):
+    email: EmailStr
+    full_name: str = Field(min_length=1, max_length=120)
+    is_admin: bool = False
+
 class AdminUserUpdate(BaseModel):
     is_active: bool | None = None
     is_admin: bool | None = None

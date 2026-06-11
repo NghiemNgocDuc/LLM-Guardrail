@@ -190,6 +190,7 @@ async def logs(
             "id":                  log.id,
             "status":              log.status,
             "prompt_preview":      log.prompt_preview,
+            "full_prompt":         log.full_prompt,
             "model":               log.model,
             "backend":             log.backend,
             "latency_ms":          log.latency_ms,
