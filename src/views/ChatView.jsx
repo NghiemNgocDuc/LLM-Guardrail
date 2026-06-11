@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { api, getToken, setTokens, clearTokens, getGatewayKey, setGatewayKey, maskGatewayKey, gatewayKeyInputProps, formatApiError } from "../utils/api";
+import { api, getToken, setTokens, clearTokens, getGatewayKey, setGatewayKey, maskGatewayKey, gatewayKeyInputProps, formatApiError, PII_PATTERNS, INJECTION_KW, JAILBREAK_KW } from "../utils/api";
 import { s } from "../styles/theme";
 function clientGuardrail(prompt) {
   for (const p of PII_PATTERNS) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { api, getToken, setTokens, clearTokens, getGatewayKey, setGatewayKey, maskGatewayKey, gatewayKeyInputProps, formatApiError } from "../utils/api";
+import { api, getToken, setTokens, clearTokens, getGatewayKey, setGatewayKey, maskGatewayKey, gatewayKeyInputProps, formatApiError, USER_PROMPT, AI_RESPONSE } from "../utils/api";
 import { s } from "../styles/theme";
 function useTypewriter(text, { speed = 36, delay = 0, active = false, wordByWord = false } = {}) {
   const [displayed, setDisplayed] = useState("");

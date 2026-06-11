@@ -60,14 +60,14 @@ export async function api(path, opts = {}) {
 }
 
 // Input guardrail regex (mirrors backend)
-const PII_PATTERNS = [
+export const PII_PATTERNS = [
   { name: "credit_card", regex: /\b(?:\d[ -]?){13,16}\b/ },
   { name: "ssn",         regex: /\b\d{3}-\d{2}-\d{4}\b/ },
 ];
-const INJECTION_KW = ["ignore previous instructions", "disregard your system prompt", "forget everything"];
-const JAILBREAK_KW = ["DAN mode", "developer mode", "pretend you have no restrictions"];
+export const INJECTION_KW = ["ignore previous instructions", "disregard your system prompt", "forget everything"];
+export const JAILBREAK_KW = ["DAN mode", "developer mode", "pretend you have no restrictions"];
 
-const USER_PROMPT = "What does AI Guardrails protect?";
-const AI_RESPONSE = "I secure AI workflows end to end: live model traffic, Cursor skills, MCP instructions, and agent system prompts. I block leaked credentials, PII, destructive shell/SQL, and jailbreaks before they reach providers or coding agents — with one dashboard and git hooks you control from chat.";
+export const USER_PROMPT = "What does AI Guardrails protect?";
+export const AI_RESPONSE = "I secure AI workflows end to end: live model traffic, Cursor skills, MCP instructions, and agent system prompts. I block leaked credentials, PII, destructive shell/SQL, and jailbreaks before they reach providers or coding agents — with one dashboard and git hooks you control from chat.";
 
 /** Type text character-by-character or word-by-word when `active` becomes true. */
