@@ -5,7 +5,7 @@ WORKDIR /frontend
 COPY package*.json ./
 RUN npm ci
 
-COPY index.html frontend.jsx ./
+COPY index.html ./
 COPY src ./src
 
 ARG VITE_API_BASE_URL=
