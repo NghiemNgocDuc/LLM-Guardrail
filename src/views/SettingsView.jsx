@@ -2,36 +2,83 @@ import React, { useState, useEffect } from "react";
 import { api } from "../utils/api";
 import { s } from "../styles/theme";
 
-function Section({ title, children }) {
+const field = {
+  display: "block",
+  marginBottom: 18,
+};
+const label = {
+  display: "block",
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#607086",
+  marginBottom: 6,
+  letterSpacing: "0.02em",
+};
+const hint = {
+  display: "block",
+  fontSize: 11,
+  color: "#9aabba",
+  marginTop: 4,
+};
+const input = {
+  width: "100%",
+  maxWidth: 440,
+  background: "#fff",
+  border: "1px solid #ccd9e6",
+  borderRadius: 8,
+  padding: "11px 13px",
+  fontSize: 14,
+  color: "#102033",
+  fontFamily: "inherit",
+  outline: "none",
+  boxSizing: "border-box",
+  display: "block",
+};
+
+function Card({ title, subtitle, children }) {
   return (
-    <div style={{ ...s.card, marginBottom: 20 }}>
-      <div style={{ ...s.sectionTitle, marginBottom: 18 }}>{title}</div>
+    <div style={{
+      background: "rgba(255,255,255,0.92)",
+      border: "1px solid rgba(15,118,110,0.13)",
+      borderRadius: 14,
+      padding: "24px 28px",
+      marginBottom: 18,
+      boxShadow: "0 4px 24px rgba(15,118,110,0.06)",
+    }}>
+      <div style={{ marginBottom: 20, paddingBottom: 14, borderBottom: "1px solid #edf2f7" }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: "#102033" }}>{title}</div>
+        {subtitle && <div style={{ fontSize: 12, color: "#8a9bb0", marginTop: 3 }}>{subtitle}</div>}
+      </div>
       {children}
     </div>
   );
 }
 
+function SaveBtn({ saving, label: lbl }) {
+  return (
+    <button style={s.btn("primary")} type="submit" disabled={saving}>
+      {saving ? "Saving…" : lbl || "Save"}
+    </button>
+  );
+}
+
 export default function SettingsView({ user, onUserUpdate, darkMode, setDarkMode, onLogout }) {
-  // Profile
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [savingProfile, setSavingProfile] = useState(false);
 
-  // Password
   const [currentPw, setCurrentPw] = useState("");
-  const [newPw, setNewPw] = useState("");
+  const [newPw, setNewPw]         = useState("");
   const [confirmPw, setConfirmPw] = useState("");
-  const [savingPw, setSavingPw] = useState(false);
+  const [savingPw, setSavingPw]   = useState(false);
 
-  // Org settings (admin only)
-  const [orgName, setOrgName] = useState("");
+  const [orgName, setOrgName]     = useState("");
   const [savingOrg, setSavingOrg] = useState(false);
 
-  // Webhook + IP blocklist (admin only)
-  const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookUrl, setWebhookUrl]         = useState("");
   const [blockedIpsText, setBlockedIpsText] = useState("");
-  const [savingSec, setSavingSec] = useState(false);
+  const [savingSec, setSavingSec]           = useState(false);
 
-  const [error, setError] = useState("");
+  const [error, setError]     = useState("");
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
@@ -47,17 +94,17 @@ export default function SettingsView({ user, onUserUpdate, darkMode, setDarkMode
 
   function flash(msg, isErr = false) {
     if (isErr) { setError(msg); setSuccess(""); }
-    else { setSuccess(msg); setError(""); }
+    else        { setSuccess(msg); setError(""); }
+    setTimeout(() => { setError(""); setSuccess(""); }, 4000);
   }
 
   async function saveProfile(e) {
-    e.preventDefault();
-    setSavingProfile(true);
+    e.preventDefault(); setSavingProfile(true);
     try {
       const updated = await api("/auth/profile", { method: "PATCH", body: { full_name: fullName } });
       onUserUpdate?.(updated);
       flash("Profile updated.");
-    } catch (e) { flash(e.message, true); }
+    } catch (err) { flash(err.message, true); }
     finally { setSavingProfile(false); }
   }
 
@@ -72,172 +119,181 @@ export default function SettingsView({ user, onUserUpdate, darkMode, setDarkMode
       });
       flash(res.message || "Password changed.");
       setCurrentPw(""); setNewPw(""); setConfirmPw("");
-    } catch (e) { flash(e.message, true); }
+    } catch (err) { flash(err.message, true); }
     finally { setSavingPw(false); }
   }
 
   async function saveOrg(e) {
-    e.preventDefault();
-    setSavingOrg(true);
+    e.preventDefault(); setSavingOrg(true);
     try {
       await api("/org", { method: "PATCH", body: { name: orgName } });
       flash("Organisation renamed.");
-    } catch (e) { flash(e.message, true); }
+    } catch (err) { flash(err.message, true); }
     finally { setSavingOrg(false); }
   }
 
   async function saveSecurity(e) {
-    e.preventDefault();
-    setSavingSec(true);
+    e.preventDefault(); setSavingSec(true);
     try {
       const blocked_ips = blockedIpsText.split("\n").map(l => l.trim()).filter(Boolean);
       await api("/policy", {
         method: "PATCH",
-        body: {
-          compliance_rules: {
-            webhook_url: webhookUrl.trim() || undefined,
-            blocked_ips,
-          },
-        },
+        body: { compliance_rules: { webhook_url: webhookUrl.trim() || undefined, blocked_ips } },
       });
       flash("Security settings saved.");
-    } catch (e) { flash(e.message, true); }
+    } catch (err) { flash(err.message, true); }
     finally { setSavingSec(false); }
   }
 
-  const inputStyle = { ...s.input, marginBottom: 14, maxWidth: 400 };
-
   return (
     <div>
+      {/* Page header */}
       <div style={s.heroPanel}>
-        <div style={{ ...s.pageTitle, marginBottom: 8 }}>Settings</div>
-        <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6 }}>
-          Account, security, appearance, and organisation configuration.
+        <div style={{ ...s.pageTitle, marginBottom: 6 }}>Settings</div>
+        <div style={{ color: "#607086", fontSize: 14 }}>
+          Signed in as <strong>{user?.email}</strong>
+          {user?.is_admin && (
+            <span style={{ ...s.badge("rate_limited"), marginLeft: 10 }}>Admin</span>
+          )}
         </div>
       </div>
 
-      {error   && <div style={s.alert("error")}>{error}</div>}
-      {success && <div style={s.alert("success")}>{success}</div>}
+      {/* Inline feedback */}
+      {error   && <div style={{ ...s.alert("error"),   marginBottom: 16 }}>{error}</div>}
+      {success && <div style={{ ...s.alert("success"), marginBottom: 16 }}>{success}</div>}
 
-      {/* Profile */}
-      <Section title="Profile">
-        <div style={{ fontSize: 13, color: "#8a9bb0", marginBottom: 14 }}>
-          Email: <strong style={{ color: "#405166" }}>{user?.email}</strong>
-        </div>
+      {/* ── Profile ── */}
+      <Card title="Profile" subtitle="Your public display name shown to teammates">
         <form onSubmit={saveProfile}>
-          <label style={s.label}>Display Name</label>
-          <input style={inputStyle} value={fullName}
-            onChange={e => setFullName(e.target.value)} required minLength={1} maxLength={120} />
-          <button style={s.btn("primary")} type="submit" disabled={savingProfile}>
-            {savingProfile ? "Saving..." : "Save Profile"}
-          </button>
+          <div style={field}>
+            <label style={label}>Display Name</label>
+            <input style={input} value={fullName}
+              onChange={e => setFullName(e.target.value)}
+              required minLength={1} maxLength={120}
+              placeholder="Your full name" />
+          </div>
+          <div style={field}>
+            <label style={label}>Email</label>
+            <input style={{ ...input, background: "#f8fbff", color: "#8a9bb0", cursor: "not-allowed" }}
+              value={user?.email || ""} readOnly />
+            <span style={hint}>Email cannot be changed from the dashboard.</span>
+          </div>
+          <SaveBtn saving={savingProfile} label="Save Profile" />
         </form>
-      </Section>
+      </Card>
 
-      {/* Password */}
-      <Section title="Change Password">
+      {/* ── Password ── */}
+      <Card title="Change Password" subtitle="Use a strong password of at least 8 characters">
         <form onSubmit={savePassword}>
-          <label style={s.label}>Current Password</label>
-          <input style={inputStyle} type="password" value={currentPw}
-            onChange={e => setCurrentPw(e.target.value)} required />
-          <label style={s.label}>New Password</label>
-          <input style={inputStyle} type="password" value={newPw}
-            onChange={e => setNewPw(e.target.value)} required minLength={8} />
-          <label style={s.label}>Confirm New Password</label>
-          <input style={inputStyle} type="password" value={confirmPw}
-            onChange={e => setConfirmPw(e.target.value)} required minLength={8} />
-          <button style={s.btn("primary")} type="submit" disabled={savingPw}>
-            {savingPw ? "Updating..." : "Update Password"}
-          </button>
+          <div style={field}>
+            <label style={label}>Current Password</label>
+            <input style={input} type="password" value={currentPw}
+              onChange={e => setCurrentPw(e.target.value)} required
+              placeholder="Enter current password" />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 18 }}>
+            <div>
+              <label style={label}>New Password</label>
+              <input style={{ ...input, maxWidth: "100%" }} type="password" value={newPw}
+                onChange={e => setNewPw(e.target.value)} required minLength={8}
+                placeholder="At least 8 characters" />
+            </div>
+            <div>
+              <label style={label}>Confirm New Password</label>
+              <input style={{ ...input, maxWidth: "100%" }} type="password" value={confirmPw}
+                onChange={e => setConfirmPw(e.target.value)} required minLength={8}
+                placeholder="Repeat new password" />
+            </div>
+          </div>
+          <SaveBtn saving={savingPw} label="Update Password" />
         </form>
-      </Section>
+      </Card>
 
-      {/* Appearance */}
-      <Section title="Appearance">
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#405166", marginBottom: 2 }}>Dark Mode</div>
-            <div style={{ fontSize: 12, color: "#8a9bb0" }}>Toggle between light and dark theme</div>
+      {/* ── Appearance ── */}
+      <Card title="Appearance" subtitle="Customise how the dashboard looks">
+        <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "4px 0" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#102033", marginBottom: 2 }}>Dark Mode</div>
+            <div style={{ fontSize: 12, color: "#8a9bb0" }}>
+              {darkMode ? "Currently using dark theme" : "Currently using light theme"}
+            </div>
           </div>
           <button
-            style={{
-              ...s.toggle(darkMode), marginLeft: "auto",
-              position: "relative", outline: "none",
-            }}
-            onClick={() => setDarkMode(d => !d)}
             type="button"
+            style={{ ...s.toggle(darkMode), flexShrink: 0, position: "relative" }}
+            onClick={() => setDarkMode(d => !d)}
           >
             <div style={s.toggleDot(darkMode)} />
           </button>
         </div>
-      </Section>
+      </Card>
 
-      {/* Org settings — admin only */}
+      {/* ── Organisation (admin only) ── */}
       {user?.is_admin && user?.org_id && (
-        <Section title="Organisation">
+        <Card title="Organisation" subtitle="Rename your organisation — the slug will update automatically">
           <form onSubmit={saveOrg}>
-            <label style={s.label}>Organisation Name</label>
-            <input style={inputStyle} value={orgName}
-              onChange={e => setOrgName(e.target.value)} required minLength={2} maxLength={120} />
-            <button style={s.btn("primary")} type="submit" disabled={savingOrg}>
-              {savingOrg ? "Saving..." : "Rename Organisation"}
-            </button>
+            <div style={field}>
+              <label style={label}>Organisation Name</label>
+              <input style={input} value={orgName}
+                onChange={e => setOrgName(e.target.value)}
+                required minLength={2} maxLength={120}
+                placeholder="Acme Corp" />
+            </div>
+            <SaveBtn saving={savingOrg} label="Rename Organisation" />
           </form>
-        </Section>
+        </Card>
       )}
 
-      {/* Security — admin only */}
+      {/* ── Security (admin only) ── */}
       {user?.is_admin && (
-        <Section title="Security">
+        <Card title="Security" subtitle="Guardrail webhook notifications and IP-level access control">
           <form onSubmit={saveSecurity}>
-            <label style={s.label}>Webhook URL</label>
-            <div style={{ fontSize: 12, color: "#8a9bb0", marginBottom: 8 }}>
-              Receives a POST with JSON when a guardrail blocks a request.
+            <div style={field}>
+              <label style={label}>Webhook URL</label>
+              <input style={input} type="url" value={webhookUrl}
+                onChange={e => setWebhookUrl(e.target.value)}
+                placeholder="https://your-server.com/webhook" />
+              <span style={hint}>
+                Receives a POST request with JSON payload whenever a guardrail blocks a request.
+              </span>
             </div>
-            <input
-              style={inputStyle}
-              type="url"
-              placeholder="https://your-server.com/webhook"
-              value={webhookUrl}
-              onChange={e => setWebhookUrl(e.target.value)}
-            />
-
-            <label style={s.label}>IP Blocklist</label>
-            <div style={{ fontSize: 12, color: "#8a9bb0", marginBottom: 8 }}>
-              One IP per line. Blocked IPs receive HTTP 403.
+            <div style={field}>
+              <label style={label}>IP Blocklist</label>
+              <textarea
+                style={{
+                  ...input, maxWidth: 440, height: 110,
+                  resize: "vertical", fontFamily: "ui-monospace, monospace", fontSize: 12,
+                  lineHeight: 1.6,
+                }}
+                placeholder={"192.168.1.100\n10.0.0.50"}
+                value={blockedIpsText}
+                onChange={e => setBlockedIpsText(e.target.value)}
+              />
+              <span style={hint}>One IP address per line. Requests from these IPs receive HTTP 403.</span>
             </div>
-            <textarea
-              style={{
-                ...s.input, marginBottom: 14, maxWidth: 400,
-                height: 110, resize: "vertical",
-                fontFamily: "ui-monospace, monospace", fontSize: 12,
-              }}
-              placeholder={"192.168.1.100\n10.0.0.50"}
-              value={blockedIpsText}
-              onChange={e => setBlockedIpsText(e.target.value)}
-            />
-
-            <button style={s.btn("primary")} type="submit" disabled={savingSec}>
-              {savingSec ? "Saving..." : "Save Security Settings"}
-            </button>
+            <SaveBtn saving={savingSec} label="Save Security Settings" />
           </form>
-        </Section>
+        </Card>
       )}
 
-      {/* Danger zone */}
-      <Section title="Account">
-        <div style={{ fontSize: 13, color: "#607086", marginBottom: 16, lineHeight: 1.6 }}>
-          Signing out will clear your local session. You can sign back in at any time.
+      {/* ── Account / Sign out ── */}
+      <Card title="Account" subtitle="Manage your session">
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          flexWrap: "wrap", gap: 12,
+        }}>
+          <div style={{ fontSize: 13, color: "#607086", lineHeight: 1.6 }}>
+            Signing out clears your local session token.<br />
+            You can sign back in at any time.
+          </div>
+          <button
+            style={{ ...s.btn("danger"), padding: "11px 28px", fontSize: 13 }}
+            onClick={() => { if (confirm("Sign out of your account?")) onLogout(); }}
+          >
+            Sign out
+          </button>
         </div>
-        <button
-          style={{ ...s.btn("danger"), padding: "11px 24px" }}
-          onClick={() => {
-            if (confirm("Sign out of your account?")) onLogout();
-          }}
-        >
-          Sign out
-        </button>
-      </Section>
+      </Card>
     </div>
   );
 }
