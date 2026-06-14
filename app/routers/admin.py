@@ -40,10 +40,14 @@ async def invite_user(
         full_name=body.full_name,
         is_admin=body.is_admin,
         org_id=current_user.org_id,
-        email_verified=False,  # They will verify when setting password
+        email_verified=False,
     )
     db.add(user)
     await db.flush()
+
+    # Admin transfer: inviting someone as admin hands over the role
+    if body.is_admin:
+        current_user.is_admin = False
 
     await ensure_wallet(db, user.id)
 
@@ -88,6 +92,10 @@ async def update_org_user(
 
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(user, field, value)
+
+    # Admin transfer: promoting another user to admin hands over the role
+    if body.is_admin and user.id != current_user.id:
+        current_user.is_admin = False
 
     await db.flush()
     return user

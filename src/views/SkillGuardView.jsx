@@ -134,7 +134,7 @@ export default function SkillGuardView() {
       },
     };
     persistSkills(updated);
-    setInfo("✅ Skills saved. The live URL now serves the updated version.");
+    setInfo("Skills saved. The live URL now serves the updated version.");
   }
 
   function addNewAgent() {
@@ -184,7 +184,7 @@ export default function SkillGuardView() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    setInfo(`⬇ Downloaded ${slug}.md — this file never needs updating. Edit skills here and the agent auto-refreshes.`);
+    setInfo(`Downloaded ${slug}.md — this file never needs updating. Edit skills here and the agent auto-refreshes.`);
   }
 
   function copyLiveUrl(slug) {
@@ -302,7 +302,7 @@ export default function SkillGuardView() {
             borderRadius: 10, padding: "14px 18px", minWidth: 190,
           }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: blockAllAccess ? "#be123c" : "#0f766e", letterSpacing: "0.03em", textTransform: "uppercase" }}>
-              {blockAllAccess ? "⛔ Access blocked" : "✅ Access open"}
+              {blockAllAccess ? "Access blocked" : "Access open"}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 12, color: "#607086", fontWeight: 600 }}>Block all access</span>
@@ -333,7 +333,7 @@ export default function SkillGuardView() {
           <div style={{ ...s.card, background: "linear-gradient(135deg,#f8fbff 0%,#f0fdf9 100%)", border: "1px solid #99f6e4" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <div>
-                <div style={{ ...s.sectionTitle, color: "#0f766e", marginBottom: 4 }}>⚡ Live Skill Files</div>
+                <div style={{ ...s.sectionTitle, color: "#0f766e", marginBottom: 4 }}>Live Skill Files</div>
                 <div style={{ fontSize: 12, color: "#405166", lineHeight: 1.6 }}>
                   Edit skills here → click Save → the live URL instantly serves the new version.
                 </div>
@@ -378,7 +378,7 @@ export default function SkillGuardView() {
                 }}>
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 800, color: "#0f766e", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 3 }}>
-                      🔗 Live URL
+                      Live URL
                     </div>
                     <code style={{ fontSize: 11, color: "#1e293b", wordBreak: "break-all", fontFamily: "ui-monospace, monospace" }}>
                       {getLiveUrl(selectedAgent)}
@@ -388,12 +388,12 @@ export default function SkillGuardView() {
                     <button
                       style={{ ...s.btn("secondary"), fontSize: 11, padding: "6px 12px" }}
                       onClick={() => copyLiveUrl(selectedAgent)}
-                    >{copiedUrl === selectedAgent ? "✅ Copied" : "Copy URL"}</button>
+                    >{copiedUrl === selectedAgent ? "Copied" : "Copy URL"}</button>
                     <button
                       id={`download-live-md-${selectedAgent}`}
                       style={{ ...s.btn("primary"), fontSize: 11, padding: "6px 12px" }}
                       onClick={() => downloadLiveMd(selectedAgent)}
-                    >⬇ Download</button>
+                    >Download</button>
                   </div>
                 </div>
 
@@ -423,7 +423,7 @@ export default function SkillGuardView() {
                   <button
                     style={{ ...s.btn("primary"), padding: "10px 20px" }}
                     onClick={saveCurrentAgent}
-                  >💾 Save skills</button>
+                  >Save skills</button>
                   {liveSkills[selectedAgent]?.updatedAt && (
                     <span style={{ fontSize: 11, color: "#607086" }}>
                       Saved: {new Date(liveSkills[selectedAgent].updatedAt).toLocaleString()}
@@ -490,7 +490,6 @@ export default function SkillGuardView() {
           
           {blockAllAccess && (
             <div style={{ ...s.alert("error"), display: "flex", alignItems: "center", gap: 12, marginBottom: 0 }}>
-              <span style={{ fontSize: 18 }}>⛔</span>
               <div>
                 <strong>Block all access is ON.</strong> All incoming skill and agent requests are currently
                 being denied regardless of policy rules. Toggle it off above to resume normal operation.
@@ -527,7 +526,6 @@ export default function SkillGuardView() {
             <div style={{ ...s.muted, padding: "20px 0" }}>Loading rejected access...</div>
           ) : items.length === 0 ? (
             <div style={{ ...s.card, textAlign: "center", padding: "40px 20px" }}>
-              <div style={{ color: "#0f766e", fontSize: 24, marginBottom: 12 }}>✨</div>
               <div style={{ color: "#102033", fontSize: 16, fontWeight: 750 }}>
                 {filter === "pending"
                   ? "No rejected access waiting for review."

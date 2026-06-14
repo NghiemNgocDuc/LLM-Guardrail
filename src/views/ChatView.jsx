@@ -244,7 +244,7 @@ export default function ChatView() {
                           background: "linear-gradient(135deg, #0f766e 0%, #10b981 100%)",
                           color: "#ffffff", fontSize: 10, fontWeight: 800,
                           letterSpacing: "0.04em",
-                        }}>🔒 PII REDACTED</span>
+                        }}>PII REDACTED</span>
                       )}
                     </div>
                     <div style={{ fontSize: 12, color: "#405166" }}>{g.reason}</div>

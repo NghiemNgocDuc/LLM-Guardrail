@@ -99,9 +99,9 @@ export default function PolicyView({ user }) {
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
             {[
-              { value: "block", label: "🛑 Block", desc: "Reject requests containing PII" },
-              { value: "redact", label: "🔒 Redact", desc: "Replace PII with placeholders" },
-              { value: "off", label: "⚡ Off", desc: "No PII scanning" },
+              { value: "block", label: "Block", desc: "Reject requests containing PII" },
+              { value: "redact", label: "Redact", desc: "Replace PII with placeholders" },
+              { value: "off", label: "Off", desc: "No PII scanning" },
             ].map(opt => {
               const active = (policy.input_rules?.pii_redaction_mode || "block") === opt.value;
               return (

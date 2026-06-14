@@ -85,7 +85,6 @@ export default function LogsView() {
                           background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: 12,
                           fontSize: 12, color: "#92400e", display: "flex", gap: 8, alignItems: "flex-start"
                         }}>
-                          <div style={{ fontSize: 16 }}>🔒</div>
                           <div>
                             <strong>Full prompt logging was disabled.</strong>
                             <div style={{ marginTop: 4, color: "#b45309" }}>

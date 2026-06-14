@@ -235,11 +235,11 @@ export default function AuthTerminalIntro() {
       {/* Trust bar */}
       {responseDone && (
         <div className="auth-trust-bar">
-          <span className="auth-trust-item">🔒 SOC 2 Ready</span>
+          <span className="auth-trust-item">SOC 2 Ready</span>
           <span className="auth-trust-divider" />
-          <span className="auth-trust-item">⚡ Sub-15ms Latency</span>
+          <span className="auth-trust-item">Sub-15ms Latency</span>
           <span className="auth-trust-divider" />
-          <span className="auth-trust-item">🛡️ Zero Data Retention</span>
+          <span className="auth-trust-item">Zero Data Retention</span>
         </div>
       )}
     </div>
