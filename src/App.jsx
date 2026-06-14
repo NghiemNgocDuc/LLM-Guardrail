@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { api, getToken, setTokens, clearTokens, getGatewayKey, setGatewayKey, maskGatewayKey, gatewayKeyInputProps, formatApiError } from "./utils/api";
+import React, { useState, useEffect } from "react";
+import { api, getToken, clearTokens } from "./utils/api";
 import { s } from "./styles/theme";
 import GlobalStyles from "./styles/GlobalStyles";
 import AuthView from "./views/AuthView";
@@ -15,6 +15,7 @@ import TeamView from "./views/TeamView";
 import AnalyticsView from "./views/AnalyticsView";
 import ProfileView from "./views/ProfileView";
 import HealthView from "./views/HealthView";
+import SettingsView from "./views/SettingsView";
 import AuthFlowBackground from "./components/AuthFlowBackground";
 
 const NAV = [
@@ -28,67 +29,9 @@ const NAV = [
   { id: "policy",     label: "Policy",         icon: "05" },
   { id: "team",       label: "Team",           icon: "06" },
   { id: "health",     label: "System Health",  icon: "H"  },
-  { id: "profile",    label: "Profile",        icon: "PF" },
   { id: "admin",      label: "Admin",          icon: "A",  adminOnly: true },
+  { id: "settings",   label: "Settings",       icon: "ST" },
 ];
-
-function ChangePasswordModal({ onClose }) {
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
-  async function submit(e) {
-    e.preventDefault();
-    if (next !== confirm) { setError("New passwords do not match."); return; }
-    setSaving(true); setError(""); setSuccess("");
-    try {
-      const res = await api("/auth/change-password", {
-        method: "POST",
-        body: { current_password: current, new_password: next },
-      });
-      setSuccess(res.message || "Password changed.");
-      setCurrent(""); setNext(""); setConfirm("");
-    } catch (e) { setError(e.message); }
-    finally { setSaving(false); }
-  }
-
-  return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 1000,
-      background: "rgba(16,32,51,0.45)", backdropFilter: "blur(4px)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-    }} onClick={onClose}>
-      <div style={{
-        background: "#fff", borderRadius: 16, padding: 28, width: 380, maxWidth: "90vw",
-        boxShadow: "0 32px 80px rgba(15,118,110,0.18)",
-      }} onClick={e => e.stopPropagation()}>
-        <div style={{ ...s.sectionTitle, marginBottom: 20, fontSize: 16 }}>Change Password</div>
-        {error && <div style={s.alert("error")}>{error}</div>}
-        {success && <div style={s.alert("success")}>{success}</div>}
-        <form onSubmit={submit}>
-          <label style={s.label}>Current password</label>
-          <input type="password" style={{ ...s.input, marginBottom: 12 }}
-            value={current} onChange={e => setCurrent(e.target.value)} required />
-          <label style={s.label}>New password</label>
-          <input type="password" style={{ ...s.input, marginBottom: 12 }}
-            value={next} onChange={e => setNext(e.target.value)} required minLength={8} />
-          <label style={s.label}>Confirm new password</label>
-          <input type="password" style={{ ...s.input, marginBottom: 20 }}
-            value={confirm} onChange={e => setConfirm(e.target.value)} required minLength={8} />
-          <div style={{ display: "flex", gap: 10 }}>
-            <button style={{ ...s.btn("primary"), flex: 1 }} type="submit" disabled={saving}>
-              {saving ? "Saving..." : "Update password"}
-            </button>
-            <button style={s.btn("secondary")} type="button" onClick={onClose}>Cancel</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -99,7 +42,6 @@ export default function App() {
   });
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("guardrails_dark") === "1");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showChangePassword, setShowChangePassword] = useState(false);
 
   useEffect(() => {
     if (getToken()) {
@@ -158,19 +100,6 @@ export default function App() {
             <span>{n.label}</span>
           </div>
         ))}
-
-        <div style={{ flex: 1 }} />
-
-        <div style={{ borderTop: "1px solid #e7eef6", paddingTop: 12, marginTop: 12 }}>
-          <div style={{ ...s.navItem(false), marginBottom: 4 }} onClick={() => setShowChangePassword(true)}>
-            <span style={{ fontSize: 11, fontWeight: 850, color: "#9aabba" }}>pw</span>
-            <span>Change password</span>
-          </div>
-          <div style={s.navItem(false)} onClick={logout}>
-            <span style={{ fontSize: 11, fontWeight: 850, color: "#9aabba" }}>--</span>
-            <span>Sign out</span>
-          </div>
-        </div>
       </div>
 
       {/* Mobile hamburger */}
@@ -199,9 +128,16 @@ export default function App() {
         {view === "health"     && <HealthView />}
         {view === "profile"    && <ProfileView user={user} onUserUpdate={setUser} />}
         {view === "admin"      && user.is_admin && <AdminView />}
+        {view === "settings"   && (
+          <SettingsView
+            user={user}
+            onUserUpdate={setUser}
+            darkMode={darkMode}
+            setDarkMode={setDarkMode}
+            onLogout={logout}
+          />
+        )}
       </div>
-
-      {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
     </div>
   );
 }

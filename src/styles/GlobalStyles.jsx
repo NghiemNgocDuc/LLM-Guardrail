@@ -14,6 +14,12 @@ export default function GlobalStyles({ darkMode }) {
       .auth-password-toggle:focus-visible { outline: 2px solid #2dd4bf; outline-offset: 2px; }
       tr:last-child td { border-bottom: none !important; }
 
+      /* ───── Sidebar scroll ───── */
+      .app-sidebar { scrollbar-width: thin; scrollbar-color: rgba(15,118,110,0.18) transparent; }
+      .app-sidebar::-webkit-scrollbar { width: 4px; }
+      .app-sidebar::-webkit-scrollbar-thumb { background: rgba(15,118,110,0.18); border-radius: 4px; }
+      .app-sidebar::-webkit-scrollbar-track { background: transparent; }
+
       /* ───── Mobile layout ───── */
       @media (max-width: 760px) {
         .app-shell { flex-direction: row; }

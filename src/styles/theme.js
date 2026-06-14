@@ -19,6 +19,7 @@ export const s = {
     display: "flex",
     flexDirection: "column",
     flexShrink: 0,
+    overflowY: "auto",
     boxShadow: "12px 0 64px rgba(15, 118, 110, 0.12), inset 0 1px 0 rgba(255,255,255,0.5)",
     backdropFilter: "blur(20px)",
   },
