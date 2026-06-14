@@ -1,9 +1,43 @@
 """Output Guardrails"""
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
-TOXIC_KEYWORDS = ["hate", "kill", "violence"]
+# Multi-word phrases first — lower false-positive risk than single words.
+_TOXIC_PHRASES = [
+    "kill yourself",
+    "kill all",
+    "death to all",
+    "i will kill you",
+    "i'm going to kill",
+    "bomb threat",
+    "how to make a bomb",
+    "how to build a weapon",
+    "how to make explosives",
+    "instructions for mass",
+    "steps to commit",
+    "mass shooting",
+    "mass murder",
+    "school shooting",
+    "suicide bombing",
+    "ethnic cleansing",
+    "white supremacy",
+    "child pornography",
+    "child sexual abuse",
+]
+
+# Single keywords — kept to clearly unambiguous terms to reduce false positives.
+_TOXIC_KEYWORDS = [
+    "genocide",
+    "massacre",
+    "slaughter",
+    "exterminate",
+    "decapitate",
+    "dismember",
+    "mutilate",
+    "terrorism",
+    "terrorist attack",
+]
 
 
 @dataclass
@@ -14,6 +48,7 @@ class OutputGuardrailResult:
     reason_code: str = "clean"
     risk_score: float = 0.0
     sanitized_output: Optional[str] = None
+    warned: bool = False
 
 
 class OutputGuardrail:
@@ -23,6 +58,7 @@ class OutputGuardrail:
         self.topics = topic_policy
 
     def check(self, response: str) -> OutputGuardrailResult:
+        # Secret leakage always blocks regardless of policy
         err = self._check_secret_leakage(response)
         if err:
             return OutputGuardrailResult(
@@ -35,24 +71,46 @@ class OutputGuardrail:
 
         if self.policy.get("enforce_schema"):
             err = self._validate_schema(response)
-            if err: return OutputGuardrailResult(allowed=False, check="Schema Validation", reason=err, reason_code="schema_violation", risk_score=0.6)
+            if err:
+                return OutputGuardrailResult(
+                    allowed=False, check="Schema Validation",
+                    reason=err, reason_code="schema_violation", risk_score=0.6,
+                )
 
         if self.policy.get("block_toxic_content"):
             err = self._check_toxicity(response)
-            if err: return OutputGuardrailResult(allowed=False, check="Toxicity Filter", reason=err, reason_code="toxic_content", risk_score=0.8)
+            if err:
+                if self.policy.get("toxic_mode", "block") == "warn":
+                    return OutputGuardrailResult(
+                        allowed=True, warned=True,
+                        check="Toxicity Filter", reason=err,
+                        reason_code="warned_toxic_content", risk_score=0.6,
+                        sanitized_output=response,
+                    )
+                return OutputGuardrailResult(
+                    allowed=False, check="Toxicity Filter",
+                    reason=err, reason_code="toxic_content", risk_score=0.8,
+                )
 
         err = self._check_topic_policy(response)
-        if err: return OutputGuardrailResult(allowed=False, check="Topic Policy", reason=err, reason_code="blocked_topic", risk_score=0.75)
+        if err:
+            return OutputGuardrailResult(
+                allowed=False, check="Topic Policy",
+                reason=err, reason_code="blocked_topic", risk_score=0.75,
+            )
 
-        return OutputGuardrailResult(allowed=True, check="All Output Checks", reason_code="clean", risk_score=0.0, sanitized_output=response)
+        return OutputGuardrailResult(
+            allowed=True, check="All Output Checks",
+            reason_code="clean", risk_score=0.0, sanitized_output=response,
+        )
 
-    def _check_secret_leakage(self, response):
+    def _check_secret_leakage(self, response: str) -> Optional[str]:
         lower = response.lower()
         if "api_key=" in lower or "authorization: bearer" in lower:
             return "Potential credential leakage detected"
         return None
 
-    def _validate_schema(self, response):
+    def _validate_schema(self, response: str) -> Optional[str]:
         try:
             data = json.loads(response)
         except json.JSONDecodeError:
@@ -60,14 +118,17 @@ class OutputGuardrail:
         missing = [f for f in self.policy.get("required_fields", []) if f not in data]
         return f"Missing fields: {missing}" if missing else None
 
-    def _check_toxicity(self, response):
+    def _check_toxicity(self, response: str) -> Optional[str]:
         lower = response.lower()
-        for w in TOXIC_KEYWORDS:
-            if w in lower:
-                return f"Toxic content detected: '{w}'"
+        for phrase in _TOXIC_PHRASES:
+            if phrase in lower:
+                return f"Toxic content detected: '{phrase}'"
+        for word in _TOXIC_KEYWORDS:
+            if word in lower:
+                return f"Toxic content detected: '{word}'"
         return None
 
-    def _check_topic_policy(self, response):
+    def _check_topic_policy(self, response: str) -> Optional[str]:
         lower = response.lower()
         for topic in self.topics.get("blocked_topics", []):
             if topic.lower() in lower:

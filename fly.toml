@@ -1,0 +1,49 @@
+# Fly.io deployment — always-on free tier
+# Free allowance: 3 shared-CPU VMs, 256 MB RAM each — no auto-sleep.
+#
+# First deploy:
+#   fly launch --no-deploy   (imports this file)
+#   fly secrets set ...      (see README below)
+#   fly deploy
+
+app = "llm-guardrails"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile.fullstack"
+  [build.args]
+    VITE_API_BASE_URL = ""   # empty = same-origin (frontend + API on same host)
+
+[env]
+  APP_ENV    = "production"
+  DEBUG      = "false"
+  LOG_LEVEL  = "INFO"
+  PORT       = "8000"
+
+  # LLM — self-hosted Ollama on your machine via Cloudflare tunnel
+  DEFAULT_LLM_BACKEND = "ollama"
+  DEFAULT_MODEL       = "phi3"
+
+  # Billing off for testing
+  BILLING_ENABLED          = "false"
+  BILLING_UNLIMITED_EMAILS = "dnghiem@umass.edu"
+
+  # Email verification off so testers can sign in immediately
+  REQUIRE_EMAIL_VERIFICATION = "false"
+
+[http_service]
+  internal_port       = 8000
+  force_https         = true
+  auto_stop_machines  = false   # ← always online
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type       = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+[[vm]]
+  memory   = "256mb"
+  cpu_kind = "shared"
+  cpus     = 1

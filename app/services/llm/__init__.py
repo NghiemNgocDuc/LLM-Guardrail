@@ -1,7 +1,9 @@
 """
 LLM router — picks the right adapter based on org policy → request override → global default.
 """
-from app.services.llm.base import BaseLLMAdapter, LLMResponse
+from typing import AsyncIterator
+
+from app.services.llm.base import BaseLLMAdapter, LLMResponse, LLMStreamChunk
 from app.services.llm.anthropic import AnthropicAdapter
 from app.services.llm.gemini import GeminiAdapter
 from app.services.llm.groq import GroqAdapter
@@ -65,3 +67,18 @@ async def call_llm(
 ) -> LLMResponse:
     adapter, backend, model = resolve_adapter(request_backend, org_backend, request_model, org_model)
     return await adapter.complete(prompt, model, temperature, max_tokens)
+
+
+async def stream_llm(
+    prompt: str,
+    temperature: float,
+    max_tokens: int,
+    request_backend: str | None = None,
+    org_backend: str | None = None,
+    request_model: str | None = None,
+    org_model: str | None = None,
+) -> AsyncIterator[LLMStreamChunk]:
+    """Async generator — yields LLMStreamChunk objects until done=True."""
+    adapter, backend, model = resolve_adapter(request_backend, org_backend, request_model, org_model)
+    async for chunk in adapter.stream(prompt, model, temperature, max_tokens):
+        yield chunk

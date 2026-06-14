@@ -2,13 +2,18 @@
 Analytics endpoints (JWT-authenticated — dashboard use only):
   GET /analytics/dashboard   — full stats for current org
   GET /analytics/logs        — paginated request log
+  GET /analytics/export      — download logs as CSV
 """
+import csv
+import io
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, case, cast, Date
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.billing.pricing import estimate_cost_usd
 from app.database import get_db
 from app.deps import CurrentUser
 from app.models import RequestLog
@@ -49,6 +54,21 @@ async def dashboard(
     total = row.total or 0
     blocked = (row.input_blocked or 0) + (row.output_blocked or 0) + (row.rate_limited or 0)
 
+    # ── Estimated cost (per provider/model) ──────────────────────────────
+    cost_q = await db.execute(
+        select(
+            RequestLog.backend,
+            RequestLog.model,
+            func.sum(RequestLog.input_tokens + RequestLog.output_tokens).label("tokens"),
+        )
+        .where(*base_filter)
+        .group_by(RequestLog.backend, RequestLog.model)
+    )
+    estimated_cost = sum(
+        estimate_cost_usd(r.backend, r.model, r.tokens or 0)
+        for r in cost_q.all()
+    )
+
     summary = UsageSummary(
         total_requests=total,
         delivered=row.delivered or 0,
@@ -59,6 +79,7 @@ async def dashboard(
         block_rate_pct=round(blocked / total * 100, 2) if total else 0.0,
         avg_latency_ms=round(row.avg_latency or 0, 1),
         total_tokens=row.total_tokens or 0,
+        estimated_cost_usd=round(estimated_cost, 4),
     )
 
     # ── Time series (daily buckets) ───────────────────────────────────────
@@ -207,3 +228,62 @@ async def logs(
     ]
 
     return {"total": total, "page": page, "page_size": page_size, "items": items}
+
+
+@router.get("/export")
+async def export_logs(
+    current_user: CurrentUser,
+    days: int = Query(default=30, ge=1, le=90),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download request logs as a CSV file."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    filters = [RequestLog.created_at >= since]
+    if current_user.org_id:
+        filters.append(RequestLog.org_id == current_user.org_id)
+
+    result = await db.execute(
+        select(RequestLog)
+        .where(*filters)
+        .order_by(RequestLog.created_at.desc())
+        .limit(10_000)
+    )
+    logs = result.scalars().all()
+
+    fields = [
+        "id", "created_at", "status", "backend", "model",
+        "latency_ms", "input_tokens", "output_tokens", "estimated_cost_usd",
+        "input_passed", "input_block_reason",
+        "output_passed", "output_block_reason",
+        "fired_rule", "prompt_preview",
+    ]
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fields)
+    writer.writeheader()
+    for log in logs:
+        tokens = log.input_tokens + log.output_tokens
+        writer.writerow({
+            "id":                   log.id,
+            "created_at":           log.created_at.isoformat(),
+            "status":               log.status,
+            "backend":              log.backend,
+            "model":                log.model,
+            "latency_ms":           log.latency_ms,
+            "input_tokens":         log.input_tokens,
+            "output_tokens":        log.output_tokens,
+            "estimated_cost_usd":   estimate_cost_usd(log.backend, log.model, tokens),
+            "input_passed":         log.input_passed,
+            "input_block_reason":   log.input_block_reason or "",
+            "output_passed":        log.output_passed,
+            "output_block_reason":  log.output_block_reason or "",
+            "fired_rule":           log.fired_rule or "",
+            "prompt_preview":       log.prompt_preview,
+        })
+
+    filename = f"guardrails-logs-{days}d.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

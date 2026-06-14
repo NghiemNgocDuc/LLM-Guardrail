@@ -1,21 +1,66 @@
-# Render service manifest. Connect your GitHub repo to Render and
-# Render will create services from this manifest. After creating
-# services, set secrets (DATABASE_URL, RATE_LIMIT_REDIS_URL, SECRET_KEY, etc.)
+# Render deployment — free tier
+# One fullstack service (FastAPI serves React + API from the same container).
+#
+# First-time setup:
+#   1. Push this repo to GitHub
+#   2. render.com → New → Blueprint → connect the repo
+#   3. After deploy, go to Environment and fill in the "sync: false" values:
+#        RATE_LIMIT_REDIS_URL  → from Upstash (upstash.com, free)
+#        OLLAMA_BASE_URL       → your Cloudflare tunnel URL (e.g. https://xxx.trycloudflare.com)
+#        ALLOWED_ORIGINS       → https://<your-app>.onrender.com
 
 services:
   - type: web
-    name: llm-guardrail-api
+    name: llm-guardrails
     env: docker
-    branch: main
-    dockerCommand: ""
-    dockerfilePath: Dockerfile
-    plan: starter
+    dockerfilePath: Dockerfile.fullstack
+    dockerContext: .
+    plan: free
     healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
 
-  - type: web
-    name: llm-guardrail-web
-    env: docker
-    branch: main
-    dockerfilePath: Dockerfile.frontend
-    plan: starter
-    staticPublishPath: /
+      # Injected automatically from the database below
+      - key: DATABASE_URL
+        fromDatabase:
+          name: llm-guardrails-db
+          property: connectionString
+
+      # Set these in the Render dashboard after first deploy
+      - key: RATE_LIMIT_REDIS_URL
+        sync: false
+      - key: OLLAMA_BASE_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+      # Auto-generated secure secret
+      - key: SECRET_KEY
+        generateValue: true
+
+      # LLM — point at your self-hosted Ollama
+      - key: DEFAULT_LLM_BACKEND
+        value: ollama
+      - key: DEFAULT_MODEL
+        value: phi3
+
+      # Billing — keep off for testing
+      - key: BILLING_ENABLED
+        value: "false"
+      - key: BILLING_UNLIMITED_EMAILS
+        value: "dnghiem@umass.edu"
+
+      # Email verification — off so testers can log in immediately
+      - key: REQUIRE_EMAIL_VERIFICATION
+        value: "false"
+
+databases:
+  - name: llm-guardrails-db
+    plan: free
+    databaseName: guardrails
+    user: guardrails

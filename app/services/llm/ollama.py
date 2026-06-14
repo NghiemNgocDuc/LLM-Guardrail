@@ -1,12 +1,13 @@
+import json
 import httpx
-from app.services.llm.base import BaseLLMAdapter, LLMResponse
+from app.services.llm.base import BaseLLMAdapter, LLMResponse, LLMStreamChunk
 from app.config import get_settings
 
 settings = get_settings()
 
 
 class OllamaAdapter(BaseLLMAdapter):
-    """Calls a local Ollama instance — no API key required."""
+    """Calls a local/remote Ollama instance — no API key required."""
 
     async def complete(self, prompt: str, model: str, temperature: float, max_tokens: int) -> LLMResponse:
         url = f"{settings.OLLAMA_BASE_URL}/api/chat"
@@ -30,3 +31,36 @@ class OllamaAdapter(BaseLLMAdapter):
                 model=model,
                 backend="ollama",
             )
+
+    async def stream(self, prompt: str, model: str, temperature: float, max_tokens: int):
+        url = f"{settings.OLLAMA_BASE_URL}/api/chat"
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            async with client.stream(
+                "POST", url,
+                json={
+                    "model": model,
+                    "stream": True,
+                    "options": {"temperature": temperature, "num_predict": max_tokens},
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    if data.get("done"):
+                        yield LLMStreamChunk(
+                            token="", done=True,
+                            input_tokens=data.get("prompt_eval_count", 0),
+                            output_tokens=data.get("eval_count", 0),
+                            model=model, backend="ollama",
+                        )
+                    else:
+                        content = data.get("message", {}).get("content", "")
+                        if content:
+                            yield LLMStreamChunk(token=content, done=False, model=model, backend="ollama")

@@ -12,11 +12,13 @@ Flow:
   7. Return response
 """
 import hashlib
+import json as json_lib
 import time
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -26,7 +28,7 @@ from app.demo_limits import client_ip, enforce_demo_payload_limits, enforce_demo
 from app.middleware.rate_limit import check_rate_limit
 from app.models import OrgPolicy, RequestLog
 from app.schemas import ChatRequest, ChatResponse, GuardrailResult
-from app.services.llm import call_llm
+from app.services.llm import call_llm, stream_llm
 from app.services.token_wallet import (
     deduct_tokens,
     ensure_wallet,
@@ -255,6 +257,15 @@ async def chat(
     latency_ms = int((time.monotonic() - start) * 1000)
     status_str = "delivered" if out_result.allowed else "output_blocked"
 
+    # Log fired_rule for warnings even when request is delivered through
+    fired_rule = None
+    if not out_result.allowed:
+        fired_rule = out_result.reason_code
+    elif out_result.warned:
+        fired_rule = out_result.reason_code
+    elif in_result.warned:
+        fired_rule = in_result.reason_code
+
     await _log_request(
         db=db, api_key=api_key,
         prompt_hash=_sha256(body.prompt),
@@ -264,7 +275,7 @@ async def chat(
         input_passed=True, input_block_reason=None,
         output_passed=out_result.allowed,
         output_block_reason=None if out_result.allowed else out_result.reason,
-        fired_rule=None if out_result.allowed else out_result.reason_code,
+        fired_rule=fired_rule,
         status=status_str, latency_ms=latency_ms,
         input_tokens=llm_resp.input_tokens, output_tokens=llm_resp.output_tokens,
     )
@@ -303,6 +314,205 @@ async def chat(
         model=llm_resp.model,
         backend=llm_resp.backend,
         tokens_remaining=bal if settings.BILLING_ENABLED and not unlimited else None,
+    )
+
+
+@router.post("/stream", tags=["Gateway"])
+async def chat_stream(
+    body: ChatRequest,
+    request: Request,
+    api_key: AuthedAPIKey,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    SSE streaming endpoint. Yields `data: {json}` events:
+      {"type":"token",  "content":"..."}            — each LLM token
+      {"type":"done",   "status":"delivered", ...}  — final metadata
+      {"type":"blocked","status":"input_blocked"|"output_blocked", ...}
+      {"type":"error",  "detail":"..."}             — backend failure
+    """
+    start = time.monotonic()
+    request_id = str(uuid.uuid4())
+
+    # ── Load policy ───────────────────────────────────────────────────────
+    policy: OrgPolicy | None = None
+    if api_key.org_id:
+        result = await db.execute(select(OrgPolicy).where(OrgPolicy.org_id == api_key.org_id))
+        policy = result.scalar_one_or_none()
+
+    input_rules      = policy.input_rules      if policy else _DEFAULT_INPUT_RULES
+    output_rules     = policy.output_rules     if policy else _DEFAULT_OUTPUT_RULES
+    topic_policy     = policy.topic_policy     if policy else _DEFAULT_TOPIC_POLICY
+    compliance_rules = policy.compliance_rules if policy else _DEFAULT_COMPLIANCE
+    org_backend      = policy.llm_backend      if policy else None
+    org_model        = policy.llm_model        if policy else None
+    rpm = (policy.rate_limit_rpm if policy and policy.rate_limit_rpm else None) or settings.DEFAULT_RATE_LIMIT_RPM
+    rpd = (policy.rate_limit_rpd if policy and policy.rate_limit_rpd else None) or settings.DEFAULT_RATE_LIMIT_RPD
+
+    pii_mode   = input_rules.get("pii_redaction_mode", "block")
+    max_tokens = _effective_max_tokens(body)
+    enforce_demo_payload_limits(body.prompt, max_tokens)
+
+    # ── Rate limit (before stream starts so we can return HTTP 429) ───────
+    try:
+        await check_rate_limit(api_key.id, rpm, rpd)
+        await enforce_demo_rate_limits(api_key.id, client_ip(request))
+    except HTTPException:
+        raise
+
+    # ── Token balance ─────────────────────────────────────────────────────
+    wallet = await require_balance(
+        db, api_key.owner_id,
+        estimate_request_tokens(body.prompt, max_tokens),
+    )
+
+    # ── PII redaction ─────────────────────────────────────────────────────
+    redaction_result = None
+    prompt_for_llm   = body.prompt
+    if pii_mode == "redact":
+        redactor = PIIRedactor(extra_patterns=input_rules.get("pii_patterns"))
+        redaction_result = redactor.redact(body.prompt)
+        prompt_for_llm   = redaction_result.redacted_text
+
+    # ── Input guardrail ───────────────────────────────────────────────────
+    guardrail_rules = dict(input_rules)
+    if pii_mode == "redact":
+        guardrail_rules["block_pii"] = False
+    in_guard  = InputGuardrail(guardrail_rules)
+    in_result = in_guard.check(prompt_for_llm)
+    pii_found = redaction_result is not None and redaction_result.pii_found
+
+    def _sse(payload: dict) -> str:
+        return f"data: {json_lib.dumps(payload)}\n\n"
+
+    async def generate():
+        # Input blocked — send one SSE event and close
+        if not in_result.allowed:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            await _log_request(
+                db=db, api_key=api_key,
+                prompt_hash=_sha256(body.prompt),
+                prompt_preview=_safe_preview(body.prompt, pii_found),
+                full_prompt=body.prompt if compliance_rules.get("full_prompt_logging") else None,
+                model="—", backend="—",
+                input_passed=False, input_block_reason=in_result.reason,
+                output_passed=None, output_block_reason=None,
+                fired_rule=in_result.reason_code,
+                status="input_blocked", latency_ms=latency_ms,
+                input_tokens=0, output_tokens=0,
+            )
+            await db.commit()
+            yield _sse({
+                "type": "blocked", "request_id": request_id,
+                "status": "input_blocked",
+                "input_guard": {
+                    "passed": False, "check": in_result.check,
+                    "reason": in_result.reason or "",
+                    "reason_code": in_result.reason_code,
+                    "risk_score": in_result.risk_score,
+                },
+            })
+            return
+
+        # ── Stream from LLM ───────────────────────────────────────────────
+        accumulated: list[str] = []
+        input_tokens = output_tokens = 0
+        llm_model   = body.model   or org_model   or settings.DEFAULT_MODEL
+        llm_backend = body.backend or org_backend or settings.DEFAULT_LLM_BACKEND
+
+        try:
+            async for chunk in stream_llm(
+                prompt=prompt_for_llm, temperature=body.temperature,
+                max_tokens=max_tokens,
+                request_backend=body.backend, org_backend=org_backend,
+                request_model=body.model,    org_model=org_model,
+            ):
+                if chunk.done:
+                    input_tokens = chunk.input_tokens
+                    output_tokens = chunk.output_tokens
+                    llm_model   = chunk.model
+                    llm_backend = chunk.backend
+                else:
+                    accumulated.append(chunk.token)
+                    yield _sse({"type": "token", "content": chunk.token})
+        except Exception as e:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            await _log_request(
+                db=db, api_key=api_key,
+                prompt_hash=_sha256(body.prompt),
+                prompt_preview=_safe_preview(body.prompt, False),
+                full_prompt=body.prompt if compliance_rules.get("full_prompt_logging") else None,
+                model=llm_model, backend=llm_backend,
+                input_passed=True, input_block_reason=None,
+                output_passed=None, output_block_reason=None,
+                fired_rule=None, status="error", latency_ms=latency_ms,
+                input_tokens=0, output_tokens=0,
+            )
+            await db.commit()
+            yield _sse({"type": "error", "status": "error", "detail": str(e)})
+            return
+
+        # ── Output guardrail (on full accumulated text) ───────────────────
+        full_response = "".join(accumulated)
+        out_guard  = OutputGuardrail(output_rules, compliance_rules, topic_policy)
+        out_result = out_guard.check(full_response)
+
+        latency_ms = int((time.monotonic() - start) * 1000)
+        status_str = "delivered" if out_result.allowed else "output_blocked"
+
+        fired_rule = None
+        if not out_result.allowed:
+            fired_rule = out_result.reason_code
+        elif out_result.warned or in_result.warned:
+            fired_rule = out_result.reason_code if out_result.warned else in_result.reason_code
+
+        await _log_request(
+            db=db, api_key=api_key,
+            prompt_hash=_sha256(body.prompt),
+            prompt_preview=_safe_preview(body.prompt, pii_found),
+            full_prompt=body.prompt if compliance_rules.get("full_prompt_logging") else None,
+            model=llm_model, backend=llm_backend,
+            input_passed=True, input_block_reason=None,
+            output_passed=out_result.allowed,
+            output_block_reason=None if out_result.allowed else out_result.reason,
+            fired_rule=fired_rule, status=status_str, latency_ms=latency_ms,
+            input_tokens=input_tokens, output_tokens=output_tokens,
+        )
+        used = input_tokens + output_tokens
+        await deduct_tokens(db, wallet, used)
+        await db.commit()
+
+        if pii_found:
+            in_reason = f"PII redacted: {', '.join(redaction_result.pii_types)} ({redaction_result.pii_count} items)"
+        else:
+            in_reason = in_result.reason or ""
+
+        yield _sse({
+            "type": "output_blocked" if not out_result.allowed else "done",
+            "request_id": request_id,
+            "status": status_str,
+            "model": llm_model, "backend": llm_backend,
+            "latency_ms": latency_ms,
+            "input_guard": {
+                "passed": True,
+                "check": "PII Redaction + Input Checks" if pii_found else in_result.check,
+                "reason": in_reason,
+                "reason_code": "pii_redacted" if pii_found else in_result.reason_code,
+                "risk_score": 0.4 if pii_found else in_result.risk_score,
+            },
+            "output_guard": {
+                "passed": out_result.allowed,
+                "check": out_result.check,
+                "reason": out_result.reason or "",
+                "reason_code": out_result.reason_code,
+                "risk_score": out_result.risk_score,
+            },
+        })
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

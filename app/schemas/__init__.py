@@ -292,15 +292,16 @@ class SkillRejectionResolveIn(BaseModel):
 # ─── Analytics ────────────────────────────────────────────────────────────────
 
 class UsageSummary(BaseModel):
-    total_requests:     int
-    delivered:          int
-    input_blocked:      int
-    output_blocked:     int
-    rate_limited:       int = 0
-    error_count:        int
-    block_rate_pct:     float
-    avg_latency_ms:     float
-    total_tokens:       int
+    total_requests:      int
+    delivered:           int
+    input_blocked:       int
+    output_blocked:      int
+    rate_limited:        int = 0
+    error_count:         int
+    block_rate_pct:      float
+    avg_latency_ms:      float
+    total_tokens:        int
+    estimated_cost_usd:  float = 0.0
 
 
 class TimeSeriesPoint(BaseModel):
