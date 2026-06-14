@@ -65,6 +65,22 @@ async def send_verification_email(to_email: str, verify_url: str) -> None:
     await send_email(to_email, subject, text, html)
 
 
+async def send_low_balance_email(to_email: str, balance: int, app_url: str) -> None:
+    subject = f"Low token balance — {settings.APP_NAME}"
+    text = (
+        f"Your {settings.APP_NAME} token balance is running low ({balance:,} tokens remaining).\n\n"
+        f"Top up at: {app_url}\n\n"
+        "Purchase a plan to keep your gateway running without interruption."
+    )
+    html = (
+        f"<p>Your <strong>{settings.APP_NAME}</strong> token balance is running low.</p>"
+        f"<p><strong>{balance:,} tokens remaining.</strong></p>"
+        f"<p><a href=\"{app_url}\">Top up your balance</a></p>"
+        f"<p style=\"color:#666;font-size:12px\">You received this because your balance dropped below 10% of your initial allocation.</p>"
+    )
+    await send_email(to_email, subject, text, html)
+
+
 async def send_password_reset_email(to_email: str, reset_url: str) -> None:
     subject = f"Reset your {settings.APP_NAME} password"
     text = (

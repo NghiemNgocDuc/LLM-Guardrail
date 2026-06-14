@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.billing.pricing import estimate_cost_usd
 from app.database import get_db
 from app.deps import CurrentUser
-from app.models import RequestLog
+from app.models import APIKey, RequestLog, TokenWallet, User
 from app.schemas import (
     AnalyticsDashboard, ProviderUsage, TimeSeriesPoint, TopFiredRule, UsageSummary,
 )
@@ -179,6 +179,53 @@ async def dashboard(
         recent_suspicious=recent_suspicious,
         recent_logs=recent_logs,
     )
+
+
+@router.get("/users")
+async def user_breakdown(
+    current_user: CurrentUser,
+    days: int = Query(default=30, ge=1, le=90),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-user request + token breakdown for org admins."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    result = await db.execute(
+        select(
+            User.id, User.email, User.full_name,
+            TokenWallet.balance_tokens,
+            TokenWallet.tokens_used_lifetime,
+            func.coalesce(func.sum(
+                case((RequestLog.created_at >= since, 1), else_=0)
+            ), 0).label("requests"),
+            func.coalesce(func.sum(
+                case((
+                    (RequestLog.created_at >= since) & (RequestLog.status != "delivered"),
+                    1
+                ), else_=0)
+            ), 0).label("blocked"),
+        )
+        .outerjoin(TokenWallet, TokenWallet.user_id == User.id)
+        .outerjoin(APIKey, APIKey.owner_id == User.id)
+        .outerjoin(RequestLog, RequestLog.api_key_id == APIKey.id)
+        .where(User.org_id == current_user.org_id)
+        .group_by(User.id, User.email, User.full_name, TokenWallet.balance_tokens, TokenWallet.tokens_used_lifetime)
+        .order_by(func.coalesce(func.sum(
+            case((RequestLog.created_at >= since, 1), else_=0)
+        ), 0).desc())
+    )
+    return [
+        {
+            "id": r.id,
+            "email": r.email,
+            "full_name": r.full_name,
+            "tokens_balance": r.balance_tokens or 0,
+            "tokens_used_lifetime": r.tokens_used_lifetime or 0,
+            "requests": int(r.requests),
+            "blocked": int(r.blocked),
+        }
+        for r in result.all()
+    ]
 
 
 @router.get("/logs")

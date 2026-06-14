@@ -33,6 +33,24 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class AdminUserStats(BaseModel):
+    id: str
+    email: str
+    full_name: str
+    is_admin: bool
+    is_active: bool
+    last_login: datetime | None
+    tokens_balance: int
+    tokens_used: int
+    total_requests: int
+    total_blocked: int
+
+
 class MessageResponse(BaseModel):
     message: str
 

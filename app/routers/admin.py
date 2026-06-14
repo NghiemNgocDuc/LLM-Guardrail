@@ -1,12 +1,12 @@
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import CurrentUser, hash_password
-from app.models import APIKey, User
-from app.schemas import AdminInviteUser, AdminUserUpdate, APIKeyOut, UserOut
+from app.models import APIKey, TokenWallet, User
+from app.schemas import AdminInviteUser, AdminUserStats, AdminUserUpdate, APIKeyOut, UserOut
 from app.config import get_settings
 from app.services.auth_tokens import TOKEN_PURPOSE_RESET, build_action_url, create_auth_token
 from app.services.email import send_password_reset_email
@@ -99,6 +99,48 @@ async def update_org_user(
 
     await db.flush()
     return user
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_org_user(user_id: str, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    require_org_admin(current_user)
+    if user_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot remove yourself")
+    user = await db.get(User, user_id)
+    if not user or user.org_id != current_user.org_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user.org_id = None
+    user.is_admin = False
+    await db.flush()
+
+
+@router.get("/users/stats", response_model=list[AdminUserStats])
+async def user_stats(current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    require_org_admin(current_user)
+    result = await db.execute(
+        select(
+            User,
+            TokenWallet.balance_tokens,
+            TokenWallet.tokens_used_lifetime,
+            func.coalesce(func.sum(APIKey.total_requests), 0).label("total_requests"),
+            func.coalesce(func.sum(APIKey.total_blocked), 0).label("total_blocked"),
+        )
+        .outerjoin(TokenWallet, TokenWallet.user_id == User.id)
+        .outerjoin(APIKey, APIKey.owner_id == User.id)
+        .where(User.org_id == current_user.org_id)
+        .group_by(User.id, TokenWallet.balance_tokens, TokenWallet.tokens_used_lifetime)
+        .order_by(User.created_at.desc())
+    )
+    return [
+        AdminUserStats(
+            id=u.id, email=u.email, full_name=u.full_name,
+            is_admin=u.is_admin, is_active=u.is_active,
+            last_login=u.last_login,
+            tokens_balance=bal or 0, tokens_used=used or 0,
+            total_requests=int(reqs), total_blocked=int(blocked),
+        )
+        for u, bal, used, reqs, blocked in result.all()
+    ]
 
 
 @router.get("/api-keys", response_model=list[APIKeyOut])

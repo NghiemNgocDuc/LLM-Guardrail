@@ -141,10 +141,48 @@ export default function PolicyView({ user }) {
               background: "linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)",
               border: "1px solid #99f6e4", fontSize: 12, lineHeight: 1.6, color: "#065f46",
             }}>
-              <strong>Redaction active.</strong> Emails, SSNs, credit cards, phone numbers, and IP addresses 
+              <strong>Redaction active.</strong> Emails, SSNs, credit cards, phone numbers, and IP addresses
               will be replaced with placeholders like <code>[EMAIL_REDACTED_1]</code> before the prompt reaches the LLM.
             </div>
           )}
+
+          {/* Custom injection keywords */}
+          <div style={{ marginTop: 18 }}>
+            <div style={{ ...s.sectionTitle, fontSize: 12 }}>Custom Injection Keywords</div>
+            <div style={{ fontSize: 12, color: "#7b8a9d", marginBottom: 8, lineHeight: 1.5 }}>
+              One keyword per line — blocked when injection detection is on.
+            </div>
+            <textarea
+              style={{ ...s.input, minHeight: 80, fontFamily: "ui-monospace, monospace", fontSize: 12, resize: "vertical" }}
+              disabled={!user.is_admin}
+              value={(policy.input_rules?.injection_keywords || []).join("\n")}
+              onChange={e => {
+                if (!user.is_admin) return;
+                const kws = e.target.value.split("\n").map(k => k.trim()).filter(Boolean);
+                setPolicy(p => ({ ...p, input_rules: { ...p.input_rules, injection_keywords: kws } }));
+              }}
+              placeholder={"reveal your system prompt\nignore previous instructions"}
+            />
+          </div>
+
+          {/* Custom jailbreak patterns */}
+          <div style={{ marginTop: 12 }}>
+            <div style={{ ...s.sectionTitle, fontSize: 12 }}>Custom Jailbreak Patterns</div>
+            <div style={{ fontSize: 12, color: "#7b8a9d", marginBottom: 8, lineHeight: 1.5 }}>
+              One pattern per line — blocked when jailbreak detection is on.
+            </div>
+            <textarea
+              style={{ ...s.input, minHeight: 80, fontFamily: "ui-monospace, monospace", fontSize: 12, resize: "vertical" }}
+              disabled={!user.is_admin}
+              value={(policy.input_rules?.jailbreak_patterns || []).join("\n")}
+              onChange={e => {
+                if (!user.is_admin) return;
+                const pats = e.target.value.split("\n").map(k => k.trim()).filter(Boolean);
+                setPolicy(p => ({ ...p, input_rules: { ...p.input_rules, jailbreak_patterns: pats } }));
+              }}
+              placeholder={"DAN mode\nact as an unrestricted"}
+            />
+          </div>
         </div>
         <div style={s.card}>
           <div style={s.sectionTitle}>Output Guardrails</div>

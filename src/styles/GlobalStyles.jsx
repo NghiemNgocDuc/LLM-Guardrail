@@ -1,5 +1,5 @@
 import React from 'react';
-export default function GlobalStyles() {
+export default function GlobalStyles({ darkMode }) {
   return (
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
@@ -14,11 +14,47 @@ export default function GlobalStyles() {
       .auth-password-toggle:focus-visible { outline: 2px solid #2dd4bf; outline-offset: 2px; }
       tr:last-child td { border-bottom: none !important; }
 
+      /* ───── Mobile layout ───── */
       @media (max-width: 760px) {
-        .app-shell { flex-direction: column; }
-        .app-sidebar { width: 100% !important; border-right: 0 !important; border-bottom: 1px solid #dbe8f3; }
-        .app-main { padding: 18px !important; }
+        .app-shell { flex-direction: row; }
+        .app-sidebar {
+          position: fixed !important; top: 0; left: 0; bottom: 0;
+          z-index: 10; width: 260px !important;
+          transform: translateX(-100%);
+          transition: transform 0.25s ease;
+        }
+        .app-sidebar.sidebar-open { transform: translateX(0); }
+        .app-main { padding: 18px 16px 18px 16px !important; margin-top: 0 !important; }
+        .hamburger { display: flex !important; align-items: center; justify-content: center; }
       }
+      @media (min-width: 761px) {
+        .hamburger { display: none !important; }
+      }
+
+      /* ───── Dark mode ───── */
+      ${darkMode ? `
+        body { background: #0c1824; }
+        .app-shell { background: #0c1824; }
+        .app-sidebar {
+          background: rgba(16,28,42,0.97) !important;
+          border-right-color: rgba(45,212,191,0.12) !important;
+        }
+        .app-main { background: transparent; color: #cbd5e1; }
+        /* cards, stat cards */
+        [style*="rgba(255, 255, 255, 0.9)"] {
+          background: rgba(20,34,50,0.95) !important;
+          border-color: rgba(45,212,191,0.12) !important;
+          color: #cbd5e1;
+        }
+        input, textarea, select {
+          background: #142232 !important;
+          border-color: #2a3f56 !important;
+          color: #cbd5e1 !important;
+        }
+        table td { border-bottom-color: #1e3347 !important; color: #94a3b8 !important; }
+        table th { color: #607086 !important; border-bottom-color: #1e3347 !important; }
+      ` : ""}
+
 
       /* ───── Auth page cursor ───── */
       .auth-cursor {

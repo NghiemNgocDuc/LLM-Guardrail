@@ -9,8 +9,11 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import asyncio
+
 from app.config import get_settings
 from app.models import TokenPurchase, TokenWallet, User
+from app.services.email import send_low_balance_email
 
 settings = get_settings()
 
@@ -71,15 +74,28 @@ async def require_balance(db: AsyncSession, user_id: str, needed: int) -> TokenW
     return wallet
 
 
+_LOW_BALANCE_THRESHOLD_PCT = 0.10   # alert at 10% of initial free tokens
+_LOW_BALANCE_MIN = 500              # also alert if below this absolute floor
+
 async def deduct_tokens(db: AsyncSession, wallet: TokenWallet, amount: int) -> None:
     if not settings.BILLING_ENABLED or amount <= 0:
         return
     if await user_has_unlimited_tokens(db, wallet.user_id):
         return
+    prev_balance = wallet.balance_tokens
     wallet.balance_tokens = max(0, wallet.balance_tokens - amount)
     wallet.tokens_used_lifetime += amount
     wallet.updated_at = datetime.now(timezone.utc)
     await db.flush()
+
+    # Fire low-balance alert when crossing the threshold (only once per crossing)
+    threshold = max(_LOW_BALANCE_MIN, settings.FREE_SIGNUP_TOKENS * _LOW_BALANCE_THRESHOLD_PCT)
+    if prev_balance > threshold >= wallet.balance_tokens:
+        user = await db.get(User, wallet.user_id)
+        if user:
+            asyncio.create_task(
+                send_low_balance_email(user.email, wallet.balance_tokens, settings.PUBLIC_APP_URL)
+            )
 
 
 async def credit_tokens(

@@ -24,6 +24,7 @@ from app.deps import (
 )
 from app.models import Organization, OrgPolicy, User
 from app.schemas import (
+    ChangePasswordRequest,
     EmailRequest,
     LoginRequest,
     MessageResponse,
@@ -275,3 +276,16 @@ async def refresh(refresh_token: str, db: AsyncSession = Depends(get_db)):
 @router.get("/me", response_model=UserOut)
 async def me(current_user: CurrentUser):
     return current_user
+
+
+@router.post("/change-password", response_model=MessageResponse)
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    if not verify_password(body.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    current_user.hashed_password = hash_password(body.new_password)
+    await db.flush()
+    return MessageResponse(message="Password updated successfully.")

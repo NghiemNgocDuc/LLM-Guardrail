@@ -148,6 +148,7 @@ async def chat(
     # ── 3. Rate limit ─────────────────────────────────────────────────────
     try:
         await check_rate_limit(api_key.id, rpm, rpd)
+        await check_rate_limit(f"user:{api_key.owner_id}", rpm, rpd)
         await enforce_demo_rate_limits(api_key.id, client_ip(request))
     except HTTPException as e:
         if e.status_code != 429:
@@ -356,6 +357,7 @@ async def chat_stream(
     # ── Rate limit (before stream starts so we can return HTTP 429) ───────
     try:
         await check_rate_limit(api_key.id, rpm, rpd)
+        await check_rate_limit(f"user:{api_key.owner_id}", rpm, rpd)
         await enforce_demo_rate_limits(api_key.id, client_ip(request))
     except HTTPException:
         raise

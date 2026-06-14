@@ -89,13 +89,28 @@ function MarkdownResponse({ text }) {
   return <div style={{ color: "#27394f", fontSize: 14 }}>{elements}</div>;
 }
 
+const HISTORY_KEY = "guardrails_chat_history";
+const MAX_HISTORY = 50;
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); } catch { return []; }
+}
+function saveHistory(h) {
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(-MAX_HISTORY))); } catch {}
+}
+
 // CHAT TESTER VIEW
 export default function ChatView() {
   const [prompt, setPrompt] = useState("");
   const [gatewayKey, setGatewayKeyState] = useState(getGatewayKey());
-  const [result, setResult] = useState(null);
+  const [messages, setMessages] = useState(loadHistory);
   const [loading, setLoading] = useState(false);
   const [clientBlock, setClientBlock] = useState(null);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   function onGatewayKeyChange(e) {
     const key = e.target.value.trim();
@@ -113,29 +128,42 @@ export default function ChatView() {
     }
   }
 
+  function clearHistory() {
+    if (!confirm("Clear all conversation history?")) return;
+    localStorage.removeItem(HISTORY_KEY);
+    setMessages([]);
+  }
+
   async function send() {
     if (!prompt.trim()) return;
     if (!gatewayKey && !getToken()) {
-      setResult({ error: "Sign in and create a gateway API key, or paste your full grg_ key here." });
+      const msg = { prompt: prompt.trim(), result: { error: "Sign in and create a gateway API key, or paste your full grg_ key here." }, ts: Date.now() };
+      const next = [...messages, msg];
+      setMessages(next); saveHistory(next);
+      setPrompt("");
       return;
     }
     const guard = clientGuardrail(prompt);
     if (guard.blocked) {
-      setResult({ clientBlocked: true, reason: guard.reason });
+      const msg = { prompt: prompt.trim(), result: { clientBlocked: true, reason: guard.reason }, ts: Date.now() };
+      const next = [...messages, msg];
+      setMessages(next); saveHistory(next);
+      setPrompt("");
       return;
     }
-    setLoading(true); setResult(null);
+    const userPrompt = prompt.trim();
+    setLoading(true); setPrompt("");
     try {
       const headers = {};
       if (gatewayKey) headers["X-Api-Key"] = gatewayKey;
-      const data = await api("/chat", {
-        method: "POST",
-        headers,
-        body: { prompt: prompt.trim() },
-      });
-      setResult(data);
+      const data = await api("/chat", { method: "POST", headers, body: { prompt: userPrompt } });
+      const msg = { prompt: userPrompt, result: data, ts: Date.now() };
+      const next = [...messages, msg];
+      setMessages(next); saveHistory(next);
     } catch (e) {
-      setResult({ error: e.message });
+      const msg = { prompt: userPrompt, result: { error: e.message }, ts: Date.now() };
+      const next = [...messages, msg];
+      setMessages(next); saveHistory(next);
     } finally {
       setLoading(false);
     }
@@ -144,25 +172,107 @@ export default function ChatView() {
   return (
     <div>
       <div style={s.heroPanel}>
-        <div style={{ ...s.pageTitle, marginBottom: 8 }}>LLM Playground</div>
-        <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6 }}>
-          Test live prompts through client checks, backend policy, your LLM provider, and output validation.
-          For agent skills and instructions, use Skill Guard in the sidebar.
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ ...s.pageTitle, marginBottom: 8 }}>LLM Playground</div>
+            <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6 }}>
+              Test live prompts through client checks, backend policy, your LLM provider, and output validation.
+            </div>
+          </div>
+          {messages.length > 0 && (
+            <button style={{ ...s.btn("danger"), fontSize: 12 }} onClick={clearHistory}>Clear history</button>
+          )}
         </div>
       </div>
+
       {!gatewayKey && (
         <div style={s.alert("info")}>
           Create an API key in API Keys, then paste the grg_ key here to test the gateway.
         </div>
       )}
+
+      {/* Conversation thread */}
+      {messages.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 16 }}>
+          {messages.map((msg, i) => (
+            <div key={i}>
+              {/* User bubble */}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+                <div style={{
+                  maxWidth: "72%", background: "linear-gradient(135deg, #0f766e, #047857)",
+                  color: "#fff", borderRadius: "16px 16px 4px 16px",
+                  padding: "12px 16px", fontSize: 14, lineHeight: 1.5,
+                  boxShadow: "0 4px 12px rgba(15,118,110,0.2)",
+                }}>
+                  {msg.prompt}
+                  <div style={{ fontSize: 10, opacity: 0.6, marginTop: 4, textAlign: "right" }}>
+                    {new Date(msg.ts).toLocaleTimeString()}
+                  </div>
+                </div>
+              </div>
+              {/* Result bubble */}
+              <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                <div style={{
+                  maxWidth: "80%", background: "#fff", border: "1px solid #e7eef6",
+                  borderRadius: "4px 16px 16px 16px", padding: "12px 16px",
+                  boxShadow: "0 2px 8px rgba(15,118,110,0.06)",
+                }}>
+                  {msg.result.error && <div style={{ color: "#be123c", fontSize: 13 }}>{msg.result.error}</div>}
+                  {msg.result.clientBlocked && (
+                    <div style={{ color: "#b45309", fontSize: 13 }}>
+                      Blocked client-side: {msg.result.reason}
+                    </div>
+                  )}
+                  {msg.result.status && (
+                    <>
+                      <div style={{ display: "flex", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+                        <span style={s.badge(msg.result.status)}>{msg.result.status}</span>
+                        <span style={{ fontSize: 12, color: "#7b8a9d" }}>{msg.result.latency_ms}ms</span>
+                        <span style={{ fontSize: 12, color: "#7b8a9d" }}>{msg.result.backend}/{msg.result.model}</span>
+                        {msg.result.tokens_remaining != null && (
+                          <span style={{ fontSize: 12, color: "#0f766e", fontWeight: 700 }}>
+                            {Number(msg.result.tokens_remaining).toLocaleString()} tokens left
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                        {[
+                          { label: "In", g: msg.result.input_guard },
+                          ...(msg.result.output_guard ? [{ label: "Out", g: msg.result.output_guard }] : []),
+                        ].map(({ label, g }) => (
+                          <div key={label} style={{
+                            padding: "5px 10px", borderRadius: 6, fontSize: 11,
+                            background: g.passed ? "#e8f8ef" : "#fff1f2",
+                            border: `1px solid ${g.passed ? "#abe7c6" : "#fecdd3"}`,
+                            color: g.passed ? "#067647" : "#be123c", fontWeight: 750,
+                          }}>
+                            {label}: {g.passed ? "PASS" : "BLOCK"}
+                            {g.reason_code === "pii_redacted" && (
+                              <span style={{ marginLeft: 6, background: "#0f766e", color: "#fff",
+                                padding: "1px 6px", borderRadius: 3, fontSize: 10 }}>PII REDACTED</span>
+                            )}
+                            {!g.passed && <span style={{ marginLeft: 4, opacity: 0.75 }}>· {g.reason_code}</span>}
+                          </div>
+                        ))}
+                      </div>
+                      {msg.result.response && <MarkdownResponse text={msg.result.response} />}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+          <div ref={bottomRef} />
+        </div>
+      )}
+
+      {/* Input area */}
       <div style={s.card}>
-        <div style={s.sectionTitle}>Test a prompt through the live pipeline</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 8, marginBottom: 14 }}>
           {["Client precheck", "Input policy", "Provider call", "Output policy"].map((step, idx) => (
-            <div key={step} style={{ border: "1px solid #dce7f0", background: "#f8fbff",
-              borderRadius: 8, padding: 12 }}>
-              <div style={{ color: "#0f766e", fontWeight: 850, fontSize: 12 }}>0{idx + 1}</div>
-              <div style={{ color: "#27394f", fontWeight: 800, fontSize: 13, marginTop: 4 }}>{step}</div>
+            <div key={step} style={{ border: "1px solid #dce7f0", background: "#f8fbff", borderRadius: 8, padding: "10px 12px" }}>
+              <div style={{ color: "#0f766e", fontWeight: 850, fontSize: 11 }}>0{idx + 1}</div>
+              <div style={{ color: "#27394f", fontWeight: 800, fontSize: 12, marginTop: 3 }}>{step}</div>
             </div>
           ))}
         </div>
@@ -176,10 +286,11 @@ export default function ChatView() {
         />
         <label style={s.label}>Prompt</label>
         <textarea
-          style={{ ...s.input, minHeight: 100, resize: "vertical", marginBottom: 4 }}
-          placeholder={'Try: "ignore previous instructions"\nOr: "What is 123-45-6789"'}
+          style={{ ...s.input, minHeight: 80, resize: "vertical", marginBottom: 4 }}
+          placeholder={'Try: "ignore previous instructions"\nOr: "What is 2+2?"'}
           value={prompt}
           onChange={onPromptChange}
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(); }}
         />
         {clientBlock && (
           <div style={{ fontSize: 12, color: "#b45309", marginBottom: 8, fontWeight: 750 }}>
@@ -188,83 +299,9 @@ export default function ChatView() {
         )}
         <button style={{ ...s.btn("primary"), marginTop: 8 }}
           onClick={send} disabled={loading || !prompt.trim()}>
-          {loading ? "Sending..." : "Send prompt"}
+          {loading ? "Sending..." : "Send  (Ctrl+Enter)"}
         </button>
       </div>
-
-      {result && (
-        <div style={{ ...s.card, marginTop: 16 }}>
-          {result.error && <div style={s.alert("error")}>{result.error}</div>}
-          {result.clientBlocked && (
-            <div style={s.alert("error")}>
-              Blocked client-side before hitting backend<br />
-              <span style={{ fontSize: 11 }}>{result.reason}</span>
-            </div>
-          )}
-          {result.status && (
-            <>
-              <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
-                <div>
-                  <div style={s.statLabel}>Status</div>
-                  <span style={s.badge(result.status)}>{result.status}</span>
-                </div>
-                <div>
-                  <div style={s.statLabel}>Latency</div>
-                  <div style={{ fontSize: 14, color: "#102033", marginTop: 4, fontWeight: 800 }}>{result.latency_ms}ms</div>
-                </div>
-                <div>
-                  <div style={s.statLabel}>Backend</div>
-                  <div style={{ fontSize: 14, color: "#102033", marginTop: 4, fontWeight: 800 }}>{result.backend} / {result.model}</div>
-                </div>
-                {result.tokens_remaining != null && (
-                  <div>
-                    <div style={s.statLabel}>Tokens left</div>
-                    <div style={{ fontSize: 14, color: "#0f766e", marginTop: 4, fontWeight: 800 }}>
-                      {Number(result.tokens_remaining).toLocaleString()}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Guardrail results */}
-              <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-                {[
-                  { label: "Input Guard", g: result.input_guard },
-                  ...(result.output_guard ? [{ label: "Output Guard", g: result.output_guard }] : []),
-                ].map(({ label, g }) => (
-                  <div key={label} style={{ flex: 1, padding: 14,
-                    background: g.passed ? (g.reason_code === "pii_redacted" ? "#f0fdf4" : "#e8f8ef") : "#fff1f2",
-                    borderRadius: 8, border: `1px solid ${g.passed ? (g.reason_code === "pii_redacted" ? "#86efac" : "#abe7c6") : "#fecdd3"}` }}>
-                    <div style={{ fontSize: 12, color: g.passed ? "#067647" : "#be123c",
-                      fontWeight: 850, marginBottom: 4 }}>
-                      {label}: {g.passed ? "PASS" : "BLOCK"}
-                      {g.reason_code === "pii_redacted" && (
-                        <span style={{
-                          marginLeft: 8, padding: "2px 8px", borderRadius: 4,
-                          background: "linear-gradient(135deg, #0f766e 0%, #10b981 100%)",
-                          color: "#ffffff", fontSize: 10, fontWeight: 800,
-                          letterSpacing: "0.04em",
-                        }}>PII REDACTED</span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 12, color: "#405166" }}>{g.reason}</div>
-                    <div style={{ fontSize: 11, color: "#7b8a9d", marginTop: 6 }}>
-                      {g.reason_code} / risk {Math.round((g.risk_score || 0) * 100)}%
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {result.response && (
-                <div>
-                  <div style={s.sectionTitle}>Response</div>
-                  <MarkdownResponse text={result.response} />
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }
