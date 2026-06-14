@@ -234,14 +234,37 @@ async def logs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     status_filter: str | None = Query(default=None),
+    keyword: str | None = Query(default=None, max_length=200),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    backend_filter: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Paginated request log with optional status filter."""
+    """Paginated request log with status, keyword, date range, and backend filters."""
+    from sqlalchemy import or_
     filters = []
     if current_user.org_id:
         filters.append(RequestLog.org_id == current_user.org_id)
     if status_filter:
         filters.append(RequestLog.status == status_filter)
+    if keyword:
+        filters.append(or_(
+            RequestLog.prompt_preview.ilike(f"%{keyword}%"),
+            RequestLog.fired_rule.ilike(f"%{keyword}%"),
+            RequestLog.input_block_reason.ilike(f"%{keyword}%"),
+        ))
+    if date_from:
+        try:
+            filters.append(RequestLog.created_at >= datetime.fromisoformat(date_from).replace(tzinfo=timezone.utc))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            filters.append(RequestLog.created_at <= datetime.fromisoformat(date_to).replace(tzinfo=timezone.utc))
+        except ValueError:
+            pass
+    if backend_filter:
+        filters.append(RequestLog.backend == backend_filter)
 
     count_q  = await db.execute(select(func.count()).select_from(RequestLog).where(*filters))
     total    = count_q.scalar() or 0
@@ -270,6 +293,7 @@ async def logs(
             "input_tokens":        log.input_tokens,
             "output_tokens":       log.output_tokens,
             "created_at":          log.created_at.isoformat(),
+            "request_id":          log.id,
         }
         for log in logs_q.scalars().all()
     ]

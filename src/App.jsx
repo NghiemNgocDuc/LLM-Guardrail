@@ -12,18 +12,24 @@ import ApiKeysView from "./views/ApiKeysView";
 import PolicyView from "./views/PolicyView";
 import AdminView from "./views/AdminView";
 import TeamView from "./views/TeamView";
+import AnalyticsView from "./views/AnalyticsView";
+import ProfileView from "./views/ProfileView";
+import HealthView from "./views/HealthView";
 import AuthFlowBackground from "./components/AuthFlowBackground";
 
 const NAV = [
-  { id: "dashboard", label: "Dashboard",      icon: "01" },
-  { id: "chat",      label: "LLM Playground", icon: "02" },
-  { id: "skills",    label: "Rejected access", icon: "SG" },
-  { id: "billing",   label: "Billing",        icon: "$"  },
-  { id: "logs",      label: "Logs",           icon: "03" },
-  { id: "keys",      label: "API Keys",       icon: "04" },
-  { id: "policy",    label: "Policy",         icon: "05" },
-  { id: "team",      label: "Team",           icon: "06" },
-  { id: "admin",     label: "Admin",          icon: "A",  adminOnly: true },
+  { id: "dashboard",  label: "Dashboard",      icon: "01" },
+  { id: "chat",       label: "LLM Playground", icon: "02" },
+  { id: "skills",     label: "Rejected access", icon: "SG" },
+  { id: "analytics",  label: "Analytics",      icon: "AN" },
+  { id: "billing",    label: "Billing",        icon: "$"  },
+  { id: "logs",       label: "Logs",           icon: "03" },
+  { id: "keys",       label: "API Keys",       icon: "04" },
+  { id: "policy",     label: "Policy",         icon: "05" },
+  { id: "team",       label: "Team",           icon: "06" },
+  { id: "health",     label: "System Health",  icon: "H"  },
+  { id: "profile",    label: "Profile",        icon: "PF" },
+  { id: "admin",      label: "Admin",          icon: "A",  adminOnly: true },
 ];
 
 function ChangePasswordModal({ onClose }) {
@@ -181,15 +187,18 @@ export default function App() {
 
       {/* Main */}
       <div className="app-main" style={s.main}>
-        {view === "dashboard" && <DashboardView />}
-        {view === "chat"      && <ChatView />}
-        {view === "skills"    && <SkillGuardView />}
-        {view === "billing"   && <BillingView />}
-        {view === "logs"      && <LogsView />}
-        {view === "keys"      && <ApiKeysView />}
-        {view === "policy"    && <PolicyView user={user} />}
-        {view === "team"      && <TeamView user={user} />}
-        {view === "admin"     && user.is_admin && <AdminView />}
+        {view === "dashboard"  && <DashboardView />}
+        {view === "chat"       && <ChatView />}
+        {view === "skills"     && <SkillGuardView />}
+        {view === "analytics"  && <AnalyticsView />}
+        {view === "billing"    && <BillingView />}
+        {view === "logs"       && <LogsView />}
+        {view === "keys"       && <ApiKeysView />}
+        {view === "policy"     && <PolicyView user={user} />}
+        {view === "team"       && <TeamView user={user} />}
+        {view === "health"     && <HealthView />}
+        {view === "profile"    && <ProfileView user={user} onUserUpdate={setUser} />}
+        {view === "admin"      && user.is_admin && <AdminView />}
       </div>
 
       {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}

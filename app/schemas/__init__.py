@@ -38,6 +38,15 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class UpdateProfileRequest(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+class BulkUserAction(BaseModel):
+    action: str = Field(description="enable | disable | remove")
+    user_ids: list[str] = Field(min_length=1)
+
+
 class AdminUserStats(BaseModel):
     id: str
     email: str
@@ -86,6 +95,7 @@ class UserOut(BaseModel):
 class APIKeyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     expires_at: datetime | None = None
+    scopes: list[str] = ["chat"]
 
 
 class APIKeyOut(BaseModel):
@@ -98,6 +108,7 @@ class APIKeyOut(BaseModel):
     created_at: datetime
     last_used_at: datetime | None
     expires_at: datetime | None
+    scopes: list[str] = ["chat"]
 
     model_config = {"from_attributes": True}
 

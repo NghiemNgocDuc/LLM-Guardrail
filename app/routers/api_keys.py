@@ -34,6 +34,7 @@ async def create_api_key(
         owner_id=current_user.id,
         org_id=current_user.org_id,
         expires_at=body.expires_at,
+        scopes=body.scopes,
     )
     db.add(key)
     await db.flush()

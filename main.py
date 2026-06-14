@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.database import create_all_tables
 from app.middleware.request_logging import RequestLoggingMiddleware
-from app.routers import admin, auth, api_keys, billing, chat, analytics, policy, skills
+from app.routers import admin, auth, api_keys, billing, chat, analytics, health, org, policy, skills
 
 settings = get_settings()
 logging.basicConfig(
@@ -69,6 +69,8 @@ app.include_router(analytics.router)
 app.include_router(policy.router)
 app.include_router(skills.router)
 app.include_router(billing.router)
+app.include_router(org.router)
+app.include_router(health.router)
 
 
 @app.get("/health", tags=["Meta"])

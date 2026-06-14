@@ -215,6 +215,9 @@ class APIKey(Base):
     owner: Mapped["User"]          = relationship("User",         back_populates="api_keys")
     org:   Mapped["Organization"]  = relationship("Organization", back_populates="api_keys")
 
+    # Scopes granted to this key (e.g. ["chat", "analytics"])
+    scopes: Mapped[list] = mapped_column(JSON, default=lambda: ["chat"])
+
     # Usage counters (updated on every request)
     total_requests:  Mapped[int] = mapped_column(BigInteger, default=0)
     total_blocked:   Mapped[int] = mapped_column(BigInteger, default=0)

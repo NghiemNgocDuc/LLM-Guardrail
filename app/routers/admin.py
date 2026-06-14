@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import CurrentUser, hash_password
 from app.models import APIKey, TokenWallet, User
-from app.schemas import AdminInviteUser, AdminUserStats, AdminUserUpdate, APIKeyOut, UserOut
+from app.schemas import AdminInviteUser, AdminUserStats, AdminUserUpdate, APIKeyOut, BulkUserAction, UserOut
 from app.config import get_settings
 from app.services.auth_tokens import TOKEN_PURPOSE_RESET, build_action_url, create_auth_token
 from app.services.email import send_password_reset_email
@@ -152,6 +152,27 @@ async def list_org_api_keys(current_user: CurrentUser, db: AsyncSession = Depend
         .order_by(APIKey.created_at.desc())
     )
     return result.scalars().all()
+
+
+@router.post("/users/bulk", status_code=status.HTTP_204_NO_CONTENT)
+async def bulk_user_action(body: BulkUserAction, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    require_org_admin(current_user)
+    if body.action not in ("enable", "disable", "remove"):
+        raise HTTPException(status_code=400, detail="action must be enable | disable | remove")
+    for user_id in body.user_ids:
+        if user_id == current_user.id:
+            continue
+        user = await db.get(User, user_id)
+        if not user or user.org_id != current_user.org_id:
+            continue
+        if body.action == "enable":
+            user.is_active = True
+        elif body.action == "disable":
+            user.is_active = False
+        elif body.action == "remove":
+            user.org_id = None
+            user.is_admin = False
+    await db.flush()
 
 
 @router.delete("/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)

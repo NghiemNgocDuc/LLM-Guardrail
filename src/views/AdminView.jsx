@@ -7,14 +7,59 @@ export default function AdminView() {
   const [keys, setKeys] = useState([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [selected, setSelected] = useState(new Set());
+  const [sortCol, setSortCol] = useState("");
+  const [sortDir, setSortDir] = useState("asc");
+  const [bulking, setBulking] = useState(false);
 
   const load = useCallback(() => {
+    setSelected(new Set());
     Promise.all([api("/admin/users/stats"), api("/admin/api-keys")])
       .then(([u, k]) => { setStats(u); setKeys(k); })
-      .catch((e) => setError(e.message));
+      .catch(e => setError(e.message));
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortCol(col); setSortDir("asc"); }
+  }
+
+  const sorted = sortCol ? [...stats].sort((a, b) => {
+    const av = a[sortCol] ?? ""; const bv = b[sortCol] ?? "";
+    if (av < bv) return sortDir === "asc" ? -1 : 1;
+    if (av > bv) return sortDir === "asc" ? 1 : -1;
+    return 0;
+  }) : stats;
+
+  const SortArrow = ({ col }) => sortCol === col ? (sortDir === "asc" ? " ↑" : " ↓") : "";
+
+  function toggleSelect(id) {
+    setSelected(s => {
+      const next = new Set(s);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (selected.size === stats.length) setSelected(new Set());
+    else setSelected(new Set(stats.map(u => u.id)));
+  }
+
+  async function bulkAction(action) {
+    if (selected.size === 0) return;
+    const verb = { enable: "enable", disable: "disable", remove: "remove from org" }[action];
+    if (!confirm(`${verb} ${selected.size} selected user(s)?`)) return;
+    setBulking(true); setError(""); setSuccess("");
+    try {
+      await api("/admin/users/bulk", { method: "POST", body: { action, user_ids: [...selected] } });
+      setSuccess(`${selected.size} user(s) updated.`);
+      load();
+    } catch (e) { setError(e.message); }
+    finally { setBulking(false); }
+  }
 
   async function patchUser(userId, body) {
     setError(""); setSuccess("");
@@ -26,7 +71,7 @@ export default function AdminView() {
   }
 
   async function removeUser(u) {
-    if (!confirm(`Remove ${u.email} from the organisation? They will lose access but their account is not deleted.`)) return;
+    if (!confirm(`Remove ${u.email} from the organisation?`)) return;
     setError(""); setSuccess("");
     try {
       await api("/admin/users/" + u.id, { method: "DELETE" });
@@ -45,7 +90,7 @@ export default function AdminView() {
     } catch (e) { setError(e.message); }
   }
 
-  const fmt = (n) => Number(n).toLocaleString();
+  const fmt = n => Number(n).toLocaleString();
 
   return (
     <div>
@@ -60,18 +105,52 @@ export default function AdminView() {
 
       {/* Users + usage */}
       <div style={{ ...s.card, marginBottom: 24, overflowX: "auto" }}>
-        <div style={s.sectionTitle}>Organisation Members</div>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 12, gap: 10, flexWrap: "wrap" }}>
+          <div style={s.sectionTitle}>Organisation Members</div>
+          {selected.size > 0 && (
+            <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+              <span style={{ fontSize: 12, color: "#607086", alignSelf: "center" }}>{selected.size} selected</span>
+              <button style={{ ...s.btn("secondary"), fontSize: 12 }} onClick={() => bulkAction("enable")} disabled={bulking}>Enable</button>
+              <button style={{ ...s.btn("secondary"), fontSize: 12 }} onClick={() => bulkAction("disable")} disabled={bulking}>Disable</button>
+              <button style={{ ...s.btn("danger"), fontSize: 12 }} onClick={() => bulkAction("remove")} disabled={bulking}>Remove</button>
+            </div>
+          )}
+        </div>
         <table style={s.table}>
           <thead>
             <tr>
-              {["Email", "Name", "Role", "Status", "Last Login", "Tokens Used", "Balance", "Requests", "Blocked", ""].map(h => (
-                <th key={h} style={s.th}>{h}</th>
+              <th style={{ ...s.th, width: 36 }}>
+                <input type="checkbox"
+                  checked={stats.length > 0 && selected.size === stats.length}
+                  onChange={toggleAll}
+                  style={{ cursor: "pointer" }}
+                />
+              </th>
+              {[
+                ["email", "Email"],
+                ["full_name", "Name"],
+                [null, "Role"],
+                [null, "Status"],
+                ["last_login", "Last Login"],
+                ["tokens_used", "Tokens Used"],
+                ["tokens_balance", "Balance"],
+                ["total_requests", "Requests"],
+                ["total_blocked", "Blocked"],
+                [null, ""],
+              ].map(([col, h]) => (
+                <th key={h} style={{ ...s.th, cursor: col ? "pointer" : "default", userSelect: "none" }}
+                  onClick={col ? () => toggleSort(col) : undefined}>
+                  {h}{col && <SortArrow col={col} />}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {stats.map(u => (
-              <tr key={u.id}>
+            {sorted.map(u => (
+              <tr key={u.id} style={{ background: selected.has(u.id) ? "#f0fdf4" : "transparent" }}>
+                <td style={s.td}>
+                  <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleSelect(u.id)} style={{ cursor: "pointer" }} />
+                </td>
                 <td style={s.td}>{u.email}</td>
                 <td style={s.td}>{u.full_name}</td>
                 <td style={s.td}><span style={s.badge(u.is_admin ? "rate_limited" : "delivered")}>{u.is_admin ? "admin" : "member"}</span></td>
@@ -100,7 +179,7 @@ export default function AdminView() {
               </tr>
             ))}
             {stats.length === 0 && (
-              <tr><td colSpan={10} style={s.td}>No users found</td></tr>
+              <tr><td colSpan={11} style={s.td}>No users found</td></tr>
             )}
           </tbody>
         </table>

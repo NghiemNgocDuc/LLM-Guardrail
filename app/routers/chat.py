@@ -11,12 +11,14 @@ Flow:
   6. Log request to DB
   7. Return response
 """
+import asyncio
 import hashlib
 import json as json_lib
 import time
 import uuid
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,6 +85,14 @@ _DEFAULT_TOPIC_POLICY   = {"blocked_topics": ["competitor products", "medical ad
 _DEFAULT_COMPLIANCE     = {"block_medical_advice": True}
 
 
+async def _fire_webhook(url: str, payload: dict) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            await client.post(url, json=payload, headers={"Content-Type": "application/json"})
+    except Exception:
+        pass
+
+
 def _safe_preview(prompt: str, pii_found: bool) -> str:
     """First 120 chars; redact if PII was detected."""
     preview = prompt[:120]
@@ -115,7 +125,12 @@ async def chat(
     start = time.monotonic()
     request_id = str(uuid.uuid4())
 
-    # ── 1. Load org policy ────────────────────────────────────────────────
+    # ── 1. Scope enforcement ──────────────────────────────────────────────
+    key_scopes = list(api_key.scopes) if api_key.scopes else ["chat"]
+    if "chat" not in key_scopes:
+        raise HTTPException(status_code=403, detail="API key does not have the 'chat' scope")
+
+    # ── 2. Load org policy ────────────────────────────────────────────────
     policy: OrgPolicy | None = None
     if api_key.org_id:
         result = await db.execute(
@@ -132,13 +147,20 @@ async def chat(
     rpm = (policy.rate_limit_rpm if policy and policy.rate_limit_rpm else None) or settings.DEFAULT_RATE_LIMIT_RPM
     rpd = (policy.rate_limit_rpd if policy and policy.rate_limit_rpd else None) or settings.DEFAULT_RATE_LIMIT_RPD
 
+    # ── 3. IP blocklist ───────────────────────────────────────────────────
+    blocked_ips = compliance_rules.get("blocked_ips", [])
+    if blocked_ips:
+        req_ip = client_ip(request)
+        if req_ip in blocked_ips:
+            raise HTTPException(status_code=403, detail="IP address is blocked by policy")
+
     # PII redaction mode: "block" (default), "redact", or "off"
     pii_mode = input_rules.get("pii_redaction_mode", "block")
 
     max_tokens = _effective_max_tokens(body)
     enforce_demo_payload_limits(body.prompt, max_tokens)
 
-    # ── 2. Token balance (billing) ────────────────────────────────────────
+    # ── 4. Token balance (billing) ────────────────────────────────────────
     wallet = await require_balance(
         db,
         api_key.owner_id,
@@ -206,6 +228,14 @@ async def chat(
             input_tokens=0, output_tokens=0,
         )
         await db.commit()
+        webhook_url = compliance_rules.get("webhook_url")
+        if webhook_url:
+            asyncio.create_task(_fire_webhook(webhook_url, {
+                "event": "guardrail_fired", "status": "input_blocked",
+                "fired_rule": in_result.reason_code, "reason": in_result.reason or "",
+                "prompt_preview": _safe_preview(body.prompt, pii_found),
+                "latency_ms": latency_ms,
+            }))
         bal = (await ensure_wallet(db, api_key.owner_id)).balance_tokens
         return ChatResponse(
             request_id=request_id,
@@ -284,6 +314,15 @@ async def chat(
     used = llm_resp.input_tokens + llm_resp.output_tokens
     await deduct_tokens(db, wallet, used)
     await db.commit()
+    if not out_result.allowed:
+        webhook_url = compliance_rules.get("webhook_url")
+        if webhook_url:
+            asyncio.create_task(_fire_webhook(webhook_url, {
+                "event": "guardrail_fired", "status": "output_blocked",
+                "fired_rule": out_result.reason_code, "reason": out_result.reason or "",
+                "prompt_preview": _safe_preview(body.prompt, False),
+                "latency_ms": latency_ms,
+            }))
     unlimited = await user_has_unlimited_tokens(db, api_key.owner_id)
     bal = wallet.balance_tokens
 
@@ -335,6 +374,11 @@ async def chat_stream(
     start = time.monotonic()
     request_id = str(uuid.uuid4())
 
+    # ── Scope enforcement ─────────────────────────────────────────────────
+    key_scopes = list(api_key.scopes) if api_key.scopes else ["chat"]
+    if "chat" not in key_scopes:
+        raise HTTPException(status_code=403, detail="API key does not have the 'chat' scope")
+
     # ── Load policy ───────────────────────────────────────────────────────
     policy: OrgPolicy | None = None
     if api_key.org_id:
@@ -349,6 +393,13 @@ async def chat_stream(
     org_model        = policy.llm_model        if policy else None
     rpm = (policy.rate_limit_rpm if policy and policy.rate_limit_rpm else None) or settings.DEFAULT_RATE_LIMIT_RPM
     rpd = (policy.rate_limit_rpd if policy and policy.rate_limit_rpd else None) or settings.DEFAULT_RATE_LIMIT_RPD
+
+    # ── IP blocklist ──────────────────────────────────────────────────────
+    blocked_ips = compliance_rules.get("blocked_ips", [])
+    if blocked_ips:
+        req_ip = client_ip(request)
+        if req_ip in blocked_ips:
+            raise HTTPException(status_code=403, detail="IP address is blocked by policy")
 
     pii_mode   = input_rules.get("pii_redaction_mode", "block")
     max_tokens = _effective_max_tokens(body)
@@ -404,6 +455,14 @@ async def chat_stream(
                 input_tokens=0, output_tokens=0,
             )
             await db.commit()
+            webhook_url = compliance_rules.get("webhook_url")
+            if webhook_url:
+                asyncio.create_task(_fire_webhook(webhook_url, {
+                    "event": "guardrail_fired", "status": "input_blocked",
+                    "fired_rule": in_result.reason_code, "reason": in_result.reason or "",
+                    "prompt_preview": _safe_preview(body.prompt, pii_found),
+                    "latency_ms": latency_ms,
+                }))
             yield _sse({
                 "type": "blocked", "request_id": request_id,
                 "status": "input_blocked",
@@ -483,6 +542,15 @@ async def chat_stream(
         used = input_tokens + output_tokens
         await deduct_tokens(db, wallet, used)
         await db.commit()
+        if not out_result.allowed:
+            webhook_url = compliance_rules.get("webhook_url")
+            if webhook_url:
+                asyncio.create_task(_fire_webhook(webhook_url, {
+                    "event": "guardrail_fired", "status": "output_blocked",
+                    "fired_rule": out_result.reason_code, "reason": out_result.reason or "",
+                    "prompt_preview": _safe_preview(body.prompt, pii_found),
+                    "latency_ms": latency_ms,
+                }))
 
         if pii_found:
             in_reason = f"PII redacted: {', '.join(redaction_result.pii_types)} ({redaction_result.pii_count} items)"

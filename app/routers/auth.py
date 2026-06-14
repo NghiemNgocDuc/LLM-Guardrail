@@ -32,6 +32,7 @@ from app.schemas import (
     SignupRequest,
     SignupResponse,
     TokenResponse,
+    UpdateProfileRequest,
     UserOut,
     VerifyEmailRequest,
 )
@@ -275,6 +276,18 @@ async def refresh(refresh_token: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/me", response_model=UserOut)
 async def me(current_user: CurrentUser):
+    return current_user
+
+
+@router.patch("/profile", response_model=UserOut)
+async def update_profile(
+    body: UpdateProfileRequest,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    if body.full_name is not None:
+        current_user.full_name = body.full_name
+    await db.flush()
     return current_user
 
 
