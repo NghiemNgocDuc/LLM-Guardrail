@@ -11,14 +11,12 @@ import json
 from typing import Sequence, Union
 
 from alembic import op
-import sqlalchemy as sa
 
 
 revision: str = "0007_test_policy"
 down_revision: Union[str, None] = "0006_make_admin"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
-
 
 _TEST_ORG_ID    = "00000000-0000-0000-0000-000000000010"
 _TEST_POLICY_ID = "00000000-0000-0000-0000-000000000011"
@@ -53,20 +51,20 @@ _COMPLIANCE = json.dumps({
 
 
 def upgrade() -> None:
-    # 1. Dedicated test org (idempotent)
-    op.execute(sa.text("""
+    # 1. Dedicated test org — embed UUID as literal with ::uuid cast (asyncpg requires this)
+    op.execute(f"""
         INSERT INTO organizations (id, name, slug, created_at)
-        VALUES (:org_id, 'Test Org (dnghiem)', 'test-org-dnghiem', CURRENT_TIMESTAMP)
+        VALUES ('{_TEST_ORG_ID}'::uuid, 'Test Org (dnghiem)', 'test-org-dnghiem', CURRENT_TIMESTAMP)
         ON CONFLICT (id) DO NOTHING
-    """).bindparams(org_id=_TEST_ORG_ID))
+    """)
 
-    # 2. Lenient policy for that org (upsert so re-running is safe)
-    op.execute(sa.text(f"""
+    # 2. Lenient policy — upsert so re-running is safe
+    op.execute(f"""
         INSERT INTO org_policies
             (id, org_id, input_rules, output_rules, topic_policy, compliance_rules, updated_at)
         VALUES (
-            '{_TEST_POLICY_ID}',
-            '{_TEST_ORG_ID}',
+            '{_TEST_POLICY_ID}'::uuid,
+            '{_TEST_ORG_ID}'::uuid,
             '{_INPUT_RULES}'::jsonb,
             '{_OUTPUT_RULES}'::jsonb,
             '{_TOPIC_POLICY}'::jsonb,
@@ -79,40 +77,26 @@ def upgrade() -> None:
             topic_policy     = EXCLUDED.topic_policy,
             compliance_rules = EXCLUDED.compliance_rules,
             updated_at       = CURRENT_TIMESTAMP
-    """))
+    """)
 
     # 3. Move user into the test org and ensure admin flag
-    op.execute(sa.text("""
+    op.execute(f"""
         UPDATE users
-        SET org_id   = :org_id,
+        SET org_id   = '{_TEST_ORG_ID}'::uuid,
             is_admin = true
-        WHERE email = :email
-    """).bindparams(org_id=_TEST_ORG_ID, email=_TEST_EMAIL))
+        WHERE email = '{_TEST_EMAIL}'
+    """)
 
-    # 4. Point any existing API keys owned by this user at the test org,
-    #    so /chat picks up the lenient policy immediately.
-    op.execute(sa.text("""
+    # 4. Point existing API keys at the test org so /chat picks up the lenient policy
+    op.execute(f"""
         UPDATE api_keys
-        SET org_id = :org_id
-        WHERE owner_id = (SELECT id FROM users WHERE email = :email)
-    """).bindparams(org_id=_TEST_ORG_ID, email=_TEST_EMAIL))
+        SET org_id = '{_TEST_ORG_ID}'::uuid
+        WHERE owner_id = (SELECT id FROM users WHERE email = '{_TEST_EMAIL}')
+    """)
 
 
 def downgrade() -> None:
-    # Detach user and keys from the test org, then remove it.
-    op.execute(sa.text("""
-        UPDATE api_keys SET org_id = NULL
-        WHERE owner_id = (SELECT id FROM users WHERE email = :email)
-    """).bindparams(email=_TEST_EMAIL))
-
-    op.execute(sa.text("""
-        UPDATE users SET org_id = NULL WHERE email = :email
-    """).bindparams(email=_TEST_EMAIL))
-
-    op.execute(sa.text("""
-        DELETE FROM org_policies WHERE id = :policy_id
-    """).bindparams(policy_id=_TEST_POLICY_ID))
-
-    op.execute(sa.text("""
-        DELETE FROM organizations WHERE id = :org_id
-    """).bindparams(org_id=_TEST_ORG_ID))
+    op.execute(f"UPDATE api_keys SET org_id = NULL WHERE owner_id = (SELECT id FROM users WHERE email = '{_TEST_EMAIL}')")
+    op.execute(f"UPDATE users SET org_id = NULL WHERE email = '{_TEST_EMAIL}'")
+    op.execute(f"DELETE FROM org_policies WHERE id = '{_TEST_POLICY_ID}'::uuid")
+    op.execute(f"DELETE FROM organizations WHERE id = '{_TEST_ORG_ID}'::uuid")
