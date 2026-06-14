@@ -15,36 +15,36 @@ down_revision: Union[str, None] = "0005_full_prompt"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+_DEFAULT_ORG_ID     = "00000000-0000-0000-0000-000000000001"
+_DEFAULT_POLICY_ID  = "00000000-0000-0000-0000-000000000002"
+
 
 def upgrade() -> None:
-    # Update dnghiem@umass.edu to be an admin
     op.execute("UPDATE users SET is_admin = true WHERE email = 'dnghiem@umass.edu'")
-    
-    # If the user doesn't have an organization, assign them to the first available organization
-    # or create a default one if none exists.
-    
-    # First ensure at least one organization exists (only creates if table is empty)
-    op.execute("""
+
+    # Create a default org only if no orgs exist yet
+    op.execute(sa.text("""
         INSERT INTO organizations (id, name, slug, created_at)
-        SELECT 'org_default', 'Default Organization', 'default-organization', CURRENT_TIMESTAMP
+        SELECT :org_id, 'Default Organization', 'default-organization', CURRENT_TIMESTAMP
         WHERE NOT EXISTS (SELECT 1 FROM organizations)
-    """)
-    
-    # Ensure a policy exists for the default org
+    """).bindparams(org_id=_DEFAULT_ORG_ID))
+
+    # Create a default policy for that org only if none exist yet
+    op.execute(sa.text("""
+        INSERT INTO org_policies
+            (id, org_id, input_rules, output_rules, topic_policy, compliance_rules, updated_at)
+        SELECT :policy_id, :org_id, '{}', '{}', '{}', '{}', CURRENT_TIMESTAMP
+        WHERE NOT EXISTS (SELECT 1 FROM org_policies)
+          AND EXISTS (SELECT 1 FROM organizations WHERE id = :org_id)
+    """).bindparams(policy_id=_DEFAULT_POLICY_ID, org_id=_DEFAULT_ORG_ID))
+
+    # Assign user to the first org if they have none
     op.execute("""
-        INSERT INTO org_policies (id, org_id, input_rules, output_rules, topic_policy, compliance_rules, created_at, updated_at)
-        SELECT 'pol_default', 'org_default', '{}', '{}', '{}', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        WHERE NOT EXISTS (SELECT 1 FROM org_policies) AND EXISTS (SELECT 1 FROM organizations WHERE id = 'org_default')
-    """)
-    
-    # Assign the user to the first organization
-    op.execute("""
-        UPDATE users 
-        SET org_id = (SELECT id FROM organizations LIMIT 1) 
+        UPDATE users
+        SET org_id = (SELECT id FROM organizations LIMIT 1)
         WHERE email = 'dnghiem@umass.edu' AND org_id IS NULL
     """)
 
 
 def downgrade() -> None:
-    # No downgrade necessary or safe to do
     pass

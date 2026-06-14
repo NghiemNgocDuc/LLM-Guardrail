@@ -20,8 +20,8 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-_TEST_ORG_ID    = "org_test_dnghiem"
-_TEST_POLICY_ID = "pol_test_dnghiem"
+_TEST_ORG_ID    = "00000000-0000-0000-0000-000000000010"
+_TEST_POLICY_ID = "00000000-0000-0000-0000-000000000011"
 _TEST_EMAIL     = "dnghiem@umass.edu"
 
 _INPUT_RULES = json.dumps({
