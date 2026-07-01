@@ -83,8 +83,15 @@ export default function AuthView({ onAuth }) {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState("");
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const handleCopy = (text, label) => {
+    navigator.clipboard.writeText(text);
+    setCopied(label);
+    setTimeout(() => setCopied(""), 1500);
+  };
 
   function goHome() {
     window.history.replaceState({}, "", "/");
@@ -274,7 +281,7 @@ export default function AuthView({ onAuth }) {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                       <span style={{ color: "#475569", flex: 1, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12 }}>dnghiem@umass.edu</span>
-                      <button onClick={() => navigator.clipboard.writeText("dnghiem@umass.edu")} title="Copy email" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#0f766e", padding: 4, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.15s" }}
+                      <button onClick={() => handleCopy("dnghiem@umass.edu", "Email copied")} title="Copy email" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#0f766e", padding: 4, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.15s" }}
                         onMouseEnter={(e) => e.currentTarget.style.background = "rgba(15, 118, 110, 0.1)"}
                         onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -285,7 +292,7 @@ export default function AuthView({ onAuth }) {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ color: "#475569", flex: 1, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12 }}>@aZ123456123</span>
-                      <button onClick={() => navigator.clipboard.writeText("@aZ123456123")} title="Copy password" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#0f766e", padding: 4, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.15s" }}
+                      <button onClick={() => handleCopy("@aZ123456123", "Password copied")} title="Copy password" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#0f766e", padding: 4, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.15s" }}
                         onMouseEnter={(e) => e.currentTarget.style.background = "rgba(15, 118, 110, 0.1)"}
                         onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -359,6 +366,20 @@ export default function AuthView({ onAuth }) {
           <div className="auth-form-footer">
             {"// demo_mode: rate limits active"}
           </div>
+
+          {copied && (
+            <div style={{
+              position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+              background: "#0f766e", color: "#fff", padding: "10px 20px", borderRadius: 10,
+              fontSize: 13, fontWeight: 600, zIndex: 999, boxShadow: "0 8px 24px rgba(15,118,110,0.35)",
+              display: "flex", alignItems: "center", gap: 8, transition: "opacity 0.2s",
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              {copied}
+            </div>
+          )}
         </div>
       </div>
     </div>
