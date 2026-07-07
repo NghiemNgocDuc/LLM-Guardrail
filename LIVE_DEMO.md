@@ -67,10 +67,10 @@ curl -X POST https://<your-demo-domain>/chat \
 
 Expected result: the request should be blocked by input guardrails.
 
-## 5. Add Demo Link To README
+## 5. Demo Link
 
-Replace this placeholder in `README.md` after deployment:
+The live demo link is already set in `README.md`:
 
 ```md
-Live demo: https://<your-demo-domain>
+Live demo: https://llm-guardrail.onrender.com
 ```

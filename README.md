@@ -10,6 +10,8 @@ Production-ready Docker stack for a multi-tenant **LLM safety gateway** and **ag
 - Groq/OpenAI-compatible LLM backend support
 - Agent skill / instruction scanner (`POST /skills/scan`) for Cursor skills, MCP rules, and system prompts
 
+**Live demo:** [https://llm-guardrail.onrender.com](https://llm-guardrail.onrender.com)
+
 ## Architecture
 
 ```text
