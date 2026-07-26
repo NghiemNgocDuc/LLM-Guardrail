@@ -51,6 +51,7 @@
 
   "chat.ip_blocked": "IP address is blocked by policy",
   "chat.llm_error": "LLM backend error. Please try again later.",
+  "chat.feedback_not_found": "Chat request not found",
 
   "demo.prompt_too_long": "Demo limit exceeded: prompt is too long.",
   "demo.max_tokens_exceeded": "Demo limit exceeded: max_tokens is too high.",

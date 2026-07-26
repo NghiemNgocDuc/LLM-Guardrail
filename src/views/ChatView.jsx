@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { api, getToken, setTokens, clearTokens, getGatewayKey, setGatewayKey, maskGatewayKey, gatewayKeyInputProps, formatApiError, PII_PATTERNS, INJECTION_KW, JAILBREAK_KW } from "../utils/api";
+import { api, getToken, getGatewayKey, setGatewayKey, gatewayKeyInputProps, PII_PATTERNS, INJECTION_KW, JAILBREAK_KW } from "../utils/api";
 import { trackEvent } from "../utils/analytics";
 import { s } from "../styles/theme";
 function clientGuardrail(prompt) {
@@ -98,6 +98,40 @@ function loadHistory() {
 }
 function saveHistory(h) {
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(-MAX_HISTORY))); } catch {}
+}
+
+function FeedbackButtons({ requestId, initial, onUpdate }) {
+  const [rating, setRating] = useState(initial?.rating || 0);
+  const [saving, setSaving] = useState(false);
+
+  async function submit(r) {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await api(`/chat/${requestId}/feedback`, { method: "POST", body: { rating: r } });
+      setRating(res.rating);
+      onUpdate(res);
+    } catch { setRating(0); }
+    setSaving(false);
+  }
+
+  return (
+    <>
+      <span style={{ fontSize: 11, color: "#8a9bb0", marginRight: 4 }}>Rate this:</span>
+      <button onClick={() => submit(1)} disabled={saving} style={{
+        background: rating === 1 ? "#0f766e" : "transparent",
+        border: `1px solid ${rating === 1 ? "#0f766e" : "#d0dce8"}`,
+        borderRadius: 6, cursor: "pointer", fontSize: 14, padding: "3px 8px",
+        color: rating === 1 ? "#fff" : "#607086", opacity: saving ? 0.5 : 1,
+      }}>+1</button>
+      <button onClick={() => submit(-1)} disabled={saving} style={{
+        background: rating === -1 ? "#be123c" : "transparent",
+        border: `1px solid ${rating === -1 ? "#be123c" : "#d0dce8"}`,
+        borderRadius: 6, cursor: "pointer", fontSize: 14, padding: "3px 8px",
+        color: rating === -1 ? "#fff" : "#607086", opacity: saving ? 0.5 : 1,
+      }}>-1</button>
+    </>
+  );
 }
 
 // CHAT TESTER VIEW
@@ -259,6 +293,11 @@ export default function ChatView() {
                         ))}
                       </div>
                       {msg.result.response && <MarkdownResponse text={msg.result.response} />}
+                      {msg.result.status === "delivered" && (
+                        <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+                          <FeedbackButtons requestId={msg.result.request_id} initial={msg.feedback} onUpdate={(r) => { msg.feedback = r; setMessages([...messages]); }} />
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

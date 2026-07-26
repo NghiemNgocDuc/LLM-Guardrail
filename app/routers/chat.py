@@ -24,13 +24,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db, get_sessionmaker
-from app.deps import AuthedAPIKey
+from app.deps import AuthedAPIKey, get_current_user
 from app.services.analytics import capture_event
 from app.services.vectorstore import upsert_conversation
 from app.demo_limits import client_ip, enforce_demo_payload_limits, enforce_demo_rate_limits
 from app.middleware.rate_limit import check_rate_limit
-from app.models import OrgPolicy, RequestLog
-from app.schemas import ChatRequest, ChatResponse, GuardrailResult
+from app.models import ChatFeedback, OrgPolicy, RequestLog, User
+from app.schemas import ChatRequest, ChatResponse, FeedbackOut, FeedbackRequest, GuardrailResult
 from app.services.llm import call_llm, stream_llm
 from app.services.token_wallet import (
     check_daily_budget,
@@ -701,3 +701,35 @@ async def _log_request(
     api_key.last_used_at = datetime.now(timezone.utc)
 
     await db.flush()
+
+
+@router.post("/{request_id}/feedback", status_code=201)
+async def submit_feedback(
+    request_id: str,
+    body: FeedbackRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    log = await db.get(RequestLog, request_id)
+    if not log:
+        raise HTTPException(status_code=404, detail=_t("chat.feedback_not_found"))
+
+    existing = await db.execute(
+        select(ChatFeedback).where(ChatFeedback.request_log_id == request_id)
+    )
+    existing_fb = existing.scalar_one_or_none()
+
+    if existing_fb:
+        existing_fb.rating = body.rating
+        existing_fb.comment = body.comment
+    else:
+        fb = ChatFeedback(
+            request_log_id=request_id,
+            user_id=user.id,
+            rating=body.rating,
+            comment=body.comment,
+        )
+        db.add(fb)
+
+    await db.flush()
+    return FeedbackOut.model_validate(existing_fb or fb)

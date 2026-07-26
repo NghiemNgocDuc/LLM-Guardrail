@@ -190,6 +190,21 @@ class GuardrailResult(BaseModel):
     risk_score: float = 0.0
 
 
+class FeedbackRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    rating: int = Field(..., ge=-1, le=1, description="1 = thumbs up, -1 = thumbs down, 0 = neutral")
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class FeedbackOut(BaseModel):
+    request_log_id: str
+    rating: int
+    comment: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class ChatResponse(BaseModel):
     request_id:    str
     response:      str | None        # None if blocked

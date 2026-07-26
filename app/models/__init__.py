@@ -272,3 +272,20 @@ class RequestLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
     api_key: Mapped["APIKey"] = relationship("APIKey", back_populates="logs")
+    feedback: Mapped["ChatFeedback | None"] = relationship("ChatFeedback", back_populates="request_log", uselist=False, cascade="all, delete-orphan")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ChatFeedback  (thumbs up/down on individual chat responses)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ChatFeedback(Base):
+    __tablename__ = "chat_feedback"
+
+    request_log_id: Mapped[str] = mapped_column(ForeignKey("request_logs.id", ondelete="CASCADE"), primary_key=True)
+    user_id:        Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    rating:         Mapped[int] = mapped_column(Integer, nullable=False)  # 1 = thumbs up, -1 = thumbs down
+    comment:        Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at:     Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    request_log: Mapped["RequestLog"] = relationship("RequestLog", back_populates="feedback")
