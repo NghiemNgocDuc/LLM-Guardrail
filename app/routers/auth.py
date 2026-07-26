@@ -1,278 +1,168 @@
 """
 Auth endpoints:
-  POST /auth/signup              — create user (+ optional org), send verification email
-  POST /auth/login               — get tokens (requires verified email when enabled)
-  POST /auth/refresh             — swap refresh token → new access token
-  GET  /auth/me                  — current user info
-  POST /auth/verify-email        — confirm email from link token
-  POST /auth/resend-verification — resend verification email
-  POST /auth/forgot-password     — send password reset email
-  POST /auth/reset-password      — set new password from reset token
+  POST /auth/clerk-webhook    — Clerk user events (create / update / delete)
+  GET  /auth/me               — current user info
+  PATCH /auth/profile         — update profile fields
 """
+import hashlib
+import hmac
+import json
 import logging
-import re
-from datetime import datetime, timezone
+import time
+from collections import OrderedDict
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.deps import (
-    CurrentUser, create_access_token, create_refresh_token,
-    decode_token, hash_password, verify_password,
-)
+from app.deps import CurrentUser
+from app.i18n import _t
 from app.models import Organization, OrgPolicy, User
-from app.schemas import (
-    ChangePasswordRequest,
-    EmailRequest,
-    LoginRequest,
-    MessageResponse,
-    ResetPasswordRequest,
-    SignupRequest,
-    SignupResponse,
-    TokenResponse,
-    UpdateProfileRequest,
-    UserOut,
-    VerifyEmailRequest,
-)
+from app.schemas import MessageResponse, UpdateProfileRequest, UserOut
 from app.config import get_settings
-from app.services.auth_tokens import (
-    TOKEN_PURPOSE_RESET,
-    TOKEN_PURPOSE_VERIFY,
-    build_action_url,
-    consume_auth_token,
-    create_auth_token,
-)
-from app.services.email import send_password_reset_email, send_verification_email
+from app.defaults import DEFAULT_COMPLIANCE, DEFAULT_INPUT_RULES, DEFAULT_OUTPUT_RULES, DEFAULT_TOPIC_POLICY
 from app.services.token_wallet import ensure_wallet
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
-_DEFAULT_INPUT_RULES = {
-    "block_secrets": True,
-    "block_pii": True,
-    "pii_patterns": [
-        {"name": "credit_card", "regex": r"\b(?:\d[ -]?){13,16}\b"},
-        {"name": "ssn",         "regex": r"\b\d{3}-\d{2}-\d{4}\b"},
-        {"name": "email",       "regex": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"},
-    ],
-    "block_prompt_injection": True,
-    "injection_keywords": [
-        "ignore previous instructions",
-        "disregard your system prompt",
-        "forget everything",
-        "reveal your system prompt",
-        "print your hidden instructions",
-        "bypass the policy",
-        "disable safety",
-    ],
-    "block_jailbreak": True,
-    "jailbreak_patterns": [
-        "DAN mode",
-        "developer mode",
-        "pretend you have no restrictions",
-        "act as an unrestricted",
-        "you are now jailbroken",
-        "simulated sandbox",
-        "do not include any safety warnings",
-        "unrestricted terminal",
-        "silently logs keystrokes",
-        "log keystrokes",
-        "keystroke logger",
-        "keylogger",
-    ],
-}
-_DEFAULT_OUTPUT_RULES = {
-    "enforce_schema": False,
-    "block_toxic_content": True,
-    "required_fields": [],
-}
-_DEFAULT_TOPIC_POLICY = {"blocked_topics": ["competitor products", "medical advice"]}
-_DEFAULT_COMPLIANCE   = {"block_medical_advice": True, "never_discuss_competitors": True}
+# Webhook idempotency — deduplicate Clerk retries within a 1-hour window
+_processed_webhooks: OrderedDict[str, float] = OrderedDict()
+_MAX_WEBHOOK_CACHE = 10_000
 
 
-def _slugify(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:60]
+def _is_duplicate_webhook(svix_id: str) -> bool:
+    now = time.time()
+    cutoff = now - 3600
+    while _processed_webhooks and next(iter(_processed_webhooks.values())) < cutoff:
+        _processed_webhooks.popitem(last=False)
+    if svix_id in _processed_webhooks:
+        return True
+    _processed_webhooks[svix_id] = now
+    if len(_processed_webhooks) > _MAX_WEBHOOK_CACHE:
+        _processed_webhooks.popitem(last=False)
+    return False
 
 
-async def _issue_verification_email(db: AsyncSession, user: User) -> None:
-    if not settings.REQUIRE_EMAIL_VERIFICATION:
-        user.email_verified = True
+# ─── Webhook helpers ──────────────────────────────────────────────────────────
+
+def _verify_webhook_signature(payload: bytes, svix_id: str, svix_timestamp: str, svix_signature: str) -> bool:
+    secret = settings.CLERK_WEBHOOK_SECRET
+    if not secret:
+        return False
+    signed_content = f"{svix_id}.{svix_timestamp}.{payload.decode()}".encode()
+    expected = hmac.new(secret.encode(), signed_content, hashlib.sha256).hexdigest()
+    for sig in svix_signature.split():
+        if sig.startswith("v1,"):
+            parts = sig.split(",")
+            if len(parts) >= 2 and hmac.compare_digest(parts[1], expected):
+                return True
+    return False
+
+
+@router.post("/clerk-webhook")
+async def clerk_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    svix_id = request.headers.get("svix-id", "")
+    svix_timestamp = request.headers.get("svix-timestamp", "")
+    svix_signature = request.headers.get("svix-signature", "")
+    body = await request.body()
+
+    if settings.CLERK_WEBHOOK_SECRET and not _verify_webhook_signature(body, svix_id, svix_timestamp, svix_signature):
+        raise HTTPException(status_code=401, detail=_t("auth.webhook_signature_invalid"))
+
+    if svix_id and _is_duplicate_webhook(svix_id):
+        logger.debug("clerk_webhook.duplicate_event svix_id=%s", svix_id)
+        return {"status": "ok", "action": "duplicate"}
+
+    try:
+        event = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail=_t("auth.webhook_invalid_json"))
+
+    event_type = event.get("type", "")
+    data = event.get("data", {})
+
+    if event_type == "user.created":
+        clerk_id = data.get("id")
+        email = data.get("email_addresses", [{}])[0].get("email_address", "")
+        full_name = data.get("first_name", "") or ""
+        if data.get("last_name"):
+            full_name = f"{full_name} {data['last_name']}".strip()
+
+        existing = await db.execute(
+            select(User).where(User.clerk_id == clerk_id)
+        )
+        if existing.scalar_one_or_none():
+            logger.warning("clerk_webhook.duplicate user=%s", clerk_id)
+            return {"status": "ok", "action": "duplicate"}
+
+        existing_email = await db.execute(
+            select(User).where(User.email == email)
+        )
+        existing_user = existing_email.scalar_one_or_none()
+        if existing_user:
+            existing_user.clerk_id = clerk_id
+            existing_user.email_verified = True
+            if full_name:
+                existing_user.full_name = full_name
+            await db.flush()
+            logger.info("clerk_webhook.linked_legacy user=%s email=%s", clerk_id, email)
+            return {"status": "ok", "action": "linked_legacy"}
+
+        user = User(
+            clerk_id=clerk_id,
+            email=email or f"{clerk_id}@placeholder.local",
+            hashed_password="",
+            full_name=full_name or "Unknown",
+            email_verified=True,
+        )
+        db.add(user)
+        try:
+            await db.flush()
+        except Exception:
+            await db.rollback()
+            logger.error("clerk_webhook.create_failed user=%s email=%s", clerk_id, email)
+            return {"status": "ok", "action": "create_failed"}
+        await ensure_wallet(db, user.id)
         await db.flush()
-        return
+        logger.info("clerk_webhook.created user=%s email=%s", clerk_id, email)
+        return {"status": "ok", "action": "created"}
 
-    raw = await create_auth_token(
-        db,
-        user_id=user.id,
-        purpose=TOKEN_PURPOSE_VERIFY,
-        expire_hours=settings.EMAIL_VERIFICATION_EXPIRE_HOURS,
-    )
-    verify_url = build_action_url(settings.PUBLIC_APP_URL, "/verify-email", raw)
-    await send_verification_email(user.email, verify_url)
-    if not settings.smtp_configured:
-        logger.warning("email.verification_link user=%s url=%s", user.email, verify_url)
+    elif event_type == "user.updated":
+        clerk_id = data.get("id")
+        email = data.get("email_addresses", [{}])[0].get("email_address", "")
+        full_name = data.get("first_name", "") or ""
+        if data.get("last_name"):
+            full_name = f"{full_name} {data['last_name']}".strip()
 
+        result = await db.execute(select(User).where(User.clerk_id == clerk_id))
+        user = result.scalar_one_or_none()
+        if user:
+            if email:
+                user.email = email
+            if full_name:
+                user.full_name = full_name
+            await db.flush()
+            logger.info("clerk_webhook.updated user=%s", clerk_id)
+        return {"status": "ok", "action": "updated" if user else "not_found"}
 
-@router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
-async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
-    if settings.DEMO_MODE and settings.DEMO_DISABLE_SIGNUPS:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Demo mode is using a fixed demo account; public signup is disabled.",
-        )
+    elif event_type == "user.deleted":
+        clerk_id = data.get("id")
+        result = await db.execute(select(User).where(User.clerk_id == clerk_id))
+        user = result.scalar_one_or_none()
+        if user:
+            user.is_active = False
+            await db.flush()
+            logger.info("clerk_webhook.deactivated user=%s", clerk_id)
+        return {"status": "ok", "action": "deactivated" if user else "not_found"}
 
-    existing = await db.execute(select(User).where(User.email == body.email))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Email already registered")
-
-    org = None
-    if body.org_name:
-        slug = _slugify(body.org_name)
-        existing_org = await db.execute(select(Organization).where(Organization.slug == slug))
-        if existing_org.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail="Organization name already taken")
-        org = Organization(name=body.org_name, slug=slug)
-        db.add(org)
-        await db.flush()
-
-        policy = OrgPolicy(
-            org_id=org.id,
-            input_rules=_DEFAULT_INPUT_RULES,
-            output_rules=_DEFAULT_OUTPUT_RULES,
-            topic_policy=_DEFAULT_TOPIC_POLICY,
-            compliance_rules=_DEFAULT_COMPLIANCE,
-        )
-        db.add(policy)
-
-    user = User(
-        email=body.email,
-        hashed_password=hash_password(body.password),
-        full_name=body.full_name,
-        is_admin=bool(body.org_name),
-        org_id=org.id if org else None,
-        email_verified=not settings.REQUIRE_EMAIL_VERIFICATION,
-    )
-    db.add(user)
-    await db.flush()
-
-    await ensure_wallet(db, user.id)
-
-    await _issue_verification_email(db, user)
-
-    if settings.REQUIRE_EMAIL_VERIFICATION:
-        message = "Account created. Check your email to confirm your address before signing in."
-    else:
-        message = "Account created. You can sign in now."
-
-    return SignupResponse(
-        message=message,
-        email=user.email,
-        verification_required=settings.REQUIRE_EMAIL_VERIFICATION,
-    )
+    logger.debug("clerk_webhook.ignored type=%s", event_type)
+    return {"status": "ok", "action": "ignored"}
 
 
-@router.post("/verify-email", response_model=MessageResponse)
-async def verify_email(body: VerifyEmailRequest, db: AsyncSession = Depends(get_db)):
-    user = await consume_auth_token(db, raw_token=body.token, purpose=TOKEN_PURPOSE_VERIFY)
-    if not user:
-        raise HTTPException(status_code=400, detail="Invalid or expired verification link")
-
-    user.email_verified = True
-    await db.flush()
-    return MessageResponse(message="Email confirmed. You can sign in now.")
-
-
-@router.post("/resend-verification", response_model=MessageResponse)
-async def resend_verification(body: EmailRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == body.email))
-    user = result.scalar_one_or_none()
-
-    # Do not reveal whether the email exists.
-    if user and not user.email_verified:
-        await _issue_verification_email(db, user)
-
-    return MessageResponse(
-        message="If that account exists and is unverified, a new confirmation email was sent."
-    )
-
-
-@router.post("/forgot-password", response_model=MessageResponse)
-async def forgot_password(body: EmailRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == body.email))
-    user = result.scalar_one_or_none()
-
-    if user and user.is_active:
-        raw = await create_auth_token(
-            db,
-            user_id=user.id,
-            purpose=TOKEN_PURPOSE_RESET,
-            expire_hours=settings.PASSWORD_RESET_EXPIRE_HOURS,
-        )
-        reset_url = build_action_url(settings.PUBLIC_APP_URL, "/reset-password", raw)
-        await send_password_reset_email(user.email, reset_url)
-        if not settings.smtp_configured:
-            logger.warning("email.password_reset_link user=%s url=%s", user.email, reset_url)
-
-    return MessageResponse(
-        message="If that account exists, a password reset email was sent."
-    )
-
-
-@router.post("/reset-password", response_model=MessageResponse)
-async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
-    user = await consume_auth_token(db, raw_token=body.token, purpose=TOKEN_PURPOSE_RESET)
-    if not user:
-        raise HTTPException(status_code=400, detail="Invalid or expired reset link")
-
-    user.hashed_password = hash_password(body.new_password)
-    user.email_verified = True
-    await db.flush()
-    return MessageResponse(message="Password updated. You can sign in with your new password.")
-
-
-@router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == body.email))
-    user: User | None = result.scalar_one_or_none()
-
-    if not user or not verify_password(body.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
-    if settings.REQUIRE_EMAIL_VERIFICATION and not user.email_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Email not verified. Check your inbox or request a new confirmation email.",
-        )
-
-    user.last_login = datetime.now(timezone.utc)
-
-    return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
-        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-    )
-
-
-@router.post("/refresh", response_model=TokenResponse)
-async def refresh(refresh_token: str, db: AsyncSession = Depends(get_db)):
-    payload = decode_token(refresh_token)
-    if payload.get("type") != "refresh":
-        raise HTTPException(status_code=401, detail="Invalid token type")
-    user = await db.get(User, payload["sub"])
-    if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="User not found")
-    if settings.REQUIRE_EMAIL_VERIFICATION and not user.email_verified:
-        raise HTTPException(status_code=403, detail="Email not verified")
-    return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
-        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-    )
-
+# ─── User info ────────────────────────────────────────────────────────────────
 
 @router.get("/me", response_model=UserOut)
 async def me(current_user: CurrentUser):
@@ -289,16 +179,3 @@ async def update_profile(
         current_user.full_name = body.full_name
     await db.flush()
     return current_user
-
-
-@router.post("/change-password", response_model=MessageResponse)
-async def change_password(
-    body: ChangePasswordRequest,
-    current_user: CurrentUser,
-    db: AsyncSession = Depends(get_db),
-):
-    if not verify_password(body.current_password, current_user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
-    current_user.hashed_password = hash_password(body.new_password)
-    await db.flush()
-    return MessageResponse(message="Password updated successfully.")

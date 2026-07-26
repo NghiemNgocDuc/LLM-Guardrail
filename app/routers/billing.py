@@ -12,6 +12,7 @@ from app.billing.plans import TOKEN_PLANS, plan_by_slug
 from app.config import get_settings
 from app.database import get_db
 from app.deps import CurrentUser
+from app.i18n import _t
 from app.models import TokenPurchase
 from app.schemas import (
     BillingCheckoutRequest,
@@ -109,11 +110,11 @@ async def start_checkout(
     db: AsyncSession = Depends(get_db),
 ):
     if not settings.BILLING_ENABLED:
-        raise HTTPException(status_code=400, detail="Billing is disabled on this deployment.")
+        raise HTTPException(status_code=400, detail=_t("billing.disabled"))
 
     plan = plan_by_slug(body.plan_slug)
     if not plan:
-        raise HTTPException(status_code=404, detail="Unknown plan")
+        raise HTTPException(status_code=404, detail=_t("billing.unknown_plan"))
 
     purchase = TokenPurchase(
         user_id=current_user.id,
@@ -137,7 +138,7 @@ async def start_checkout(
             )
         raise HTTPException(
             status_code=503,
-            detail="Stripe is not configured. Set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET.",
+            detail=_t("billing.stripe_not_configured"),
         )
 
     url, session_id = create_checkout_session(
@@ -159,11 +160,11 @@ async def simulate_purchase(
 ):
     """Local testing only — credits tokens without Stripe."""
     if settings.APP_ENV != "development":
-        raise HTTPException(status_code=403, detail="Only available in development.")
+        raise HTTPException(status_code=403, detail=_t("billing.dev_only"))
 
     plan = plan_by_slug(body.plan_slug)
     if not plan:
-        raise HTTPException(status_code=404, detail="Unknown plan")
+        raise HTTPException(status_code=404, detail=_t("billing.unknown_plan"))
 
     purchase = TokenPurchase(
         user_id=current_user.id,

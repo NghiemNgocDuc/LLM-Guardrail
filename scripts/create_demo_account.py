@@ -6,11 +6,11 @@ from sqlalchemy import select
 from app.database import AsyncSessionLocal
 from app.deps import hash_api_key, hash_password
 from app.models import APIKey, OrgPolicy, Organization, User
-from app.routers.auth import (
-    _DEFAULT_COMPLIANCE,
-    _DEFAULT_INPUT_RULES,
-    _DEFAULT_OUTPUT_RULES,
-    _DEFAULT_TOPIC_POLICY,
+from app.defaults import (
+    DEFAULT_COMPLIANCE,
+    DEFAULT_INPUT_RULES,
+    DEFAULT_OUTPUT_RULES,
+    DEFAULT_TOPIC_POLICY,
 )
 
 
@@ -38,10 +38,10 @@ async def create_demo_account(email: str, password: str, org_name: str) -> None:
         db.add(
             OrgPolicy(
                 org_id=org.id,
-                input_rules=_DEFAULT_INPUT_RULES,
-                output_rules=_DEFAULT_OUTPUT_RULES,
-                topic_policy=_DEFAULT_TOPIC_POLICY,
-                compliance_rules=_DEFAULT_COMPLIANCE,
+                input_rules=DEFAULT_INPUT_RULES,
+                output_rules=DEFAULT_OUTPUT_RULES,
+                topic_policy=DEFAULT_TOPIC_POLICY,
+                compliance_rules=DEFAULT_COMPLIANCE,
                 rate_limit_rpm=3,
                 rate_limit_rpd=20,
             )

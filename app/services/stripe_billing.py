@@ -11,6 +11,7 @@ from fastapi import HTTPException, status
 
 from app.billing.plans import TokenPlan, plan_by_slug
 from app.config import get_settings
+from app.i18n import _t
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -24,7 +25,7 @@ def _stripe():
     if not settings.STRIPE_SECRET_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Payments are not configured. Set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET.",
+            detail=_t("billing.payments_not_configured"),
         )
     import stripe
 
@@ -88,11 +89,11 @@ def create_checkout_session(
 def construct_webhook_event(payload: bytes, sig_header: str | None):
     stripe = _stripe()
     if not sig_header:
-        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
+        raise HTTPException(status_code=400, detail=_t("billing.missing_signature"))
     try:
         return stripe.Webhook.construct_event(
             payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
         )
     except Exception as e:
         logger.warning("stripe.webhook_invalid: %s", e)
-        raise HTTPException(status_code=400, detail="Invalid webhook signature") from e
+        raise HTTPException(status_code=400, detail=_t("billing.webhook_signature_invalid")) from e

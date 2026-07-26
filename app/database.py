@@ -18,6 +18,7 @@ AsyncSessionLocal = None
 ASYNCPG_CONNECT_ARGS = {
     "statement_cache_size": 0,
     "prepared_statement_cache_size": 0,
+    "server_settings": {"statement_timeout": "30000"},
 }
 
 
@@ -38,6 +39,7 @@ def get_engine():
             pool_pre_ping=True,
             pool_size=10,
             max_overflow=20,
+            pool_recycle=3600,
             connect_args=connect_args,
         )
     return engine

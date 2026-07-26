@@ -1,8 +1,10 @@
-"""Transactional email via SMTP (async wrapper)."""
+"""Transactional email via Resend API or SMTP (async wrapper)."""
 import asyncio
 import logging
 import smtplib
 from email.message import EmailMessage
+
+import httpx
 
 from app.config import get_settings
 
@@ -12,6 +14,10 @@ settings = get_settings()
 
 def _smtp_configured() -> bool:
     return bool(settings.SMTP_HOST and settings.SMTP_FROM)
+
+
+def _resend_configured() -> bool:
+    return bool(settings.RESEND_API_KEY)
 
 
 def _send_sync(to_email: str, subject: str, text_body: str, html_body: str | None = None) -> None:
@@ -36,16 +42,37 @@ def _send_sync(to_email: str, subject: str, text_body: str, html_body: str | Non
             smtp.send_message(msg)
 
 
+def _send_via_resend(to_email: str, subject: str, text_body: str, html_body: str | None = None) -> None:
+    payload: dict = {
+        "from": settings.RESEND_FROM or settings.SMTP_FROM or "noreply@llm-guardrails.dev",
+        "to": [to_email],
+        "subject": subject,
+        "text": text_body,
+    }
+    if html_body:
+        payload["html"] = html_body
+
+    resp = httpx.post(
+        "https://api.resend.com/emails",
+        headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+        json=payload,
+        timeout=30,
+    )
+    resp.raise_for_status()
+
+
 async def send_email(to_email: str, subject: str, text_body: str, html_body: str | None = None) -> None:
-    if not _smtp_configured():
+    if _resend_configured():
+        await asyncio.to_thread(_send_via_resend, to_email, subject, text_body, html_body)
+    elif _smtp_configured():
+        await asyncio.to_thread(_send_sync, to_email, subject, text_body, html_body)
+    else:
         logger.warning(
-            "email.not_configured to=%s subject=%s body_preview=%s",
+            "email.not_configured to=%s subject=%s",
             to_email,
             subject,
-            text_body[:200].replace("\n", " "),
         )
         return
-    await asyncio.to_thread(_send_sync, to_email, subject, text_body, html_body)
 
 
 async def send_verification_email(to_email: str, verify_url: str) -> None:

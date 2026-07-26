@@ -31,7 +31,7 @@ def main() -> None:
     print(f"ollama_url={settings.OLLAMA_BASE_URL}", flush=True)
     if settings.DEFAULT_LLM_BACKEND == "ollama":
         print(f"ollama_status={_check_ollama(settings.OLLAMA_BASE_URL)}", flush=True)
-    print(f"smtp_configured={settings.smtp_configured}", flush=True)
+    print(f"email_configured={settings.email_configured} provider={'resend' if settings.RESEND_API_KEY else 'smtp' if settings.SMTP_HOST and settings.SMTP_FROM else 'none'}", flush=True)
     print(f"require_email_verification={settings.REQUIRE_EMAIL_VERIFICATION}", flush=True)
     print(f"demo_max_output_tokens={settings.DEMO_MAX_OUTPUT_TOKENS}", flush=True)
     print(f"allowed_origins={settings.ALLOWED_ORIGINS}", flush=True)

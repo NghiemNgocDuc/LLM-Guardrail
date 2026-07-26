@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import CurrentUser, hash_api_key
+from app.i18n import _t
 from app.models import APIKey
 from app.schemas import APIKeyCreate, APIKeyCreated, APIKeyOut
 
@@ -57,6 +58,6 @@ async def list_api_keys(current_user: CurrentUser, db: AsyncSession = Depends(ge
 async def revoke_api_key(key_id: str, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
     key = await db.get(APIKey, key_id)
     if not key or key.owner_id != current_user.id:
-        raise HTTPException(status_code=404, detail="API key not found")
+        raise HTTPException(status_code=404, detail=_t("api_key.not_found"))
     key.is_active = False
     await db.flush()

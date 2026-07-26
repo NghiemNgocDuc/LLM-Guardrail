@@ -1,5 +1,9 @@
 from app.models import APIKey
-from app.routers.auth import _slugify
+import re
+
+
+def _slugify(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:60]
 
 
 def test_slugify_normalizes_org_name():

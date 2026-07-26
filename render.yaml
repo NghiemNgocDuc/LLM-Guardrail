@@ -1,66 +1,95 @@
-# Render deployment — free tier
-# One fullstack service (FastAPI serves React + API from the same container).
-#
-# First-time setup:
-#   1. Push this repo to GitHub
-#   2. render.com → New → Blueprint → connect the repo
-#   3. After deploy, go to Environment and fill in the "sync: false" values:
-#        RATE_LIMIT_REDIS_URL  → from Upstash (upstash.com, free)
-#        OLLAMA_BASE_URL       → your Cloudflare tunnel URL (e.g. https://xxx.trycloudflare.com)
-#        ALLOWED_ORIGINS       → https://<your-app>.onrender.com
-
 services:
   - type: web
     name: llm-guardrails
     env: docker
-    dockerfilePath: Dockerfile.fullstack
-    dockerContext: .
-    plan: free
-    healthCheckPath: /health
+    dockerfilePath: ./Dockerfile.fullstack
+    build:
+      args:
+        VITE_API_BASE_URL: ""
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
+        VITE_POSTHOG_API_KEY: ${VITE_POSTHOG_API_KEY}
+        VITE_POSTHOG_HOST: ${VITE_POSTHOG_HOST}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN}
     envVars:
+      # ── App ──────────────────────────────────────────────────────────────
       - key: APP_ENV
         value: production
       - key: DEBUG
         value: "false"
       - key: LOG_LEVEL
         value: INFO
-
-      # Injected automatically from the database below
+      - key: ALLOWED_ORIGINS
+        value: https://llm-guardrails.onrender.com
+      - key: PUBLIC_APP_URL
+        value: https://llm-guardrails.onrender.com
+      - key: PORT
+        value: "8000"
+      # ── Secrets (set in Render Dashboard) ────────────────────────────────
+      - key: SECRET_KEY
+        sync: false
       - key: DATABASE_URL
-        fromDatabase:
-          name: llm-guardrails-db
-          property: connectionString
-
-      # Set these in the Render dashboard after first deploy
+        sync: false
       - key: RATE_LIMIT_REDIS_URL
         sync: false
-      - key: OLLAMA_BASE_URL
+      # ── Supabase / PostgreSQL ────────────────────────────────────────────
+      - key: POSTGRES_USER
         sync: false
-      - key: ALLOWED_ORIGINS
+      - key: POSTGRES_PASSWORD
         sync: false
-
-      # Auto-generated secure secret
-      - key: SECRET_KEY
-        generateValue: true
-
-      # LLM — point at your self-hosted Ollama
+      - key: POSTGRES_DB
+        sync: false
+      - key: POSTGRES_HOST
+        sync: false
+      - key: POSTGRES_PORT
+        value: "6543"
+      # ── Vector store (Pinecone) ──────────────────────────────────────────
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_ENVIRONMENT
+        value: us-east-1
+      - key: PINECONE_INDEX_NAME
+        value: guardrails
+      # ── Auth (Clerk) ─────────────────────────────────────────────────────
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_JWKS_URL
+        sync: false
+      - key: CLERK_WEBHOOK_SECRET
+        sync: false
+      - key: CLERK_JWT_KEY
+        sync: false
+      # ── LLM providers ────────────────────────────────────────────────────
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
       - key: DEFAULT_LLM_BACKEND
-        value: ollama
+        value: anthropic
       - key: DEFAULT_MODEL
-        value: phi3
-
-      # Billing — keep off for testing
+        value: claude-sonnet-4-20250514
+      # ── Billing (Stripe) ─────────────────────────────────────────────────
       - key: BILLING_ENABLED
-        value: "false"
+        value: "true"
+      - key: FREE_SIGNUP_TOKENS
+        value: "10000"
       - key: BILLING_UNLIMITED_EMAILS
-        value: "dnghiem@umass.edu"
-
-      # Email verification — off so testers can log in immediately
-      - key: REQUIRE_EMAIL_VERIFICATION
-        value: "false"
-
-databases:
-  - name: llm-guardrails-db
-    plan: free
-    databaseName: guardrails
-    user: guardrails
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      # ── Frontend VITE_ vars (also needed as Docker build args above) ────
+      - key: VITE_CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: VITE_POSTHOG_API_KEY
+        sync: false
+      - key: VITE_POSTHOG_HOST
+        value: https://us.i.posthog.com
+      - key: VITE_SENTRY_DSN
+        sync: false

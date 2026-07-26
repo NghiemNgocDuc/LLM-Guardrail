@@ -18,27 +18,34 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.database import get_db
+from app.database import get_db, get_sessionmaker
 from app.deps import AuthedAPIKey
+from app.services.analytics import capture_event
+from app.services.vectorstore import upsert_conversation
 from app.demo_limits import client_ip, enforce_demo_payload_limits, enforce_demo_rate_limits
 from app.middleware.rate_limit import check_rate_limit
 from app.models import OrgPolicy, RequestLog
 from app.schemas import ChatRequest, ChatResponse, GuardrailResult
 from app.services.llm import call_llm, stream_llm
 from app.services.token_wallet import (
+    check_daily_budget,
+    check_prompt_dedup,
     deduct_tokens,
     ensure_wallet,
     estimate_request_tokens,
+    record_daily_spend,
     require_balance,
     user_has_unlimited_tokens,
 )
 from app.config import get_settings
+from app.http_client import get_http_client
+from app.i18n import _t
+from app.utils.url_validation import validate_webhook_url
 from guardrails.input import InputGuardrail
 from guardrails.output import OutputGuardrail
 from guardrails.pii_redactor import PIIRedactor
@@ -87,8 +94,9 @@ _DEFAULT_COMPLIANCE     = {"block_medical_advice": True}
 
 async def _fire_webhook(url: str, payload: dict) -> None:
     try:
-        async with httpx.AsyncClient(timeout=8) as client:
-            await client.post(url, json=payload, headers={"Content-Type": "application/json"})
+        validate_webhook_url(url)
+        client = get_http_client()
+        await client.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=8.0)
     except Exception:
         pass
 
@@ -120,6 +128,7 @@ async def chat(
     body: ChatRequest,
     request: Request,
     api_key: AuthedAPIKey,
+    fastapi_response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     start = time.monotonic()
@@ -128,7 +137,7 @@ async def chat(
     # ── 1. Scope enforcement ──────────────────────────────────────────────
     key_scopes = list(api_key.scopes) if api_key.scopes else ["chat"]
     if "chat" not in key_scopes:
-        raise HTTPException(status_code=403, detail="API key does not have the 'chat' scope")
+        raise HTTPException(status_code=403, detail=_t("api_key.no_chat_scope"))
 
     # ── 2. Load org policy ────────────────────────────────────────────────
     policy: OrgPolicy | None = None
@@ -152,7 +161,7 @@ async def chat(
     if blocked_ips:
         req_ip = client_ip(request)
         if req_ip in blocked_ips:
-            raise HTTPException(status_code=403, detail="IP address is blocked by policy")
+            raise HTTPException(status_code=403, detail=_t("chat.ip_blocked"))
 
     # PII redaction mode: "block" (default), "redact", or "off"
     pii_mode = input_rules.get("pii_redaction_mode", "block")
@@ -160,16 +169,20 @@ async def chat(
     max_tokens = _effective_max_tokens(body)
     enforce_demo_payload_limits(body.prompt, max_tokens)
 
-    # ── 4. Token balance (billing) ────────────────────────────────────────
-    wallet = await require_balance(
-        db,
-        api_key.owner_id,
-        estimate_request_tokens(body.prompt, max_tokens),
-    )
+    # ── 4. Prompt dedup (same prompt = likely a bot) ─────────────────────────
+    prompt_hash = _sha256(body.prompt)
+    await check_prompt_dedup(api_key.owner_id, prompt_hash)
 
-    # ── 3. Rate limit ─────────────────────────────────────────────────────
+    # ── 5. Daily budget ─────────────────────────────────────────────────────
+    estimated = estimate_request_tokens(body.prompt, max_tokens)
+    check_daily_budget(api_key.owner_id, estimated)
+
+    # ── 6. Token balance (billing) ───────────────────────────────────────────
+    wallet = await require_balance(db, api_key.owner_id, estimated)
+
+    # ── 7. Rate limit ─────────────────────────────────────────────────────
     try:
-        await check_rate_limit(api_key.id, rpm, rpd)
+        rate_info = await check_rate_limit(api_key.id, rpm, rpd)
         await check_rate_limit(f"user:{api_key.owner_id}", rpm, rpd)
         await enforce_demo_rate_limits(api_key.id, client_ip(request))
     except HTTPException as e:
@@ -191,7 +204,14 @@ async def chat(
         await db.commit()
         raise
 
-    # ── 4a. PII Redaction (if mode == "redact") ────────────────────────────
+    if fastapi_response is not None and rate_info is not None:
+        fastapi_response.headers["X-RateLimit-Limit"] = str(rpm)
+        fastapi_response.headers["X-RateLimit-Remaining"] = str(rate_info["rpm_remaining"])
+        if rpd < 1_000_000:
+            fastapi_response.headers["X-RateLimit-Limit-Day"] = str(rpd)
+            fastapi_response.headers["X-RateLimit-Remaining-Day"] = str(rate_info.get("rpd_remaining", rpd))
+
+    # ── 8. PII Redaction (if mode == "redact") ────────────────────────────
     redaction_result = None
     prompt_for_llm = body.prompt
 
@@ -202,7 +222,7 @@ async def chat(
         redaction_result = redactor.redact(body.prompt)
         prompt_for_llm = redaction_result.redacted_text
 
-    # ── 4b. Input guardrail ───────────────────────────────────────────────
+    # ── 9. Input guardrail ───────────────────────────────────────────────
     # When in "redact" mode, skip the PII check (we already handled it)
     guardrail_rules = dict(input_rules)
     if pii_mode == "redact":
@@ -215,6 +235,11 @@ async def chat(
 
     if not in_result.allowed:
         latency_ms = int((time.monotonic() - start) * 1000)
+        capture_event(api_key.owner_id, "guardrail_blocked", {
+            "direction": "input", "reason": in_result.reason_code,
+            "backend": body.backend or settings.DEFAULT_LLM_BACKEND,
+            "model": body.model or org_model or settings.DEFAULT_MODEL,
+        })
         await _log_request(
             db=db, api_key=api_key,
             prompt_hash=_sha256(body.prompt),
@@ -254,7 +279,7 @@ async def chat(
             tokens_remaining=bal if settings.BILLING_ENABLED else None,
         )
 
-    # ── 5. Call LLM (with redacted prompt if applicable) ─────────────────
+    # ── 10. Call LLM (with redacted prompt if applicable) ─────────────────
     try:
         llm_resp = await call_llm(
             prompt=prompt_for_llm,
@@ -279,9 +304,11 @@ async def chat(
             status="error", latency_ms=latency_ms,
             input_tokens=0, output_tokens=0,
         )
-        raise HTTPException(status_code=502, detail=f"LLM backend error: {e}")
+        raise HTTPException(status_code=502, detail=_t("chat.llm_error"))
 
-    # ── 6. Output guardrail ───────────────────────────────────────────────
+    # ── 11. Output guardrail ───────────────────────────────────────────────
+    if redaction_result and redaction_result.mapping:
+        llm_resp.text = redactor.restore(llm_resp.text, redaction_result.mapping)
     out_guard = OutputGuardrail(output_rules, compliance_rules, topic_policy)
     out_result = out_guard.check(llm_resp.text)
 
@@ -313,8 +340,20 @@ async def chat(
 
     used = llm_resp.input_tokens + llm_resp.output_tokens
     await deduct_tokens(db, wallet, used)
+    record_daily_spend(api_key.owner_id, used)
     await db.commit()
+    await upsert_conversation(
+        session_id=api_key.id,
+        prompt=body.prompt,
+        response=llm_resp.text if out_result.allowed else None,
+        status=status_str,
+        metadata={"org_id": api_key.org_id, "backend": llm_resp.backend, "model": llm_resp.model},
+    )
     if not out_result.allowed:
+        capture_event(api_key.owner_id, "guardrail_blocked", {
+            "direction": "output", "reason": out_result.reason_code,
+            "backend": llm_resp.backend, "model": llm_resp.model,
+        })
         webhook_url = compliance_rules.get("webhook_url")
         if webhook_url:
             asyncio.create_task(_fire_webhook(webhook_url, {
@@ -377,7 +416,7 @@ async def chat_stream(
     # ── Scope enforcement ─────────────────────────────────────────────────
     key_scopes = list(api_key.scopes) if api_key.scopes else ["chat"]
     if "chat" not in key_scopes:
-        raise HTTPException(status_code=403, detail="API key does not have the 'chat' scope")
+        raise HTTPException(status_code=403, detail=_t("api_key.no_chat_scope"))
 
     # ── Load policy ───────────────────────────────────────────────────────
     policy: OrgPolicy | None = None
@@ -399,25 +438,29 @@ async def chat_stream(
     if blocked_ips:
         req_ip = client_ip(request)
         if req_ip in blocked_ips:
-            raise HTTPException(status_code=403, detail="IP address is blocked by policy")
+            raise HTTPException(status_code=403, detail=_t("chat.ip_blocked"))
 
     pii_mode   = input_rules.get("pii_redaction_mode", "block")
     max_tokens = _effective_max_tokens(body)
     enforce_demo_payload_limits(body.prompt, max_tokens)
 
+    # ── Prompt dedup ─────────────────────────────────────────────────────────
+    await check_prompt_dedup(api_key.owner_id, _sha256(body.prompt))
+
+    # ── Daily budget ─────────────────────────────────────────────────────────
+    stream_estimated = estimate_request_tokens(body.prompt, max_tokens)
+    check_daily_budget(api_key.owner_id, stream_estimated)
+
     # ── Rate limit (before stream starts so we can return HTTP 429) ───────
     try:
-        await check_rate_limit(api_key.id, rpm, rpd)
+        stream_rate_info = await check_rate_limit(api_key.id, rpm, rpd)
         await check_rate_limit(f"user:{api_key.owner_id}", rpm, rpd)
         await enforce_demo_rate_limits(api_key.id, client_ip(request))
     except HTTPException:
         raise
 
     # ── Token balance ─────────────────────────────────────────────────────
-    wallet = await require_balance(
-        db, api_key.owner_id,
-        estimate_request_tokens(body.prompt, max_tokens),
-    )
+    wallet = await require_balance(db, api_key.owner_id, stream_estimated)
 
     # ── PII redaction ─────────────────────────────────────────────────────
     redaction_result = None
@@ -439,118 +482,147 @@ async def chat_stream(
         return f"data: {json_lib.dumps(payload)}\n\n"
 
     async def generate():
-        # Input blocked — send one SSE event and close
-        if not in_result.allowed:
-            latency_ms = int((time.monotonic() - start) * 1000)
-            await _log_request(
-                db=db, api_key=api_key,
-                prompt_hash=_sha256(body.prompt),
-                prompt_preview=_safe_preview(body.prompt, pii_found),
-                full_prompt=body.prompt if compliance_rules.get("full_prompt_logging") else None,
-                model="—", backend="—",
-                input_passed=False, input_block_reason=in_result.reason,
-                output_passed=None, output_block_reason=None,
-                fired_rule=in_result.reason_code,
-                status="input_blocked", latency_ms=latency_ms,
-                input_tokens=0, output_tokens=0,
+        sessionmaker = get_sessionmaker()
+        async with sessionmaker() as stream_db:
+            from sqlalchemy import select
+            from app.models import TokenWallet
+            stream_wallet = await stream_db.execute(
+                select(TokenWallet).where(TokenWallet.user_id == api_key.owner_id)
             )
-            await db.commit()
-            webhook_url = compliance_rules.get("webhook_url")
-            if webhook_url:
-                asyncio.create_task(_fire_webhook(webhook_url, {
-                    "event": "guardrail_fired", "status": "input_blocked",
-                    "fired_rule": in_result.reason_code, "reason": in_result.reason or "",
-                    "prompt_preview": _safe_preview(body.prompt, pii_found),
-                    "latency_ms": latency_ms,
-                }))
-            yield _sse({
-                "type": "blocked", "request_id": request_id,
-                "status": "input_blocked",
-                "input_guard": {
-                    "passed": False, "check": in_result.check,
-                    "reason": in_result.reason or "",
-                    "reason_code": in_result.reason_code,
-                    "risk_score": in_result.risk_score,
-                },
-            })
-            return
+            stream_wallet = stream_wallet.scalar_one()
+            try:
+                if not in_result.allowed:
+                    latency_ms = int((time.monotonic() - start) * 1000)
+                    capture_event(api_key.owner_id, "guardrail_blocked", {
+                        "direction": "input", "reason": in_result.reason_code,
+                        "backend": body.backend or settings.DEFAULT_LLM_BACKEND,
+                        "model": body.model or org_model or settings.DEFAULT_MODEL,
+                    })
+                    await _log_request(
+                        db=stream_db, api_key=api_key,
+                        prompt_hash=_sha256(body.prompt),
+                        prompt_preview=_safe_preview(body.prompt, pii_found),
+                        full_prompt=body.prompt if compliance_rules.get("full_prompt_logging") else None,
+                        model="—", backend="—",
+                        input_passed=False, input_block_reason=in_result.reason,
+                        output_passed=None, output_block_reason=None,
+                        fired_rule=in_result.reason_code,
+                        status="input_blocked", latency_ms=latency_ms,
+                        input_tokens=0, output_tokens=0,
+                    )
+                    await stream_db.commit()
+                    webhook_url = compliance_rules.get("webhook_url")
+                    if webhook_url:
+                        asyncio.create_task(_fire_webhook(webhook_url, {
+                            "event": "guardrail_fired", "status": "input_blocked",
+                            "fired_rule": in_result.reason_code, "reason": in_result.reason or "",
+                            "prompt_preview": _safe_preview(body.prompt, pii_found),
+                            "latency_ms": latency_ms,
+                        }))
+                    yield _sse({
+                        "type": "blocked", "request_id": request_id,
+                        "status": "input_blocked",
+                        "input_guard": {
+                            "passed": False, "check": in_result.check,
+                            "reason": in_result.reason or "",
+                            "reason_code": in_result.reason_code,
+                            "risk_score": in_result.risk_score,
+                        },
+                    })
+                    return
 
-        # ── Stream from LLM ───────────────────────────────────────────────
-        accumulated: list[str] = []
-        input_tokens = output_tokens = 0
-        llm_model   = body.model   or org_model   or settings.DEFAULT_MODEL
-        llm_backend = body.backend or org_backend or settings.DEFAULT_LLM_BACKEND
+                # ── Stream from LLM ───────────────────────────────────────────────
+                accumulated: list[str] = []
+                input_tokens = output_tokens = 0
+                llm_model   = body.model   or org_model   or settings.DEFAULT_MODEL
+                llm_backend = body.backend or org_backend or settings.DEFAULT_LLM_BACKEND
 
-        try:
-            async for chunk in stream_llm(
-                prompt=prompt_for_llm, temperature=body.temperature,
-                max_tokens=max_tokens,
-                request_backend=body.backend, org_backend=org_backend,
-                request_model=body.model,    org_model=org_model,
-            ):
-                if chunk.done:
-                    input_tokens = chunk.input_tokens
-                    output_tokens = chunk.output_tokens
-                    llm_model   = chunk.model
-                    llm_backend = chunk.backend
-                else:
-                    accumulated.append(chunk.token)
-                    yield _sse({"type": "token", "content": chunk.token})
-        except Exception as e:
-            latency_ms = int((time.monotonic() - start) * 1000)
-            await _log_request(
-                db=db, api_key=api_key,
-                prompt_hash=_sha256(body.prompt),
-                prompt_preview=_safe_preview(body.prompt, False),
-                full_prompt=body.prompt if compliance_rules.get("full_prompt_logging") else None,
-                model=llm_model, backend=llm_backend,
-                input_passed=True, input_block_reason=None,
-                output_passed=None, output_block_reason=None,
-                fired_rule=None, status="error", latency_ms=latency_ms,
-                input_tokens=0, output_tokens=0,
-            )
-            await db.commit()
-            yield _sse({"type": "error", "status": "error", "detail": str(e)})
-            return
+                try:
+                    async for chunk in stream_llm(
+                        prompt=prompt_for_llm, temperature=body.temperature,
+                        max_tokens=max_tokens,
+                        request_backend=body.backend, org_backend=org_backend,
+                        request_model=body.model,    org_model=org_model,
+                    ):
+                        if chunk.done:
+                            input_tokens = chunk.input_tokens
+                            output_tokens = chunk.output_tokens
+                            llm_model   = chunk.model
+                            llm_backend = chunk.backend
+                        else:
+                            accumulated.append(chunk.token)
+                            yield _sse({"type": "token", "content": chunk.token})
+                except Exception as e:
+                    latency_ms = int((time.monotonic() - start) * 1000)
+                    await _log_request(
+                        db=stream_db, api_key=api_key,
+                        prompt_hash=_sha256(body.prompt),
+                        prompt_preview=_safe_preview(body.prompt, False),
+                        full_prompt=body.prompt if compliance_rules.get("full_prompt_logging") else None,
+                        model=llm_model, backend=llm_backend,
+                        input_passed=True, input_block_reason=None,
+                        output_passed=None, output_block_reason=None,
+                        fired_rule=None, status="error", latency_ms=latency_ms,
+                        input_tokens=0, output_tokens=0,
+                    )
+                    await stream_db.commit()
+                    yield _sse({"type": "error", "status": "error", "detail": _t("chat.llm_error")})
+                    return
 
-        # ── Output guardrail (on full accumulated text) ───────────────────
-        full_response = "".join(accumulated)
-        out_guard  = OutputGuardrail(output_rules, compliance_rules, topic_policy)
-        out_result = out_guard.check(full_response)
+                # ── Output guardrail (on full accumulated text) ───────────────────
+                full_response = "".join(accumulated)
+                if redaction_result and redaction_result.mapping:
+                    full_response = redactor.restore(full_response, redaction_result.mapping)
+                out_guard  = OutputGuardrail(output_rules, compliance_rules, topic_policy)
+                out_result = out_guard.check(full_response)
 
-        latency_ms = int((time.monotonic() - start) * 1000)
-        status_str = "delivered" if out_result.allowed else "output_blocked"
+                latency_ms = int((time.monotonic() - start) * 1000)
+                status_str = "delivered" if out_result.allowed else "output_blocked"
 
-        fired_rule = None
-        if not out_result.allowed:
-            fired_rule = out_result.reason_code
-        elif out_result.warned or in_result.warned:
-            fired_rule = out_result.reason_code if out_result.warned else in_result.reason_code
+                fired_rule = None
+                if not out_result.allowed:
+                    fired_rule = out_result.reason_code
+                elif out_result.warned or in_result.warned:
+                    fired_rule = out_result.reason_code if out_result.warned else in_result.reason_code
 
-        await _log_request(
-            db=db, api_key=api_key,
-            prompt_hash=_sha256(body.prompt),
-            prompt_preview=_safe_preview(body.prompt, pii_found),
-            full_prompt=body.prompt if compliance_rules.get("full_prompt_logging") else None,
-            model=llm_model, backend=llm_backend,
-            input_passed=True, input_block_reason=None,
-            output_passed=out_result.allowed,
-            output_block_reason=None if out_result.allowed else out_result.reason,
-            fired_rule=fired_rule, status=status_str, latency_ms=latency_ms,
-            input_tokens=input_tokens, output_tokens=output_tokens,
-        )
-        used = input_tokens + output_tokens
-        await deduct_tokens(db, wallet, used)
-        await db.commit()
-        if not out_result.allowed:
-            webhook_url = compliance_rules.get("webhook_url")
-            if webhook_url:
-                asyncio.create_task(_fire_webhook(webhook_url, {
-                    "event": "guardrail_fired", "status": "output_blocked",
-                    "fired_rule": out_result.reason_code, "reason": out_result.reason or "",
-                    "prompt_preview": _safe_preview(body.prompt, pii_found),
-                    "latency_ms": latency_ms,
-                }))
+                await _log_request(
+                    db=stream_db, api_key=api_key,
+                    prompt_hash=_sha256(body.prompt),
+                    prompt_preview=_safe_preview(body.prompt, pii_found),
+                    full_prompt=body.prompt if compliance_rules.get("full_prompt_logging") else None,
+                    model=llm_model, backend=llm_backend,
+                    input_passed=True, input_block_reason=None,
+                    output_passed=out_result.allowed,
+                    output_block_reason=None if out_result.allowed else out_result.reason,
+                    fired_rule=fired_rule, status=status_str, latency_ms=latency_ms,
+                    input_tokens=input_tokens, output_tokens=output_tokens,
+                )
+                used = input_tokens + output_tokens
+                await deduct_tokens(stream_db, stream_wallet, used)
+                record_daily_spend(api_key.owner_id, used)
+                await stream_db.commit()
+                await upsert_conversation(
+                    session_id=api_key.id,
+                    prompt=body.prompt,
+                    response=full_response if out_result.allowed else None,
+                    status=status_str,
+                    metadata={"org_id": api_key.org_id, "backend": llm_backend, "model": llm_model},
+                )
+                if not out_result.allowed:
+                    capture_event(api_key.owner_id, "guardrail_blocked", {
+                        "direction": "output", "reason": out_result.reason_code,
+                        "backend": llm_backend, "model": llm_model,
+                    })
+                    webhook_url = compliance_rules.get("webhook_url")
+                    if webhook_url:
+                        asyncio.create_task(_fire_webhook(webhook_url, {
+                            "event": "guardrail_fired", "status": "output_blocked",
+                            "fired_rule": out_result.reason_code, "reason": out_result.reason or "",
+                            "prompt_preview": _safe_preview(body.prompt, pii_found),
+                            "latency_ms": latency_ms,
+                        }))
+            finally:
+                await stream_db.close()
 
         if pii_found:
             in_reason = f"PII redacted: {', '.join(redaction_result.pii_types)} ({redaction_result.pii_count} items)"
@@ -579,10 +651,20 @@ async def chat_stream(
             },
         })
 
+    stream_headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    }
+    if stream_rate_info is not None:
+        stream_headers["X-RateLimit-Limit"] = str(rpm)
+        stream_headers["X-RateLimit-Remaining"] = str(stream_rate_info["rpm_remaining"])
+        if rpd < 1_000_000:
+            stream_headers["X-RateLimit-Limit-Day"] = str(rpd)
+            stream_headers["X-RateLimit-Remaining-Day"] = str(stream_rate_info.get("rpd_remaining", rpd))
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers=stream_headers,
     )
 
 

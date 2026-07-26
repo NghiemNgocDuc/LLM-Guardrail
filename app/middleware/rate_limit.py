@@ -5,19 +5,56 @@ from fastapi import HTTPException, status
 from redis.asyncio import Redis
 
 from app.config import get_settings
+from app.i18n import _t
 
 settings = get_settings()
 
 _minute_windows: dict[str, deque] = defaultdict(deque)
 _day_windows: dict[str, deque] = defaultdict(deque)
-_redis: Redis | None = (
-    Redis.from_url(settings.RATE_LIMIT_REDIS_URL, decode_responses=True)
-    if settings.RATE_LIMIT_REDIS_URL
-    else None
-)
+_redis: Redis | None = None
+_rate_limit_sha: str | None = None
 
 _MINUTE = 60.0
 _DAY = 86_400.0
+
+# Lua script for atomic rate limiting: cleanup → check → record in one round-trip.
+# Returns {minute_count_before_add, day_count_before_add} — caller checks limits after.
+_RATE_LIMIT_LUA = """
+local minute_key = KEYS[1]
+local day_key    = KEYS[2]
+local now        = tonumber(ARGV[1])
+local member     = ARGV[2]
+
+redis.call('ZREMRANGEBYSCORE', minute_key, 0, now - 60)
+redis.call('ZREMRANGEBYSCORE', day_key, 0, now - 86400)
+
+local minute_count = redis.call('ZCARD', minute_key)
+local day_count    = redis.call('ZCARD', day_key)
+
+redis.call('ZADD', minute_key, now, member)
+redis.call('EXPIRE', minute_key, 65)
+redis.call('ZADD', day_key, now, member)
+redis.call('EXPIRE', day_key, 86460)
+
+return {minute_count, day_count}
+"""
+
+
+async def _get_redis() -> Redis | None:
+    global _redis
+    if _redis is None and settings.RATE_LIMIT_REDIS_URL:
+        _redis = await Redis.from_url(
+            settings.RATE_LIMIT_REDIS_URL,
+            decode_responses=True,
+        )
+    return _redis
+
+
+async def close_rate_limit_redis() -> None:
+    global _redis
+    if _redis is not None:
+        await _redis.aclose()
+        _redis = None
 
 
 async def check_rate_limit(api_key_id: str, rpm: int, rpd: int) -> dict:
@@ -25,8 +62,9 @@ async def check_rate_limit(api_key_id: str, rpm: int, rpd: int) -> dict:
     Raises HTTP 429 if either limit is exceeded.
     Redis is used when configured so multiple API workers share limits.
     """
-    if _redis:
-        return await _check_redis_rate_limit(api_key_id, rpm, rpd)
+    redis = await _get_redis()
+    if redis:
+        return await _check_redis_rate_limit(redis, api_key_id, rpm, rpd)
     return _check_memory_rate_limit(api_key_id, rpm, rpd)
 
 
@@ -55,31 +93,22 @@ def _check_memory_rate_limit(api_key_id: str, rpm: int, rpd: int) -> dict:
     }
 
 
-async def _check_redis_rate_limit(api_key_id: str, rpm: int, rpd: int) -> dict:
-    assert _redis is not None
-
+async def _check_redis_rate_limit(redis: Redis, api_key_id: str, rpm: int, rpd: int) -> dict:
+    global _rate_limit_sha
     now = time.time()
     member = str(now)
     minute_key = f"rate:{api_key_id}:minute"
     day_key = f"rate:{api_key_id}:day"
 
-    pipe = _redis.pipeline(transaction=True)
-    pipe.zremrangebyscore(minute_key, 0, now - _MINUTE)
-    pipe.zremrangebyscore(day_key, 0, now - _DAY)
-    pipe.zcard(minute_key)
-    pipe.zcard(day_key)
-    _, _, minute_count, day_count = await pipe.execute()
+    if _rate_limit_sha is None:
+        _rate_limit_sha = await redis.script_load(_RATE_LIMIT_LUA)
 
+    minute_count, day_count = await redis.evalsha(
+        _rate_limit_sha, 2, minute_key, day_key, str(now), member
+    )
     minute_count = int(minute_count)
     day_count = int(day_count)
     _raise_if_limited(minute_count, day_count, rpm, rpd)
-
-    pipe = _redis.pipeline(transaction=True)
-    pipe.zadd(minute_key, {member: now})
-    pipe.expire(minute_key, int(_MINUTE) + 5)
-    pipe.zadd(day_key, {member: now})
-    pipe.expire(day_key, int(_DAY) + 60)
-    await pipe.execute()
 
     return {
         "rpm_remaining": rpm - minute_count - 1,
@@ -91,12 +120,12 @@ def _raise_if_limited(minute_count: int, day_count: int, rpm: int, rpd: int) -> 
     if minute_count >= rpm:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Rate limit exceeded: {rpm} requests/minute",
+            detail=_t("rate_limit.exceeded_per_minute"),
             headers={"Retry-After": "60"},
         )
     if day_count >= rpd:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Daily limit exceeded: {rpd} requests/day",
+            detail=_t("rate_limit.exceeded_per_day"),
             headers={"Retry-After": "86400"},
         )

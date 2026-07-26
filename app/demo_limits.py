@@ -1,6 +1,7 @@
 from fastapi import HTTPException, Request, status
 
 from app.config import get_settings
+from app.i18n import _t
 from app.middleware.rate_limit import check_rate_limit
 
 settings = get_settings()
@@ -20,13 +21,13 @@ def enforce_demo_payload_limits(prompt: str, max_tokens: int) -> None:
     if len(prompt) > settings.DEMO_MAX_PROMPT_CHARS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Demo limit exceeded: prompt must be {settings.DEMO_MAX_PROMPT_CHARS} characters or fewer.",
+            detail=_t("demo.prompt_too_long"),
         )
 
     if max_tokens > settings.DEMO_MAX_OUTPUT_TOKENS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Demo limit exceeded: max_tokens must be {settings.DEMO_MAX_OUTPUT_TOKENS} or fewer.",
+            detail=_t("demo.max_tokens_exceeded"),
         )
 
 

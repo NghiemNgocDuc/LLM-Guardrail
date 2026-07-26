@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import CurrentUser
+from app.i18n import _t
 from app.schemas import (
     SkillFindingOut,
     SkillRejectionCreateIn,
@@ -109,7 +110,7 @@ async def create_rejection_from_content(
     if result.safe:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No rejected findings to add. The content scanned as safe.",
+            detail=_t("skills.no_findings"),
         )
 
     row = await record_rejection(

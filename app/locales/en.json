@@ -1,0 +1,69 @@
+{
+  "auth.token_missing": "Authentication required",
+  "auth.token_expired": "Invalid or expired token",
+  "auth.invalid_token_type": "Invalid token type",
+  "auth.user_not_found": "User not found or inactive",
+  "auth.webhook_signature_invalid": "Invalid webhook signature",
+  "auth.webhook_invalid_json": "Invalid JSON",
+  "auth.clerk_missing_kid": "Missing kid in JWT header",
+  "auth.clerk_invalid_jwt": "Invalid Clerk JWT",
+  "auth.clerk_jwks_not_configured": "CLERK_JWKS_URL not configured",
+  "auth.clerk_no_matching_key": "No matching JWK key found",
+  "auth.clerk_missing_sub": "Invalid Clerk token: missing sub",
+  "auth.clerk_not_synced": "Clerk user not synced to local database",
+
+  "api_key.invalid_format": "Expected a gateway API key (starts with grg_). Provider keys such as gsk_ or sk- cannot be used as X-Api-Key.",
+  "api_key.incomplete": "API key looks incomplete. Use the full grg_ key shown once when you created the key — not the short prefix from the API Keys table.",
+  "api_key.expired": "API key expired",
+  "api_key.invalid": "Invalid API key. Create a new key in the dashboard (API Keys), copy the full grg_ value, and ensure you are calling the same deployment where the key was created.",
+  "api_key.none_active": "No active gateway API key. Create one under API Keys.",
+  "api_key.missing_header": "X-Api-Key header required (gateway key starting with grg_)",
+  "api_key.not_found": "API key not found",
+  "api_key.no_chat_scope": "API key does not have the 'chat' scope",
+
+  "rate_limit.exceeded_per_minute": "Rate limit exceeded. Please wait and try again.",
+  "rate_limit.exceeded_per_day": "Daily limit exceeded. Try again tomorrow.",
+  "rate_limit.global": "Too many requests — slow down.",
+
+  "admin.access_required": "Admin access required",
+  "admin.email_exists": "Email already registered",
+  "admin.user_not_found": "User not found",
+  "admin.cannot_remove_own_admin": "You cannot remove your own admin role",
+  "admin.cannot_disable_self": "You cannot disable your own account",
+  "admin.cannot_remove_self": "You cannot remove yourself",
+  "admin.action_invalid": "action must be enable | disable | remove",
+
+  "org.not_found": "No organisation associated with this account",
+  "org.missing": "Organisation not found",
+  "org.name_taken": "Organisation name already taken",
+  "org.no_org": "No organisation",
+
+  "policy.not_found": "Policy not found",
+  "policy.no_org": "No organization",
+
+  "billing.disabled": "Billing is disabled on this deployment.",
+  "billing.unknown_plan": "Unknown plan",
+  "billing.stripe_not_configured": "Stripe is not configured. Set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET.",
+  "billing.dev_only": "Only available in development.",
+  "billing.payments_not_configured": "Payments are not configured. Set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET.",
+  "billing.missing_signature": "Missing Stripe-Signature header",
+  "billing.webhook_signature_invalid": "Invalid webhook signature",
+
+  "chat.ip_blocked": "IP address is blocked by policy",
+  "chat.llm_error": "LLM backend error. Please try again later.",
+
+  "demo.prompt_too_long": "Demo limit exceeded: prompt is too long.",
+  "demo.max_tokens_exceeded": "Demo limit exceeded: max_tokens is too high.",
+
+  "skills.no_findings": "No rejected findings to add. The content scanned as safe.",
+  "skills.action_invalid": "Invalid action. Allowed: approve, reject, flag.",
+  "skills.not_found": "Rejected access record not found",
+  "skills.already_resolved": "Record is already resolved.",
+
+  "vector.admin_required": "Admin access required",
+  "vector.policy_not_found": "Policy not found",
+
+  "wallet.insufficient_balance": "Insufficient token balance. Please purchase more tokens.",
+  "wallet.daily_budget_exceeded": "Daily token budget exceeded. Try again tomorrow.",
+  "wallet.prompt_rejected": "Duplicate request rejected. Please wait before sending the same prompt again."
+}

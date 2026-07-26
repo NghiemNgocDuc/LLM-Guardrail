@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import CurrentUser, hash_password
+from app.i18n import _t
 from app.models import APIKey, TokenWallet, User
 from app.schemas import AdminInviteUser, AdminUserStats, AdminUserUpdate, APIKeyOut, BulkUserAction, UserOut
 from app.config import get_settings
@@ -18,7 +19,7 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 
 def require_org_admin(user: User) -> None:
     if not user.is_admin or not user.org_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization admin access required")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_t("admin.access_required"))
 
 
 @router.post("/users/invite", response_model=UserOut)
@@ -31,7 +32,7 @@ async def invite_user(
 
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_t("admin.email_exists"))
 
     temp_password = secrets.token_urlsafe(16)
     user = User(
@@ -83,12 +84,12 @@ async def update_org_user(
     require_org_admin(current_user)
     user = await db.get(User, user_id)
     if not user or user.org_id != current_user.org_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_t("admin.user_not_found"))
 
     if user.id == current_user.id and body.is_admin is False:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot remove your own admin role")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_t("admin.cannot_remove_own_admin"))
     if user.id == current_user.id and body.is_active is False:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot disable your own account")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_t("admin.cannot_disable_self"))
 
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(user, field, value)
@@ -105,10 +106,10 @@ async def update_org_user(
 async def remove_org_user(user_id: str, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
     require_org_admin(current_user)
     if user_id == current_user.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot remove yourself")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_t("admin.cannot_remove_self"))
     user = await db.get(User, user_id)
     if not user or user.org_id != current_user.org_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_t("admin.user_not_found"))
     user.org_id = None
     user.is_admin = False
     await db.flush()
@@ -158,7 +159,7 @@ async def list_org_api_keys(current_user: CurrentUser, db: AsyncSession = Depend
 async def bulk_user_action(body: BulkUserAction, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
     require_org_admin(current_user)
     if body.action not in ("enable", "disable", "remove"):
-        raise HTTPException(status_code=400, detail="action must be enable | disable | remove")
+        raise HTTPException(status_code=400, detail=_t("admin.action_invalid"))
     for user_id in body.user_ids:
         if user_id == current_user.id:
             continue
@@ -180,6 +181,6 @@ async def revoke_org_api_key(key_id: str, current_user: CurrentUser, db: AsyncSe
     require_org_admin(current_user)
     key = await db.get(APIKey, key_id)
     if not key or key.org_id != current_user.org_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_t("api_key.not_found"))
     key.is_active = False
     await db.flush()

@@ -3,19 +3,79 @@ Per-user token balance for gateway LLM usage (input + output tokens).
 """
 from __future__ import annotations
 
+import asyncio
+import time
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import asyncio
-
 from app.config import get_settings
+from app.i18n import _t
 from app.models import TokenPurchase, TokenWallet, User
 from app.services.email import send_low_balance_email
 
 settings = get_settings()
+
+# ── Daily spend budget (per-user, in-memory, resets on midnight UTC) ────
+# Keyed by user_id, value is cumulative tokens spent today.
+_daily_spend: dict[str, int] = defaultdict(int)
+_last_daily_reset: float = 0.0
+
+
+def _reset_daily_if_needed() -> None:
+    global _last_daily_reset
+    now = time.time()
+    # Reset every 24 h (crude — a production deploy would use Redis + TTL)
+    if now - _last_daily_reset > 86400:
+        _daily_spend.clear()
+        _last_daily_reset = now
+
+
+def check_daily_budget(user_id: str, needed: int) -> None:
+    """Raise 429 if adding *needed* would exceed the daily budget."""
+    budget = settings.DAILY_TOKEN_BUDGET
+    if budget <= 0:
+        return
+    _reset_daily_if_needed()
+    current = _daily_spend.get(user_id, 0)
+    if current + needed > budget:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=_t("wallet.daily_budget_exceeded"),
+        )
+
+
+def record_daily_spend(user_id: str, amount: int) -> None:
+    budget = settings.DAILY_TOKEN_BUDGET
+    if budget <= 0 or amount <= 0:
+        return
+    _daily_spend[user_id] += amount
+
+
+# ── Prompt deduplication (same prompt = likely a bot) ───────────────────
+# user_id -> {sha256: timestamp}
+_recent_prompts: dict[str, dict[str, float]] = defaultdict(dict)
+_DEDUP_WINDOW_S = 300  # 5 minutes
+
+
+async def check_prompt_dedup(user_id: str, prompt_hash: str) -> None:
+    """Reject if this exact prompt was sent within the dedup window."""
+    now = time.monotonic()
+    # Opportunistic cleanup of stale entries
+    stale = [h for h, ts in _recent_prompts.get(user_id, {}).items() if now - ts > _DEDUP_WINDOW_S]
+    for h in stale:
+        _recent_prompts[user_id].pop(h, None)
+
+    if prompt_hash in _recent_prompts.get(user_id, {}):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=_t("wallet.prompt_rejected"),
+        )
+
+    _recent_prompts[user_id][prompt_hash] = now
 
 
 def unlimited_email_set() -> set[str]:
@@ -67,8 +127,6 @@ async def require_balance(db: AsyncSession, user_id: str, needed: int) -> TokenW
             detail={
                 "code": "insufficient_tokens",
                 "message": "Token balance too low. Purchase a plan under Billing.",
-                "balance_tokens": wallet.balance_tokens,
-                "needed_tokens": needed,
             },
         )
     return wallet

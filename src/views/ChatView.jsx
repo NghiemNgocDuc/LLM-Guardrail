@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { api, getToken, setTokens, clearTokens, getGatewayKey, setGatewayKey, maskGatewayKey, gatewayKeyInputProps, formatApiError, PII_PATTERNS, INJECTION_KW, JAILBREAK_KW } from "../utils/api";
+import { trackEvent } from "../utils/analytics";
 import { s } from "../styles/theme";
 function clientGuardrail(prompt) {
   for (const p of PII_PATTERNS) {
@@ -157,10 +158,12 @@ export default function ChatView() {
       const headers = {};
       if (gatewayKey) headers["X-Api-Key"] = gatewayKey;
       const data = await api("/chat", { method: "POST", headers, body: { prompt: userPrompt } });
+      trackEvent("chat_sent", { status: data.status, backend: data.backend, model: data.model, latency_ms: data.latency_ms });
       const msg = { prompt: userPrompt, result: data, ts: Date.now() };
       const next = [...messages, msg];
       setMessages(next); saveHistory(next);
     } catch (e) {
+      trackEvent("chat_failed", { error: e.message });
       const msg = { prompt: userPrompt, result: { error: e.message }, ts: Date.now() };
       const next = [...messages, msg];
       setMessages(next); saveHistory(next);

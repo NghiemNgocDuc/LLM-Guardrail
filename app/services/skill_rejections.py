@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import SkillAccessRejection, User
+from app.i18n import _t
 from app.services.skill_user_overrides import load_user_overrides, save_user_overrides
 from guardrails.skill import SkillFinding
 from guardrails.skill_overrides import SkillOverrides, finding_key
@@ -106,14 +107,14 @@ async def resolve_rejection(
     note: str | None = None,
 ) -> SkillAccessRejection:
     if action not in RESOLVE_ACTIONS:
-        raise HTTPException(status_code=400, detail=f"action must be one of: {', '.join(RESOLVE_ACTIONS)}")
+        raise HTTPException(status_code=400, detail=_t("skills.action_invalid"))
 
     row = await db.get(SkillAccessRejection, rejection_id)
     if not row or row.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Rejected access record not found")
+        raise HTTPException(status_code=404, detail=_t("skills.not_found"))
 
     if row.status != "pending":
-        raise HTTPException(status_code=400, detail=f"Already resolved as {row.status}")
+        raise HTTPException(status_code=400, detail=_t("skills.already_resolved"))
 
     findings = findings_from_json(row.findings)
     overrides = await load_user_overrides(db, user.id)

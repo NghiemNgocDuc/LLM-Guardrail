@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { api, getToken, setTokens, clearTokens, getGatewayKey, setGatewayKey, maskGatewayKey, gatewayKeyInputProps, formatApiError } from "../utils/api";
+import { trackEvent } from "../utils/analytics";
 import { s } from "../styles/theme";
 function scopeStyle(label) {
   const found = DEFAULT_SCOPE_OPTIONS.find((o) => o.label === label);
@@ -187,6 +188,7 @@ export default function ApiKeysView() {
     setError(""); setLoading(true);
     try {
       const data = await api("/api-keys", { method: "POST", body: { name: newName.trim() } });
+      trackEvent("api_key_created", { name: newName.trim() });
       setRawKey(data.raw_key);
       setNewName("");
       load();
@@ -198,6 +200,7 @@ export default function ApiKeysView() {
     if (!confirm("Revoke this key? This cannot be undone.")) return;
     try {
       await api("/api-keys/" + id, { method: "DELETE" });
+      trackEvent("api_key_revoked");
       load();
     } catch (e) { setError(e.message); }
   }

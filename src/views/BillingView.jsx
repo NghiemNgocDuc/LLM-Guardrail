@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { api, getToken, setTokens, clearTokens, getGatewayKey, setGatewayKey, maskGatewayKey, gatewayKeyInputProps, formatApiError } from "../utils/api";
+import { trackEvent } from "../utils/analytics";
 import { s } from "../styles/theme";
 export default function BillingView() {
   const [wallet, setWallet] = useState(null);
@@ -35,11 +36,13 @@ export default function BillingView() {
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     if (q.get("checkout") === "success") {
+      trackEvent("checkout_stripe_return", { status: "success" });
       setInfo("Payment received — tokens are being added to your wallet (refresh in a few seconds).");
       load();
       window.history.replaceState({}, "", window.location.pathname + "?view=billing");
     }
     if (q.get("checkout") === "cancel") {
+      trackEvent("checkout_stripe_return", { status: "cancel" });
       setInfo("Checkout cancelled.");
       window.history.replaceState({}, "", window.location.pathname + "?view=billing");
     }
@@ -51,13 +54,16 @@ export default function BillingView() {
     setInfo("");
     try {
       const data = await api("/billing/checkout", { method: "POST", body: { plan_slug: slug } });
+      trackEvent("checkout_started", { plan: slug });
       if (data.checkout_url) {
         window.location.href = data.checkout_url;
         return;
       }
       setInfo(data.message || "Tokens credited.");
+      trackEvent("checkout_completed", { plan: slug });
       load();
     } catch (e) {
+      trackEvent("checkout_failed", { plan: slug, error: e.message });
       setError(e.message);
     } finally {
       setBuying(null);

@@ -8,41 +8,13 @@ from pydantic import BaseModel, EmailStr, Field, model_validator
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 
-class SignupRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=8, max_length=128)
-    full_name: str = Field(min_length=1, max_length=120)
-    org_name: str | None = None      # if provided, creates an org and makes this user admin
-
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class EmailRequest(BaseModel):
-    email: EmailStr
-
-
-class VerifyEmailRequest(BaseModel):
-    token: str = Field(min_length=16, max_length=256)
-
-
-class ResetPasswordRequest(BaseModel):
-    token: str = Field(min_length=16, max_length=256)
-    new_password: str = Field(min_length=8, max_length=128)
-
-
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str = Field(min_length=8, max_length=128)
-
-
 class UpdateProfileRequest(BaseModel):
+    model_config = {"extra": "forbid"}
     full_name: str | None = Field(default=None, min_length=1, max_length=120)
 
 
 class BulkUserAction(BaseModel):
+    model_config = {"extra": "forbid"}
     action: str = Field(description="enable | disable | remove")
     user_ids: list[str] = Field(min_length=1)
 
@@ -64,19 +36,6 @@ class MessageResponse(BaseModel):
     message: str
 
 
-class SignupResponse(BaseModel):
-    message: str
-    email: str
-    verification_required: bool = True
-
-
-class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    expires_in: int                  # seconds
-
-
 class UserOut(BaseModel):
     id: str
     email: str
@@ -93,6 +52,7 @@ class UserOut(BaseModel):
 # ─── API Keys ─────────────────────────────────────────────────────────────────
 
 class APIKeyCreate(BaseModel):
+    model_config = {"extra": "forbid"}
     name: str = Field(min_length=1, max_length=80)
     expires_at: datetime | None = None
     scopes: list[str] = ["chat"]
@@ -119,11 +79,13 @@ class APIKeyCreated(APIKeyOut):
 
 
 class AdminInviteUser(BaseModel):
+    model_config = {"extra": "forbid"}
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=120)
     is_admin: bool = False
 
 class AdminUserUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
     is_active: bool | None = None
     is_admin: bool | None = None
 
@@ -141,6 +103,7 @@ class OrgOut(BaseModel):
 
 class PolicyUpdate(BaseModel):
     """Partial update — only send what you want to change."""
+    model_config = {"extra": "forbid"}
     input_rules:      dict[str, Any] | None = None
     output_rules:     dict[str, Any] | None = None
     topic_policy:     dict[str, Any] | None = None
@@ -198,6 +161,7 @@ class BillingPurchaseOut(BaseModel):
 
 
 class BillingCheckoutRequest(BaseModel):
+    model_config = {"extra": "forbid"}
     plan_slug: str = Field(min_length=1, max_length=32)
 
 
@@ -210,6 +174,7 @@ class BillingCheckoutResponse(BaseModel):
 # ─── Chat ─────────────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
+    model_config = {"extra": "forbid"}
     prompt: str = Field(min_length=1, max_length=32_000)
     model: str | None = None        # overrides org default if provided
     backend: str | None = None      # "openai" | "anthropic" | "gemini" | "ollama" | "groq"
@@ -240,12 +205,14 @@ class ChatResponse(BaseModel):
 # ─── Agent skill scan ─────────────────────────────────────────────────────────
 
 class SkillOverridesIn(BaseModel):
+    model_config = {"extra": "forbid"}
     session_allow_keys: list[str] = Field(default_factory=list)
     always_allow_keys: list[str] = Field(default_factory=list)
     always_allow_reason_codes: list[str] = Field(default_factory=list)
 
 
 class SkillScanRequest(BaseModel):
+    model_config = {"extra": "forbid"}
     content: str = Field(min_length=1, max_length=256_000)
     filename: str | None = Field(default=None, max_length=255)
     overrides: SkillOverridesIn | None = None
@@ -282,6 +249,7 @@ class SkillScanResponse(BaseModel):
 
 
 class SkillRejectionReportIn(BaseModel):
+    model_config = {"extra": "forbid"}
     filename: str | None = None
     source: str = Field(default="git_push", max_length=32)
     rejection_summary: str | None = None
@@ -290,6 +258,7 @@ class SkillRejectionReportIn(BaseModel):
 
 
 class SkillRejectionCreateIn(BaseModel):
+    model_config = {"extra": "forbid"}
     content: str = Field(min_length=1, max_length=256_000)
     filename: str | None = Field(default=None, max_length=255)
     source: str = Field(default="web_manual", max_length=32)
@@ -314,6 +283,7 @@ class SkillRejectionOut(BaseModel):
 
 
 class SkillRejectionResolveIn(BaseModel):
+    model_config = {"extra": "forbid"}
     action: str = Field(description="allow_once | allow_always | keep_rejected")
     note: str | None = Field(default=None, max_length=2000)
 

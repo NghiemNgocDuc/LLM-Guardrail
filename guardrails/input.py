@@ -56,6 +56,19 @@ class InputGuardrail:
                     )
                 return r
 
+        if self.policy.get("semantic_mode") in ("block", "warn"):
+            r = self._check_semantic(prompt)
+            if not r.allowed:
+                mode = self.policy.get("semantic_mode", "block")
+                if mode == "warn":
+                    return GuardrailResult(
+                        allowed=True, warned=True,
+                        check=r.check, reason=r.reason,
+                        reason_code=f"warned_{r.reason_code}",
+                        risk_score=r.risk_score,
+                    )
+                return r
+
         return GuardrailResult(
             allowed=True, check="All Input Checks",
             reason="Clean", reason_code="clean", risk_score=0.0,
@@ -205,3 +218,24 @@ class InputGuardrail:
                     risk_score=0.9,
                 )
         return GuardrailResult(allowed=True, check="Jailbreak Detection")
+
+    def _check_semantic(self, prompt: str) -> GuardrailResult:
+        try:
+            from app.services.vectorstore import find_similar_blocked
+            blocked = self.policy.get("semantic_blocked_texts", [])
+            if not blocked:
+                return GuardrailResult(allowed=True, check="Semantic Detection")
+            blocked_found, score, matched = find_similar_blocked(
+                blocked, prompt, threshold=self.policy.get("semantic_threshold", 0.82)
+            )
+            if blocked_found:
+                return GuardrailResult(
+                    allowed=False,
+                    check="Semantic Detection",
+                    reason=f"Semantically similar to blocked content (score={score:.2f})",
+                    reason_code="semantic_blocked",
+                    risk_score=score,
+                )
+            return GuardrailResult(allowed=True, check="Semantic Detection")
+        except Exception:
+            return GuardrailResult(allowed=True, check="Semantic Detection")

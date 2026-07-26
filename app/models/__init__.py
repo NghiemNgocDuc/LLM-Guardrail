@@ -78,6 +78,7 @@ class User(Base):
     __tablename__ = "users"
 
     id:             Mapped[str]  = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    clerk_id:       Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
     email:          Mapped[str]  = mapped_column(String(254), unique=True, index=True, nullable=False)
     hashed_password:Mapped[str]  = mapped_column(String(256), nullable=False)
     full_name:      Mapped[str]  = mapped_column(String(120), nullable=False)

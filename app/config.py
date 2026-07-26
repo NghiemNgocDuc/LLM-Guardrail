@@ -12,6 +12,21 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
+    SENTRY_DSN: str = ""
+
+    POSTHOG_API_KEY: str = ""
+    POSTHOG_HOST: str = "https://us.i.posthog.com"
+
+    PRODUCTBRIDGE_API_KEY: str = ""
+
+    PINECONE_API_KEY: str = ""
+    PINECONE_ENVIRONMENT: str = ""
+    PINECONE_INDEX_NAME: str = "guardrails"
+    # When False, conversation text is NOT sent to Pinecone (embedding vectors
+    # used for similarity search are generated on-the-fly without persistence).
+    # Set to True only if you explicitly need conversation history for RAG.
+    PINECONE_STORE_CONVERSATIONS: bool = False
+
     ALLOWED_ORIGINS: str = "http://localhost:8080,http://localhost:5173"
 
     DATABASE_URL: str = ""
@@ -32,12 +47,21 @@ class Settings(BaseSettings):
     EMAIL_VERIFICATION_EXPIRE_HOURS: int = 24
     PASSWORD_RESET_EXPIRE_HOURS: int = 1
 
+    # Clerk (replaces email/password auth — https://clerk.com)
+    CLERK_SECRET_KEY: str = ""           # Clerk API key (server-side operations)
+    CLERK_JWKS_URL: str = ""             # e.g. https://your-app.clerk.accounts.dev/.well-known/jwks.json
+    CLERK_JWT_KEY: str = ""              # PEM public key — if set, JWT verification is networkless (no JWKS fetch)
+    CLERK_WEBHOOK_SECRET: str = ""       # Svix signing secret for webhook verification
+
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_FROM: str = ""
     SMTP_USE_TLS: bool = True
+
+    RESEND_API_KEY: str = ""
+    RESEND_FROM: str = ""
 
     DEFAULT_RATE_LIMIT_RPM: int = 60
     DEFAULT_RATE_LIMIT_RPD: int = 1000
@@ -55,6 +79,9 @@ class Settings(BaseSettings):
     # Token billing (gateway usage = input + output tokens per /chat request)
     BILLING_ENABLED: bool = True
     FREE_SIGNUP_TOKENS: int = 10_000
+    # Hard daily token spend cap per user — prevents runaway cost from scrapers.
+    # 0 means unlimited (only the wallet balance applies).
+    DAILY_TOKEN_BUDGET: int = 0
     # Comma-separated emails with unlimited gateway tokens (no deduct, no 402)
     BILLING_UNLIMITED_EMAILS: str = "dnghiem@umass.edu"
 
@@ -87,8 +114,8 @@ class Settings(BaseSettings):
         return value
 
     @property
-    def smtp_configured(self) -> bool:
-        return bool(self.SMTP_HOST and self.SMTP_FROM)
+    def email_configured(self) -> bool:
+        return bool(self.CLERK_SECRET_KEY) or bool(self.RESEND_API_KEY) or bool(self.SMTP_HOST and self.SMTP_FROM)
 
     @model_validator(mode="after")
     def normalize_database_url(self) -> "Settings":
@@ -102,8 +129,9 @@ class Settings(BaseSettings):
         elif self.DATABASE_URL.startswith("postgresql://") and "+asyncpg" not in self.DATABASE_URL:
             self.DATABASE_URL = "postgresql+asyncpg://" + self.DATABASE_URL[len("postgresql://") :]
 
-        # Without SMTP, email verification cannot run — allow sign-in without blocking startup.
-        if not self.smtp_configured:
+        if self.CLERK_SECRET_KEY:
+            self.REQUIRE_EMAIL_VERIFICATION = False
+        if not self.email_configured:
             self.REQUIRE_EMAIL_VERIFICATION = False
 
         if self.GROQ_API_KEY:

@@ -1,15 +1,11 @@
-// CONFIG
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? "http://localhost:8000" : "");
 
-// API HELPERS
-export function getToken() { return localStorage.getItem("access_token"); }
 export function getGatewayKey() { return localStorage.getItem("gateway_api_key") || ""; }
 export function setGatewayKey(key) {
   if (key) localStorage.setItem("gateway_api_key", key);
   else localStorage.removeItem("gateway_api_key");
 }
 
-/** Mask gateway keys in UI — show a short prefix hint, hide the rest. */
 export function maskGatewayKey(key) {
   if (!key) return "";
   const visible = Math.min(8, key.length);
@@ -21,14 +17,6 @@ export const gatewayKeyInputProps = {
   autoComplete: "off",
   spellCheck: false,
 };
-export function setTokens(access, refresh) {
-  localStorage.setItem("access_token", access);
-  localStorage.setItem("refresh_token", refresh);
-}
-export function clearTokens() {
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("refresh_token");
-}
 
 export function formatApiError(detail) {
   if (!detail) return "Request failed";
@@ -40,8 +28,21 @@ export function formatApiError(detail) {
   return String(detail);
 }
 
+let _getClerkToken = null;
+export function setClerkTokenProvider(fn) {
+  _getClerkToken = fn;
+}
+
+export function getToken() { return null; }
+export function setTokens() {}
+export function clearTokens() {}
+
 export async function api(path, opts = {}) {
-  const token = getToken();
+  let token = null;
+  if (_getClerkToken) {
+    try { token = await _getClerkToken(); } catch { token = null; }
+  }
+
   const res = await fetch(BASE_URL + path, {
     ...opts,
     headers: {
@@ -59,7 +60,6 @@ export async function api(path, opts = {}) {
   return res.json();
 }
 
-// Input guardrail regex (mirrors backend)
 export const PII_PATTERNS = [
   { name: "credit_card", regex: /\b(?:\d[ -]?){13,16}\b/ },
   { name: "ssn",         regex: /\b\d{3}-\d{2}-\d{4}\b/ },
@@ -69,5 +69,3 @@ export const JAILBREAK_KW = ["DAN mode", "developer mode", "pretend you have no 
 
 export const USER_PROMPT = "What does AI Guardrails protect?";
 export const AI_RESPONSE = "I secure AI workflows end to end: live model traffic, Cursor skills, MCP instructions, and agent system prompts. I block leaked credentials, PII, destructive shell/SQL, and jailbreaks before they reach providers or coding agents — with one dashboard and git hooks you control from chat.";
-
-/** Type text character-by-character or word-by-word when `active` becomes true. */
