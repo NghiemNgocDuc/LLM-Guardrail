@@ -26,6 +26,7 @@ from app.middleware.i18n import I18nMiddleware
 from app.middleware.abuse_protection import AbuseProtectionMiddleware, close_abuse_protection
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.routers import admin, auth, api_keys, billing, chat, analytics, health, org, policy, skills, vector
+from app.mcp_server import get_mcp_app
 from sqlalchemy import text
 
 from app.services.vectorstore import init as init_vectorstore, shutdown as shutdown_vectorstore
@@ -140,6 +141,10 @@ app.include_router(billing.router)
 app.include_router(org.router)
 app.include_router(health.router)
 app.include_router(vector.router)
+
+# Mount MCP server on /mcp for SSE transport (connectable by MCP clients)
+mcp_app = get_mcp_app()
+app.mount("/mcp", mcp_app, name="mcp")
 
 
 @app.get("/health", tags=["Meta"])
