@@ -68,5 +68,18 @@
 
   "wallet.insufficient_balance": "Insufficient token balance. Please purchase more tokens.",
   "wallet.daily_budget_exceeded": "Daily token budget exceeded. Try again tomorrow.",
-  "wallet.prompt_rejected": "Duplicate request rejected. Please wait before sending the same prompt again."
+  "wallet.prompt_rejected": "Duplicate request rejected. Please wait before sending the same prompt again.",
+
+  "guardrail.clean": "Clean",
+  "guardrail.pii_detected": "PII detected: {name}",
+  "guardrail.secret_detected": "Secret detected: {name}",
+  "guardrail.prompt_injection": "Prompt injection: '{keyword}'",
+  "guardrail.jailbreak_attempt": "Jailbreak: '{pattern}'",
+  "guardrail.semantic_blocked": "Semantically similar to blocked content (score={score:.2f})",
+  "guardrail.secret_leakage": "Potential credential leakage detected",
+  "guardrail.schema_invalid_json": "Response is not valid JSON",
+  "guardrail.schema_missing_fields": "Missing fields: {missing}",
+  "guardrail.toxic_content": "Toxic content detected: '{term}'",
+  "guardrail.blocked_topic": "Blocked topic: '{topic}'",
+  "guardrail.medical_advice": "Medical advice detected"
 }

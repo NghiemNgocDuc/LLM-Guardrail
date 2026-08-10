@@ -23,6 +23,9 @@ httpx==0.28.1
 # YAML (policy file)
 pyyaml==6.0.2
 
+# At-rest encryption for full_prompt audit logs (ENCRYPTION_KEY)
+cryptography>=42.0.0
+
 redis==5.2.1
 
 # Billing (optional — set STRIPE_* in .env)
@@ -42,3 +45,5 @@ pinecone==5.4.1
 # sentence-transformers==3.3.2  # OPTIONAL — uncomment if you need local embedding for vectorstore.
 #   WARNING: pulls in PyTorch (~800 MB). On Render free/started plans this will OOM the build.
 #   Pinecone vectorstore degrades gracefully without it (semantic similarity checks skip).
+# litellm>=1.55.0                # OPTIONAL — provider-failover LLM backend (llm_backend="litellm").
+#   Install only if you need litellm's provider-level failover/caching.

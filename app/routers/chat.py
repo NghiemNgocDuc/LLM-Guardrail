@@ -13,7 +13,6 @@ Flow:
 """
 import asyncio
 import hashlib
-import json as json_lib
 import time
 import uuid
 from datetime import datetime, timezone
@@ -31,7 +30,10 @@ from app.demo_limits import client_ip, enforce_demo_payload_limits, enforce_demo
 from app.middleware.rate_limit import check_rate_limit
 from app.models import ChatFeedback, OrgPolicy, RequestLog, User
 from app.schemas import ChatRequest, ChatResponse, FeedbackOut, FeedbackRequest, GuardrailResult
-from app.services.llm import call_llm, stream_llm
+from app.services.llm import LLMResponse, call_llm, stream_llm
+from app.services.prompt_crypto import encrypt_prompt
+from app.services.response_cache import get_cached, set_cached
+from app.services.webhook_deliveries import record_delivery
 from app.services.token_wallet import (
     check_daily_budget,
     check_prompt_dedup,
@@ -46,12 +48,16 @@ from app.config import get_settings
 from app.http_client import get_http_client
 from app.i18n import _t
 from app.utils.url_validation import validate_webhook_url_resolved
+from app.utils.webhook_signature import sign_payload
 from guardrails.input import InputGuardrail
 from guardrails.output import OutputGuardrail
 from guardrails.pii_redactor import PIIRedactor
 
 settings = get_settings()
 router = APIRouter(prefix="/chat", tags=["Gateway"])
+
+_MAX_WEBHOOK_ATTEMPTS = 3
+_SSE_KEEPALIVE_S = 15.0
 
 _DEFAULT_INPUT_RULES = {
     "block_secrets": True,
@@ -92,13 +98,48 @@ _DEFAULT_TOPIC_POLICY   = {"blocked_topics": ["competitor products", "medical ad
 _DEFAULT_COMPLIANCE     = {"block_medical_advice": True}
 
 
-async def _fire_webhook(url: str, payload: dict) -> None:
+async def _fire_webhook(
+    url: str,
+    payload: dict,
+    webhook_secret: str | None = None,
+    org_id: str | None = None,
+) -> None:
+    """POST a JSON payload to ``url`` with up to 3 attempts (backoff) and
+    record the outcome for GET /admin/webhook-deliveries.
+
+    When ``webhook_secret`` is set, the request is signed with an HMAC-SHA256
+    signature over ``"{timestamp}.{body}"`` and delivered as:
+      X-Guardrail-Signature: v1,<hex>
+      X-Guardrail-Timestamp: <unix seconds>
+    Receivers should reject unsigned webhooks unless org-level signing is off.
+    """
+    headers = {"Content-Type": "application/json"}
+    if webhook_secret:
+        signature, timestamp = sign_payload(payload, webhook_secret)
+        headers["X-Guardrail-Signature"] = signature
+        headers["X-Guardrail-Timestamp"] = timestamp
+
+    last_error: str | None = None
+    last_status: int | None = None
     try:
         await validate_webhook_url_resolved(url)
         client = get_http_client()
-        await client.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=8.0)
-    except Exception:
-        pass
+        for attempt in range(1, _MAX_WEBHOOK_ATTEMPTS + 1):
+            try:
+                resp = await client.post(url, json=payload, headers=headers, timeout=8.0)
+                last_status = resp.status_code
+                if resp.status_code < 400:
+                    await record_delivery(org_id, payload.get("event", "guardrail_fired"), True, last_status, attempt)
+                    return
+                last_error = f"HTTP {resp.status_code}"
+            except Exception as exc:
+                last_error = str(exc)[:200]
+            if attempt < _MAX_WEBHOOK_ATTEMPTS:
+                await asyncio.sleep(0.5 * (2 ** (attempt - 1)))
+        await record_delivery(org_id, payload.get("event", "guardrail_fired"), False, last_status, _MAX_WEBHOOK_ATTEMPTS, last_error)
+    except Exception as exc:
+        # URL validation failure etc. — never break the chat request path
+        await record_delivery(org_id, payload.get("event", "guardrail_fired"), False, None, 0, str(exc)[:200])
 
 
 def _safe_preview(prompt: str, pii_found: bool) -> str:
@@ -260,7 +301,7 @@ async def chat(
                 "fired_rule": in_result.reason_code, "reason": in_result.reason or "",
                 "prompt_preview": _safe_preview(body.prompt, pii_found),
                 "latency_ms": latency_ms,
-            }))
+            }, webhook_secret=compliance_rules.get("webhook_secret"), org_id=api_key.org_id))
         bal = (await ensure_wallet(db, api_key.owner_id)).balance_tokens
         return ChatResponse(
             request_id=request_id,
@@ -280,16 +321,31 @@ async def chat(
         )
 
     # ── 10. Call LLM (with redacted prompt if applicable) ─────────────────
+    llm_backend = body.backend or org_backend or settings.DEFAULT_LLM_BACKEND
+    llm_model   = body.model   or org_model   or settings.DEFAULT_MODEL
+    use_cache = settings.RESPONSE_CACHE_ENABLED and bool(output_rules.get("response_cache"))
+    fallbacks = compliance_rules.get("llm_fallbacks")  # litellm provider failover
     try:
-        llm_resp = await call_llm(
-            prompt=prompt_for_llm,
-            temperature=body.temperature,
-            max_tokens=max_tokens,
-            request_backend=body.backend,
-            org_backend=org_backend,
-            request_model=body.model,
-            org_model=org_model,
-        )
+        cached_text = None
+        if use_cache:
+            cached_text = await get_cached(prompt_for_llm, llm_model, body.temperature)
+        if cached_text is not None:
+            llm_resp = LLMResponse(
+                text=cached_text, input_tokens=0, output_tokens=0,
+                model=llm_model, backend=llm_backend,
+            )
+        else:
+            llm_resp = await call_llm(
+                prompt=prompt_for_llm,
+                temperature=body.temperature,
+                max_tokens=max_tokens,
+                request_backend=body.backend,
+                org_backend=org_backend,
+                request_model=body.model,
+                org_model=org_model,
+                fallbacks=fallbacks,
+                cache=use_cache,
+            )
     except Exception as e:
         latency_ms = int((time.monotonic() - start) * 1000)
         await _log_request(
@@ -314,6 +370,10 @@ async def chat(
 
     latency_ms = int((time.monotonic() - start) * 1000)
     status_str = "delivered" if out_result.allowed else "output_blocked"
+
+    # Cache only fully-delivered responses (opt-in per policy)
+    if use_cache and out_result.allowed:
+        await set_cached(prompt_for_llm, llm_model, body.temperature, llm_resp.text)
 
     # Log fired_rule for warnings even when request is delivered through
     fired_rule = None
@@ -361,7 +421,7 @@ async def chat(
                 "fired_rule": out_result.reason_code, "reason": out_result.reason or "",
                 "prompt_preview": _safe_preview(body.prompt, False),
                 "latency_ms": latency_ms,
-            }))
+            }, webhook_secret=compliance_rules.get("webhook_secret"), org_id=api_key.org_id))
     unlimited = await user_has_unlimited_tokens(db, api_key.owner_id)
     bal = wallet.balance_tokens
 
@@ -409,6 +469,7 @@ async def chat_stream(
       {"type":"done",   "status":"delivered", ...}  — final metadata
       {"type":"blocked","status":"input_blocked"|"output_blocked", ...}
       {"type":"error",  "detail":"..."}             — backend failure
+      {"type":"ping"}                               — keepalive every 15s
     """
     start = time.monotonic()
     request_id = str(uuid.uuid4())
@@ -518,7 +579,7 @@ async def chat_stream(
                             "fired_rule": in_result.reason_code, "reason": in_result.reason or "",
                             "prompt_preview": _safe_preview(body.prompt, pii_found),
                             "latency_ms": latency_ms,
-                        }))
+                        }, webhook_secret=compliance_rules.get("webhook_secret"), org_id=api_key.org_id))
                     yield _sse({
                         "type": "blocked", "request_id": request_id,
                         "status": "input_blocked",
@@ -538,12 +599,21 @@ async def chat_stream(
                 llm_backend = body.backend or org_backend or settings.DEFAULT_LLM_BACKEND
 
                 try:
-                    async for chunk in stream_llm(
+                    stream_iter = stream_llm(
                         prompt=prompt_for_llm, temperature=body.temperature,
                         max_tokens=max_tokens,
                         request_backend=body.backend, org_backend=org_backend,
                         request_model=body.model,    org_model=org_model,
-                    ):
+                        fallbacks=compliance_rules.get("llm_fallbacks"),
+                        cache=settings.RESPONSE_CACHE_ENABLED and bool(output_rules.get("response_cache")),
+                    ).__aiter__()
+                    while True:
+                        try:
+                            chunk = await asyncio.wait_for(anext(stream_iter), timeout=_SSE_KEEPALIVE_S)
+                        except asyncio.TimeoutError:
+                            # keep the SSE connection alive during long generations
+                            yield _sse({"type": "ping"})
+                            continue
                         if chunk.done:
                             input_tokens = chunk.input_tokens
                             output_tokens = chunk.output_tokens
@@ -552,6 +622,8 @@ async def chat_stream(
                         else:
                             accumulated.append(chunk.token)
                             yield _sse({"type": "token", "content": chunk.token})
+                except StopAsyncIteration:
+                    pass
                 except Exception as e:
                     latency_ms = int((time.monotonic() - start) * 1000)
                     await _log_request(
@@ -620,7 +692,7 @@ async def chat_stream(
                             "fired_rule": out_result.reason_code, "reason": out_result.reason or "",
                             "prompt_preview": _safe_preview(body.prompt, pii_found),
                             "latency_ms": latency_ms,
-                        }))
+                        }, webhook_secret=compliance_rules.get("webhook_secret"), org_id=api_key.org_id))
             finally:
                 await stream_db.close()
 
@@ -679,7 +751,7 @@ async def _log_request(
         org_id=api_key.org_id,
         prompt_hash=prompt_hash,
         prompt_preview=prompt_preview,
-        full_prompt=full_prompt,
+        full_prompt=encrypt_prompt(full_prompt) if full_prompt else None,
         model=model, backend=backend,
         input_passed=input_passed,
         input_block_reason=input_block_reason,

@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.billing.pricing import estimate_cost_usd
 from app.database import get_db
 from app.deps import CurrentUser
-from app.models import APIKey, RequestLog, TokenWallet, User
+from app.models import APIKey, ChatFeedback, RequestLog, TokenWallet, User, UserSkillGuardOverrides
 from app.schemas import (
     AnalyticsDashboard, ProviderUsage, TimeSeriesPoint, TopBlockedReason, TopFiredRule, UsageSummary,
 )
@@ -396,3 +396,64 @@ async def export_logs(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/false-positive-candidates")
+async def false_positive_candidates(
+    current_user: CurrentUser,
+    days: int = Query(default=7, ge=1, le=90),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """Blocked requests that users later disputed — either via positive feedback
+    (thumbs-up on a blocked request) or because the owner later added the rule
+    to their always-allow overrides. Grouped by fired rule so you can spot the
+    guardrails most likely throwing false positives."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    filters = [
+        RequestLog.created_at >= since,
+        RequestLog.status.in_(["input_blocked", "output_blocked"]),
+        RequestLog.fired_rule.isnot(None),
+    ]
+    if current_user.org_id:
+        filters.append(RequestLog.org_id == current_user.org_id)
+
+    rows = (
+        await db.execute(
+            select(
+                RequestLog,
+                ChatFeedback.rating,
+                UserSkillGuardOverrides.overrides,
+            )
+            .outerjoin(ChatFeedback, ChatFeedback.request_log_id == RequestLog.id)
+            .outerjoin(APIKey, APIKey.id == RequestLog.api_key_id)
+            .outerjoin(UserSkillGuardOverrides, UserSkillGuardOverrides.user_id == APIKey.owner_id)
+            .where(*filters)
+            .order_by(RequestLog.created_at.desc())
+            .limit(500)
+        )
+    ).all()
+
+    by_rule: dict[str, dict] = {}
+    for log, rating, overrides in rows:
+        override_hit = False
+        if overrides:
+            override_hit = log.fired_rule in set(overrides.get("always_allow_reason_codes") or [])
+        if rating != 1 and not override_hit:
+            continue
+        entry = by_rule.setdefault(
+            log.fired_rule,
+            {"fired_rule": log.fired_rule, "count": 0, "examples": []},
+        )
+        entry["count"] += 1
+        if len(entry["examples"]) < 5:
+            entry["examples"].append({
+                "id": log.id,
+                "status": log.status,
+                "prompt_preview": log.prompt_preview,
+                "created_at": log.created_at.isoformat(),
+                "positive_feedback": rating == 1,
+                "override_hit": override_hit,
+            })
+
+    return sorted(by_rule.values(), key=lambda r: r["count"], reverse=True)[:limit]

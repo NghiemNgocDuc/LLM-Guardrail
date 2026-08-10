@@ -104,8 +104,22 @@ class Settings(BaseSettings):
     OPENAI_COMPATIBLE_API_KEY: str = ""
     OPENAI_COMPATIBLE_BASE_URL: str = ""
 
+    # Fernet key for optional at-rest encryption of full_prompt audit logs.
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    ENCRYPTION_KEY: str = ""
+
     DEFAULT_LLM_BACKEND: str = "anthropic"
     DEFAULT_MODEL: str = "claude-sonnet-4-20250514"
+
+    # Comma-separated backends tried in order when the primary LLM backend
+    # fails (generic gateway-level failover). Per-org policy fallbacks
+    # (compliance_rules.llm_fallbacks) are tried before these.
+    # Example: "openai,gemini,groq"
+    LLM_FAILOVER_BACKENDS: str = ""
+
+    # Global kill switch for the exact-hash response cache. The per-policy
+    # output_rules.response_cache flag must ALSO be set for caching to apply.
+    RESPONSE_CACHE_ENABLED: bool = False
 
     @field_validator("DEBUG", mode="before")
     @classmethod

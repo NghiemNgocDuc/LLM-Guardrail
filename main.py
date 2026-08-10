@@ -76,6 +76,10 @@ async def lifespan(app: FastAPI):
     await close_abuse_protection()
     await close_rate_limit_redis()
     await close_global_rate_limiter()
+    from app.services.webhook_deliveries import close_webhook_deliveries
+    from app.services.response_cache import close_response_cache
+    await close_webhook_deliveries()
+    await close_response_cache()
     await close_http_client()
     if settings.POSTHOG_API_KEY:
         posthog.shutdown()

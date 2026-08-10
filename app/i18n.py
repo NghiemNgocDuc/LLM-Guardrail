@@ -56,6 +56,17 @@ def _t(key: str, **kwargs) -> str:
     return template.format(**kwargs) if kwargs else template
 
 
+def _t_or(key: str, fallback: str, **kwargs) -> str:
+    """Translate ``key``; if the key is missing from every locale, return ``fallback``."""
+    lang = _current_lang.get()
+    template = _load_locale(lang).get(key)
+    if template is None:
+        template = _load_locale("en").get(key)
+    if template is None:
+        template = fallback
+    return template.format(**kwargs) if kwargs else template
+
+
 def set_language(lang: str) -> None:
     _current_lang.set(normalize_lang(lang))
 

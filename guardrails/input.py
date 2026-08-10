@@ -5,6 +5,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
+from app.i18n import _t_or
+
 
 @dataclass
 class GuardrailResult:
@@ -71,7 +73,8 @@ class InputGuardrail:
 
         return GuardrailResult(
             allowed=True, check="All Input Checks",
-            reason="Clean", reason_code="clean", risk_score=0.0,
+            reason=_t_or("guardrail.clean", "Clean"),
+            reason_code="clean", risk_score=0.0,
         )
 
     def _check_pii(self, prompt: str) -> GuardrailResult:
@@ -80,7 +83,7 @@ class InputGuardrail:
                 return GuardrailResult(
                     allowed=False,
                     check="PII Detection",
-                    reason=f"PII detected: {p['name']}",
+                    reason=_t_or("guardrail.pii_detected", "PII detected: {name}", name=p["name"]),
                     reason_code="pii_detected",
                     risk_score=0.85,
                     flagged_content=[p["name"]],
@@ -104,7 +107,7 @@ class InputGuardrail:
                 return GuardrailResult(
                     allowed=False,
                     check="Secret Detection",
-                    reason=f"Secret detected: {name}",
+                    reason=_t_or("guardrail.secret_detected", "Secret detected: {name}", name=name),
                     reason_code="secret_detected",
                     risk_score=0.95,
                     flagged_content=[name],
@@ -161,7 +164,7 @@ class InputGuardrail:
                 return GuardrailResult(
                     allowed=False,
                     check="Injection Detection",
-                    reason=f"Prompt injection: '{kw}'",
+                    reason=_t_or("guardrail.prompt_injection", "Prompt injection: '{keyword}'", keyword=kw),
                     reason_code="prompt_injection",
                     risk_score=0.9,
                 )
@@ -213,7 +216,7 @@ class InputGuardrail:
                 return GuardrailResult(
                     allowed=False,
                     check="Jailbreak Detection",
-                    reason=f"Jailbreak: '{p}'",
+                    reason=_t_or("guardrail.jailbreak_attempt", "Jailbreak: '{pattern}'", pattern=p),
                     reason_code="jailbreak_attempt",
                     risk_score=0.9,
                 )
@@ -232,7 +235,7 @@ class InputGuardrail:
                 return GuardrailResult(
                     allowed=False,
                     check="Semantic Detection",
-                    reason=f"Semantically similar to blocked content (score={score:.2f})",
+                    reason=_t_or("guardrail.semantic_blocked", "Semantically similar to blocked content (score={score:.2f})", score=score),
                     reason_code="semantic_blocked",
                     risk_score=score,
                 )

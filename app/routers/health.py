@@ -2,6 +2,7 @@
 System health endpoints:
   GET /health          — simple liveness (already exists in main app)
   GET /health/detailed — DB + Redis + LLM backend status
+  GET /health/breakers — per-backend circuit breaker state
 """
 import time
 
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.services import vectorstore
+from app.services.llm.circuit_breaker import _breakers
 
 settings = get_settings()
 router = APIRouter(tags=["Health"])
@@ -56,4 +58,17 @@ async def detailed_health(db: AsyncSession = Depends(get_db)):
         "vectorstore": {
             "status": "ok" if vectorstore._pinecone_initialized else "not_configured",
         },
+    }
+
+
+@router.get("/health/breakers")
+async def breaker_health():
+    """Per-backend circuit breaker state (closed | open | half_open)."""
+    states = {
+        name: breaker.state
+        for name, breaker in sorted(_breakers.items())
+    }
+    return {
+        "overall": "ok" if all(s == "closed" for s in states.values()) else "degraded",
+        "breakers": states,
     }

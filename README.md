@@ -150,7 +150,33 @@ curl -X POST http://localhost:8080/admin/replay/<request_id> \
 # Most frequent blocked-request rules in the last 7 days, with latest occurrence each
 curl -X GET "http://localhost:8080/analytics/top-blocked-reasons?days=7&limit=10" \
   -H "Authorization: Bearer <access_token>"
+
+# Blocked requests that users later disputed (positive feedback or an admin
+# always-allow override) — grouped by fired rule to spot likely false positives
+curl -X GET "http://localhost:8080/analytics/false-positive-candidates?days=7&limit=50" \
+  -H "Authorization: Bearer <access_token>"
+
+# Org audit export (admins): paginated request logs with the owning user's
+# email. Raw prompts, passwords, and key hashes are never exported.
+curl -X GET "http://localhost:8080/org/export?days=30&page=1&page_size=100" \
+  -H "Authorization: Bearer <access_token>"
+
+# Rotate the HMAC secret used to sign guardrail webhooks (shown exactly once)
+curl -X POST "http://localhost:8080/org/rotate-webhook-secret" \
+  -H "Authorization: Bearer <access_token>"
 ```
+
+Webhooks: when the org policy has a `webhook_secret` (set via the endpoint
+above), every `guardrail_fired` webhook is signed with HMAC-SHA256 over
+`"{timestamp}.{body}"` and delivered with:
+
+```
+X-Guardrail-Signature: v1,<hex digest>
+X-Guardrail-Timestamp: <unix seconds>
+```
+
+Verify in the receiver before trusting the event; unsigned submissions are an
+indication the sender isn't under your org's secret.
 
 ### Before `git push` (local hook)
 
@@ -218,7 +244,43 @@ Set `DEFAULT_LLM_BACKEND` globally or `llm_backend` per organization policy.
 | `gemini` | `GEMINI_API_KEY` |
 | `ollama` | `OLLAMA_BASE_URL` |
 | `openai_compatible` | `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY` |
+| `litellm` | provider keys (optional backend, `pip install litellm`) |
 | `mock` | none; test-only backend |
+
+### Failover
+
+When a backend fails (timeout / 5xx), the gateway tries fallbacks in order:
+
+1. per-org policy `compliance_rules.llm_fallbacks` (e.g. `["openai/gpt-4o"]`),
+2. the global `LLM_FAILOVER_BACKENDS` list (comma-separated, e.g. `openai,gemini`).
+
+Each backend is individually circuit-broken; `/health/breakers` reports per-backend state.
+
+### Optional features
+
+| Feature | How to enable |
+| --- | --- |
+| Response cache (exact-hash) | `RESPONSE_CACHE_ENABLED=true` **and** per-policy `output_rules.response_cache` |
+| External output validators | Per-policy `output_rules.external_validators` (guardrails-ai-style: `ValidLength`, `RegexMatch`, `DenyList`, `AllowList`, `RequiredFields`, `CompetitorDetector`) |
+| At-rest prompt encryption | Set `ENCRYPTION_KEY` (Fernet) — `full_prompt` audit rows are AES-GCM encrypted; admin replay decrypts on the fly |
+| Webhook delivery tracking | `RATE_LIMIT_REDIS_URL` (Redis ring buffer, in-memory fallback) — see `GET /admin/webhook-deliveries` |
+| SSE keepalive | Always on — `/chat/stream` sends `{"type":"ping"}` during long generations |
+
+### guardrailctl (ops CLI)
+
+```bash
+python scripts/guardrailctl.py status         # adapters, breakers, feature flags
+python scripts/guardrailctl.py cost-anomaly   # flag org daily token-spend spikes
+```
+
+### Tests
+
+```bash
+python -m pytest -q                        # full suite
+GOLDEN_UPDATE=1 python -m pytest tests/test_golden.py -q   # regenerate golden verdicts
+```
+
+Golden verdict fixtures (`tests/golden/cases.json`) pin input/output guardrail outcomes; CI runs them in a dedicated job.
 
 Groq default base URL:
 

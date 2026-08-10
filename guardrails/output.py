@@ -3,6 +3,8 @@ import json
 from dataclasses import dataclass
 from typing import Optional
 
+from app.i18n import _t_or
+
 # Multi-word phrases first — lower false-positive risk than single words.
 _TOXIC_PHRASES = [
     "kill yourself",
@@ -99,6 +101,21 @@ class OutputGuardrail:
                 reason=err, reason_code="blocked_topic", risk_score=0.75,
             )
 
+        err = self._check_external_validators(response)
+        if err:
+            # external_validator_mode: "block" (default) | "warn"
+            if self.policy.get("external_validator_mode", "block") == "warn":
+                return OutputGuardrailResult(
+                    allowed=True, warned=True,
+                    check="External Validators", reason=err,
+                    reason_code="external_validator_flagged", risk_score=0.5,
+                    sanitized_output=response,
+                )
+            return OutputGuardrailResult(
+                allowed=False, check="External Validators",
+                reason=err, reason_code="external_validator_failed", risk_score=0.5,
+            )
+
         return OutputGuardrailResult(
             allowed=True, check="All Output Checks",
             reason_code="clean", risk_score=0.0, sanitized_output=response,
@@ -107,34 +124,48 @@ class OutputGuardrail:
     def _check_secret_leakage(self, response: str) -> Optional[str]:
         lower = response.lower()
         if "api_key=" in lower or "authorization: bearer" in lower:
-            return "Potential credential leakage detected"
+            return _t_or("guardrail.secret_leakage", "Potential credential leakage detected")
         return None
 
     def _validate_schema(self, response: str) -> Optional[str]:
         try:
             data = json.loads(response)
         except json.JSONDecodeError:
-            return "Response is not valid JSON"
+            return _t_or("guardrail.schema_invalid_json", "Response is not valid JSON")
         missing = [f for f in self.policy.get("required_fields", []) if f not in data]
-        return f"Missing fields: {missing}" if missing else None
+        if missing:
+            return _t_or("guardrail.schema_missing_fields", "Missing fields: {missing}", missing=missing)
+        return None
 
     def _check_toxicity(self, response: str) -> Optional[str]:
         lower = response.lower()
         for phrase in _TOXIC_PHRASES:
             if phrase in lower:
-                return f"Toxic content detected: '{phrase}'"
+                return _t_or("guardrail.toxic_content", "Toxic content detected: '{term}'", term=phrase)
         for word in _TOXIC_KEYWORDS:
             if word in lower:
-                return f"Toxic content detected: '{word}'"
+                return _t_or("guardrail.toxic_content", "Toxic content detected: '{term}'", term=word)
         return None
 
     def _check_topic_policy(self, response: str) -> Optional[str]:
         lower = response.lower()
         for topic in self.topics.get("blocked_topics", []):
             if topic.lower() in lower:
-                return f"Blocked topic: '{topic}'"
+                return _t_or("guardrail.blocked_topic", "Blocked topic: '{topic}'", topic=topic)
         if self.compliance.get("block_medical_advice"):
             for sig in ["you should take", "dosage", "prescription", "diagnos"]:
                 if sig in lower:
-                    return "Medical advice detected"
+                    return _t_or("guardrail.medical_advice", "Medical advice detected")
+        return None
+
+    def _check_external_validators(self, response: str) -> Optional[str]:
+        """Run guardrails-ai-style external validators configured via
+        output_rules.external_validators (see app/services/guardrail_validators.py)."""
+        config = self.policy.get("external_validators")
+        if not config:
+            return None
+        from app.services.guardrail_validators import run_validators  # noqa: PLC0415
+        passed, name, message = run_validators(response, config)
+        if not passed:
+            return f"External validator '{name}' failed: {message}"
         return None

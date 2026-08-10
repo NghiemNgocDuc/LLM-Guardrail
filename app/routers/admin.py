@@ -1,5 +1,5 @@
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,7 @@ from app.schemas import (
 from app.config import get_settings
 from app.services.auth_tokens import TOKEN_PURPOSE_RESET, build_action_url, create_auth_token
 from app.services.email import send_password_reset_email
+from app.services.prompt_crypto import decrypt_prompt
 from app.services.token_wallet import ensure_wallet
 from guardrails.input import InputGuardrail
 
@@ -190,6 +191,19 @@ async def revoke_org_api_key(key_id: str, current_user: CurrentUser, db: AsyncSe
     await db.flush()
 
 
+@router.get("/webhook-deliveries")
+async def list_webhook_deliveries(
+    current_user: CurrentUser,
+    limit: int = Query(50, ge=1, le=500),
+):
+    """Recent outgoing webhook delivery attempts for this org (Redis ring
+    buffer with in-memory fallback), newest first. Records include event,
+    ok/http_status, attempts, and error."""
+    require_org_admin(current_user)
+    from app.services.webhook_deliveries import recent_deliveries  # noqa: PLC0415
+    return await recent_deliveries(current_user.org_id, limit)
+
+
 @router.post("/replay/{request_id}", response_model=ReplayResponse)
 async def replay_request(
     request_id: str,
@@ -216,6 +230,9 @@ async def replay_request(
             detail=_t("admin.replay_no_full_prompt"),
         )
 
+    # full_prompt is AES-GCM encrypted at rest when ENCRYPTION_KEY is set
+    prompt = decrypt_prompt(log.full_prompt)
+
     # Current policy for the log's org (system defaults if none — mirrors /chat)
     from app.defaults import DEFAULT_INPUT_RULES
     result = await db.execute(select(OrgPolicy).where(OrgPolicy.org_id == log.org_id))
@@ -228,7 +245,7 @@ async def replay_request(
     if input_rules.get("pii_redaction_mode", "block") == "redact":
         guardrail_rules["block_pii"] = False
 
-    current = InputGuardrail(guardrail_rules).check(log.full_prompt)
+    current = InputGuardrail(guardrail_rules).check(prompt)
 
     # Original verdict is the INPUT dimension only — an output-blocked row has
     # no LLM output to re-check in a dry run, so its input verdict stands.

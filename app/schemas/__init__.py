@@ -101,6 +101,12 @@ class OrgOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RotatedWebhookSecret(BaseModel):
+    """New webhook signing secret — only ever returned to the caller once."""
+    webhook_secret: str
+    created_at: datetime
+
+
 class PolicyUpdate(BaseModel):
     """Partial update — only send what you want to change."""
     model_config = {"extra": "forbid"}
