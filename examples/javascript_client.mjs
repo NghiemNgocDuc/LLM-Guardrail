@@ -1,3 +1,5 @@
+import { GuardrailClient } from "../sdk/javascript/guardrailClient.mjs";
+
 const baseUrl = process.env.GUARDRAIL_BASE_URL ?? "http://localhost:8080";
 const apiKey = process.env.GUARDRAIL_API_KEY;
 
@@ -22,3 +24,12 @@ if (!response.ok) {
 }
 
 console.log(await response.json());
+
+// SDK example: stream /chat/stream with retries enabled.
+const client = new GuardrailClient({ baseUrl, apiKey, withRetry: true });
+for await (const event of client.chatStream({
+  prompt: "Summarize why prompt-injection protection matters.",
+  maxTokens: 128,
+})) {
+  console.log(event);
+}

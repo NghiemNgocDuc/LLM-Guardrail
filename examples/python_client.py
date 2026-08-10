@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 import httpx
@@ -21,5 +22,22 @@ def main() -> None:
     print(response.json())
 
 
+async def stream_main() -> None:
+    """SDK example: stream /chat/stream with retries enabled."""
+    from sdk.python.guardrail_client import GuardrailClient
+
+    client = GuardrailClient(
+        base_url=BASE_URL,
+        api_key=API_KEY,
+        with_retry=True,
+    )
+    async for event in client.chat_stream(
+        "Summarize why prompt-injection protection matters.",
+        max_tokens=128,
+    ):
+        print(event)
+
+
 if __name__ == "__main__":
     main()
+    asyncio.run(stream_main())
