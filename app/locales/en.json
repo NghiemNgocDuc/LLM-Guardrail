@@ -32,6 +32,8 @@
   "admin.cannot_disable_self": "You cannot disable your own account",
   "admin.cannot_remove_self": "You cannot remove yourself",
   "admin.action_invalid": "action must be enable | disable | remove",
+  "admin.replay_not_found": "Request log not found",
+  "admin.replay_no_full_prompt": "Raw prompt was not retained for this request (full_prompt_logging was off when it ran)",
 
   "org.not_found": "No organisation associated with this account",
   "org.missing": "Organisation not found",

@@ -3,6 +3,8 @@ MCP (Model Context Protocol) server for the LLM Guardrails Gateway.
 
 Exposes guardrail functionality as MCP tools so AI assistants can:
   - Scan agent skills / instruction files for secrets, PII, and dangerous commands
+  - Scan batches of skill files / a whole repo in one call (scan_repo)
+  - Explain what a JSON guardrail policy actually does (explain_policy)
   - Check prompts against input guardrails (injection, jailbreak, secrets, PII)
   - Check LLM responses against output guardrails (toxicity, topics, leaks)
   - Route prompts through the full guardrail gateway to any LLM backend
@@ -51,6 +53,7 @@ MAX_CONTENT_CHARS = 256_000
 MAX_PROMPT_CHARS = 32_000
 MAX_OUTPUT_CHARS = 64_000
 MAX_FILENAME_CHARS = 255
+MAX_SCAN_FILES = 200
 RATE_LIMIT_RPM_DEFAULT = 30
 RATE_LIMIT_RPD_DEFAULT = 500
 GATEWAY_KEY_PREFIX = "grg_"
@@ -195,12 +198,59 @@ def _validate_redact_pii(**kw) -> ValidationError | None:
     return None
 
 
+def _validate_scan_repo(**kw) -> ValidationError | None:
+    files_json = kw.get("files_json", "")
+    if not files_json or not files_json.strip():
+        return ValidationError("files_json must be non-empty")
+    try:
+        files = json.loads(files_json)
+    except json.JSONDecodeError:
+        return ValidationError("files_json must be valid JSON")
+    if not isinstance(files, list):
+        return ValidationError("files_json must be a JSON array of {filename, content} objects")
+    if not files:
+        return ValidationError("files_json must contain at least one file")
+    if len(files) > MAX_SCAN_FILES:
+        return ValidationError(f"too many files: {len(files)} exceeds {MAX_SCAN_FILES}")
+    for entry in files:
+        if not isinstance(entry, dict):
+            return ValidationError("each file entry must be an object with filename and content")
+        filename = entry.get("filename")
+        content = entry.get("content")
+        if not isinstance(filename, str) or not filename.strip():
+            return ValidationError("each file entry must have a non-empty filename")
+        if len(filename) > MAX_FILENAME_CHARS:
+            return ValidationError(f"filename exceeds {MAX_FILENAME_CHARS} characters")
+        if not isinstance(content, str) or not content.strip():
+            return ValidationError("each file entry must have non-empty content")
+        if len(content) > MAX_CONTENT_CHARS:
+            return ValidationError("content exceeds " + str(MAX_CONTENT_CHARS) + " characters")
+    return None
+
+
+def _validate_explain_policy(**kw) -> ValidationError | None:
+    policy_json = kw.get("policy_json", "")
+    if not policy_json or not policy_json.strip():
+        return ValidationError("policy_json must be non-empty")
+    if len(policy_json) > 10_000:
+        return ValidationError("policy_json too large")
+    try:
+        policy = json.loads(policy_json)
+    except json.JSONDecodeError:
+        return ValidationError("policy_json must be valid JSON")
+    if not isinstance(policy, dict):
+        return ValidationError("policy_json must be a JSON object")
+    return None
+
+
 _VALIDATORS: dict[str, Callable[..., ValidationError | None]] = {
     "scan_skill": _validate_scan_skill,
+    "scan_repo": _validate_scan_repo,
     "check_input": _validate_check_input,
     "check_output": _validate_check_output,
     "chat": _validate_chat,
     "redact_pii": _validate_redact_pii,
+    "explain_policy": _validate_explain_policy,
 }
 
 
@@ -265,6 +315,19 @@ _UNAUTHENTICATED = MCPAuthContext(
 
 # ─── Tools ────────────────────────────────────────────────────────────────────
 
+def _finding_dict(f) -> dict[str, Any]:
+    return {
+        "category": f.category,
+        "severity": f.severity,
+        "check": f.check,
+        "reason": f.reason,
+        "reason_code": f.reason_code,
+        "line_number": f.line_number,
+        "snippet": f.snippet,
+        "risk_score": f.risk_score,
+    }
+
+
 @tool(
     name="scan_skill",
     description=(
@@ -280,22 +343,55 @@ def scan_skill(content: str, filename: str | None = None) -> str:
     return json.dumps({
         "safe": result.safe,
         "risk_score": result.risk_score,
-        "findings": [
-            {
-                "category": f.category,
-                "severity": f.severity,
-                "check": f.check,
-                "reason": f.reason,
-                "reason_code": f.reason_code,
-                "line_number": f.line_number,
-                "snippet": f.snippet,
-                "risk_score": f.risk_score,
-            }
-            for f in result.findings
-        ],
+        "findings": [_finding_dict(f) for f in result.findings],
         "line_count": result.line_count,
         "char_count": result.char_count,
         "filename": filename,
+    })
+
+
+@tool(
+    name="scan_repo",
+    description=(
+        "Scan a batch of agent skill / instruction files (e.g. a repo checkout) "
+        "for secrets (API keys, tokens, database URLs), PII (emails, SSNs, credit "
+        "cards), and destructive commands (rm -rf, DROP TABLE, disk wipe, "
+        "pipe-to-shell, etc.). Accepts a JSON array of {\"filename\", \"content\"} "
+        "objects, so it works both for local callers who already read files off "
+        "disk and for remote MCP clients without filesystem access to the server. "
+        "Returns per-file results plus an aggregate summary (files scanned, files "
+        "with findings, findings by severity, overall risk score)."
+    ),
+)
+def scan_repo(files_json: str) -> str:
+    files = json.loads(files_json)
+    results = []
+    files_with_findings = 0
+    overall_risk_score = 0.0
+    by_severity = {"critical": 0, "high": 0, "medium": 0}
+    for entry in files:
+        result = SkillGuardrail().scan(entry["content"])
+        results.append({
+            "filename": entry["filename"],
+            "safe": result.safe,
+            "risk_score": result.risk_score,
+            "findings": [_finding_dict(f) for f in result.findings],
+            "line_count": result.line_count,
+            "char_count": result.char_count,
+        })
+        if not result.safe:
+            files_with_findings += 1
+        overall_risk_score = max(overall_risk_score, result.risk_score)
+        for f in result.findings:
+            by_severity[f.severity] = by_severity.get(f.severity, 0) + 1
+    return json.dumps({
+        "results": results,
+        "summary": {
+            "files_scanned": len(files),
+            "files_with_findings": files_with_findings,
+            "findings_by_severity": by_severity,
+            "overall_risk_score": overall_risk_score,
+        },
     })
 
 
@@ -496,6 +592,102 @@ def get_default_policy() -> str:
     })
 
 
+@tool(
+    name="explain_policy",
+    description=(
+        "Explain what a JSON guardrail policy actually does in plain English. "
+        "Accepts a JSON policy matching the shape get_default_policy returns "
+        "(input_rules, output_rules, topic_policy, compliance_rules) and returns "
+        "a bullet list of the checks that would run, derived only from the fields "
+        "InputGuardrail and OutputGuardrail read. Pure formatting — no LLM call "
+        "and no database access. Use to inspect a policy before applying it."
+    ),
+)
+def explain_policy(policy_json: str) -> str:
+    policy = json.loads(policy_json)
+    input_rules = dict(policy.get("input_rules") or {})
+    output_rules = dict(policy.get("output_rules") or {})
+    topic_policy = dict(policy.get("topic_policy") or {})
+    compliance = dict(policy.get("compliance_rules") or {})
+
+    bullets = []
+
+    # Input checks — same fields InputGuardrail.check reads (guardrails/input.py)
+    if input_rules.get("block_secrets", True):
+        bullets.append("Input: blocks prompts containing secrets (API keys, tokens, private keys)")
+    else:
+        bullets.append("Input: secret detection is disabled")
+
+    if input_rules.get("block_pii"):
+        patterns = [
+            p["name"]
+            for p in (input_rules.get("pii_patterns") or [])
+            if isinstance(p, dict) and p.get("name")
+        ]
+        names = ", ".join(patterns) if patterns else "email, SSN, credit card"
+        bullets.append(f"Input: blocks prompts containing PII ({names})")
+    else:
+        bullets.append("Input: PII detection is disabled")
+
+    if input_rules.get("block_prompt_injection"):
+        mode = input_rules.get("injection_mode", "block")
+        action = "warns instead of blocking" if mode == "warn" else "blocks"
+        extra = len([k for k in (input_rules.get("injection_keywords") or []) if k])
+        suffix = f" plus {extra} custom keyword(s)" if extra else ""
+        bullets.append(f"Input: {action} prompt injection attempts after built-in keywords{suffix}")
+    else:
+        bullets.append("Input: prompt-injection detection is disabled")
+
+    if input_rules.get("block_jailbreak"):
+        mode = input_rules.get("jailbreak_mode", "block")
+        action = "warns instead of blocking" if mode == "warn" else "blocks"
+        extra = len([p for p in (input_rules.get("jailbreak_patterns") or []) if p])
+        suffix = f" plus {extra} custom pattern(s)" if extra else ""
+        bullets.append(f"Input: {action} jailbreak attempts after built-in patterns{suffix}")
+    else:
+        bullets.append("Input: jailbreak detection is disabled")
+
+    semantic_mode = input_rules.get("semantic_mode")
+    if semantic_mode in ("block", "warn"):
+        blocked = [t for t in (input_rules.get("semantic_blocked_texts") or []) if t]
+        threshold = input_rules.get("semantic_threshold", 0.82)
+        bullets.append(
+            f"Input: semantic similarity {semantic_mode} is enabled for {len(blocked)} "
+            f"blocked phrase(s) at threshold {threshold}"
+        )
+    else:
+        bullets.append("Input: semantic similarity blocking is disabled")
+
+    # Output checks — same fields OutputGuardrail.check reads (guardrails/output.py).
+    # Secret leakage is unconditional there and always runs, regardless of policy.
+    bullets.append("Output: credential leakage in responses always blocks (cannot be disabled)")
+
+    if output_rules.get("enforce_schema"):
+        required = [f for f in (output_rules.get("required_fields") or []) if f]
+        if required:
+            bullets.append(f"Output: responses must be valid JSON with required fields: {', '.join(required)}")
+        else:
+            bullets.append("Output: responses must be valid JSON (no required fields listed)")
+    else:
+        bullets.append("Output: JSON schema enforcement is disabled")
+
+    if output_rules.get("block_toxic_content"):
+        mode = output_rules.get("toxic_mode", "block")
+        action = "warns instead of blocking" if mode == "warn" else "blocks"
+        bullets.append(f"Output: {action} toxic content")
+    else:
+        bullets.append("Output: toxic-content filtering is disabled")
+
+    blocked_topics = [t for t in (topic_policy.get("blocked_topics") or []) if t]
+    if blocked_topics:
+        bullets.append(f"Output: blocks responses covering topics: {', '.join(blocked_topics)}")
+
+    if compliance.get("block_medical_advice"):
+        bullets.append("Output: blocks medical-advice statements (dosage, prescription, diagnosis)")
+
+    return json.dumps({"summary": "\n".join(bullets)})
+
+
 # ─── MCP Protocol handler (JSON-RPC) ─────────────────────────────────────────
 
 def _list_tools() -> list[dict]:
@@ -616,6 +808,10 @@ async def _audit_log(auth: MCPAuthContext, tool_name: str, args: dict, status: s
             prompt_str = args["content"]
         elif isinstance(args.get("text"), str):
             prompt_str = args["text"]
+        elif tool_name == "scan_repo" and isinstance(args.get("files_json"), str):
+            prompt_str = args["files_json"]
+        elif tool_name == "explain_policy" and isinstance(args.get("policy_json"), str):
+            prompt_str = args["policy_json"]
 
         sessionmaker = get_sessionmaker()
         async with sessionmaker() as db:

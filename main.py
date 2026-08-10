@@ -184,6 +184,29 @@ async def robots_txt():
 
 
 static_dir = Path(__file__).resolve().parent / "static"
+_static_root = static_dir.resolve()
+
+
+def _safe_static_target(path: str):
+    """
+    Map a URL path to a file strictly inside the static root.
+    `path` is already URL-decoded by the router, so traversal primitives
+    (.., \\, NUL, empty segments) are rejected outright. Returns None when
+    the target is missing, a directory, or escapes the root.
+    """
+    if not path:
+        return None
+    if "\\" in path or "\x00" in path:
+        return None
+    segments = path.split("/")
+    if any(seg in ("", ".", "..") for seg in segments):
+        return None
+    candidate = (_static_root / path).resolve()
+    if not candidate.is_relative_to(_static_root):
+        return None
+    return candidate if candidate.is_file() else None
+
+
 if static_dir.exists():
     assets_dir = static_dir / "assets"
     if assets_dir.exists():
@@ -191,7 +214,7 @@ if static_dir.exists():
 
     @app.get("/{path:path}", include_in_schema=False)
     async def serve_frontend(path: str):
-        requested = static_dir / path
-        if path and requested.is_file():
-            return FileResponse(requested)
-        return FileResponse(static_dir / "index.html")
+        target = _safe_static_target(path)
+        if target is not None:
+            return FileResponse(target)
+        return FileResponse(_static_root / "index.html")

@@ -344,3 +344,47 @@ class AnalyticsDashboard(BaseModel):
     provider_usage: list[ProviderUsage] = []
     recent_suspicious: list[dict] = []
     recent_logs:  list[dict]
+
+
+class TopBlockedReason(BaseModel):
+    fired_rule:       str
+    count:            int
+    last_occurred_at: datetime
+
+
+# ─── Policy diff ──────────────────────────────────────────────────────────────
+
+class PolicyDiffRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    policy_a: dict[str, Any]
+    policy_b: dict[str, Any]
+
+
+class PolicyDiffEntry(BaseModel):
+    field:  str
+    before: Any | None = None
+    after:  Any | None = None
+
+
+# ─── Admin replay (dry-run stored request against current policy) ─────────────
+
+class ReplayOriginalVerdict(BaseModel):
+    passed: bool
+    status: str
+    reason: str | None = None
+
+
+class ReplayCurrentVerdict(BaseModel):
+    passed:      bool
+    check:       str
+    reason:      str | None = None
+    reason_code: str = "clean"
+    risk_score:  float = 0.0
+
+
+class ReplayResponse(BaseModel):
+    request_id:           str
+    original:             ReplayOriginalVerdict
+    current:              ReplayCurrentVerdict
+    would_change_outcome: bool
+    note:                 str

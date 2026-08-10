@@ -18,7 +18,7 @@ def test_demo_payload_limits_reject_long_prompt(monkeypatch):
         demo_limits.enforce_demo_payload_limits("too long", 10)
 
     assert exc.value.status_code == 400
-    assert "prompt must be 5 characters or fewer" in exc.value.detail
+    assert "prompt is too long" in exc.value.detail
 
 
 def test_demo_payload_limits_reject_high_max_tokens(monkeypatch):
@@ -30,4 +30,4 @@ def test_demo_payload_limits_reject_high_max_tokens(monkeypatch):
         demo_limits.enforce_demo_payload_limits("ok", 32)
 
     assert exc.value.status_code == 400
-    assert "max_tokens must be 16 or fewer" in exc.value.detail
+    assert "max_tokens is too high" in exc.value.detail

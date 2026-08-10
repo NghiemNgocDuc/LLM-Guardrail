@@ -132,6 +132,26 @@ curl -X POST http://localhost:8080/skills/scan \
 
 Returns `safe`, `risk_score`, and per-line `findings` (secrets, PII, DB URLs, env assignments, internal paths, destructive shell/SQL commands).
 
+### Dashboard utilities
+
+Policy change previews, replay, and blocked-rule analytics (all dashboard-authenticated, all read-only):
+
+```bash
+# Compare two policy blobs field by field (no DB write) — admin policy tooling
+curl -X POST http://localhost:8080/policy/diff \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"policy_a": {"input_rules": {"block_jailbreak": true}}, "policy_b": {"input_rules": {"block_jailbreak": false}}}'
+
+# Dry-run a stored request against the CURRENT org policy (no LLM call, no tokens deducted)
+curl -X POST http://localhost:8080/admin/replay/<request_id> \
+  -H "Authorization: Bearer <access_token>"
+
+# Most frequent blocked-request rules in the last 7 days, with latest occurrence each
+curl -X GET "http://localhost:8080/analytics/top-blocked-reasons?days=7&limit=10" \
+  -H "Authorization: Bearer <access_token>"
+```
+
 ### Before `git push` (local hook)
 
 Install once per clone so sensitive or destructive skill content cannot be pushed to GitHub:
@@ -170,6 +190,21 @@ Client examples:
 - [JavaScript](examples/javascript_client.mjs)
 
 SDK helpers are documented in [SDK.md](SDK.md).
+
+### MCP server tools
+
+The MCP server (`GET /mcp/sse`, JSON-RPC over SSE, authenticated with a `grg_` gateway API key) exposes 8 tools:
+
+| Tool | Purpose |
+| --- | --- |
+| `scan_skill` | Scan one skill / instruction file for secrets, PII, and destructive commands |
+| `scan_repo` | Scan a batch of files in one call (JSON array of `{filename, content}`), returns per-file results plus an aggregate summary |
+| `check_input` | Check a prompt against input guardrails (secrets, PII, injection, jailbreak) |
+| `check_output` | Check an LLM response against output guardrails (leaks, toxicity, topics, schema) |
+| `chat` | Route a prompt through the full guardrail gateway (requires a key with the `chat` scope) |
+| `redact_pii` | Redact PII from text with reversible placeholders |
+| `get_default_policy` | Return the default guardrail policy configuration |
+| `explain_policy` | Explain what a JSON guardrail policy actually enforces (no LLM call) |
 
 ## Configuration
 

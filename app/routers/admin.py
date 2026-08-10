@@ -6,12 +6,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import CurrentUser, hash_password
 from app.i18n import _t
-from app.models import APIKey, TokenWallet, User
-from app.schemas import AdminInviteUser, AdminUserStats, AdminUserUpdate, APIKeyOut, BulkUserAction, UserOut
+from app.models import APIKey, OrgPolicy, RequestLog, TokenWallet, User
+from app.schemas import (
+    AdminInviteUser, AdminUserStats, AdminUserUpdate, APIKeyOut, BulkUserAction,
+    ReplayCurrentVerdict, ReplayOriginalVerdict, ReplayResponse, UserOut,
+)
 from app.config import get_settings
 from app.services.auth_tokens import TOKEN_PURPOSE_RESET, build_action_url, create_auth_token
 from app.services.email import send_password_reset_email
 from app.services.token_wallet import ensure_wallet
+from guardrails.input import InputGuardrail
 
 settings = get_settings()
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -184,3 +188,70 @@ async def revoke_org_api_key(key_id: str, current_user: CurrentUser, db: AsyncSe
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_t("api_key.not_found"))
     key.is_active = False
     await db.flush()
+
+
+@router.post("/replay/{request_id}", response_model=ReplayResponse)
+async def replay_request(
+    request_id: str,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Dry-run a stored request against the CURRENT org policy.
+
+    No LLM call, no token deduction, no new RequestLog row — the input
+    guardrail is re-run against the policy as it stands today.
+    Follow-up (not implemented): cap the size of full_prompt pulled per call
+    and rate-limit this endpoint, matching the rest of /admin.
+    """
+    require_org_admin(current_user)
+
+    log = await db.get(RequestLog, request_id)
+    if not log or log.org_id != current_user.org_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_t("admin.replay_not_found"))
+
+    if log.full_prompt is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=_t("admin.replay_no_full_prompt"),
+        )
+
+    # Current policy for the log's org (system defaults if none — mirrors /chat)
+    from app.defaults import DEFAULT_INPUT_RULES
+    result = await db.execute(select(OrgPolicy).where(OrgPolicy.org_id == log.org_id))
+    policy = result.scalar_one_or_none()
+    input_rules = policy.input_rules if policy else DEFAULT_INPUT_RULES
+
+    # Replicate /chat's redaction-mode handling: in "redact" mode PII is
+    # handled by the redactor, so the input guardrail skips its PII check.
+    guardrail_rules = dict(input_rules)
+    if input_rules.get("pii_redaction_mode", "block") == "redact":
+        guardrail_rules["block_pii"] = False
+
+    current = InputGuardrail(guardrail_rules).check(log.full_prompt)
+
+    # Original verdict is the INPUT dimension only — an output-blocked row has
+    # no LLM output to re-check in a dry run, so its input verdict stands.
+    original_passed = log.input_passed is not False
+    would_change = original_passed != current.allowed
+
+    return ReplayResponse(
+        request_id=log.id,
+        original=ReplayOriginalVerdict(
+            passed=original_passed,
+            status=log.status,
+            reason=log.input_block_reason,
+        ),
+        current=ReplayCurrentVerdict(
+            passed=current.allowed,
+            check=current.check,
+            reason=current.reason,
+            reason_code=current.reason_code,
+            risk_score=current.risk_score,
+        ),
+        would_change_outcome=would_change,
+        note=(
+            "Dry-run against the current org policy. The LLM was not called, "
+            "no tokens were deducted, and no new RequestLog row was written."
+        ),
+    )

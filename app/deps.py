@@ -62,7 +62,7 @@ async def _verify_clerk_token(token: str) -> dict:
             return jwt.decode(
                 token,
                 _clerk_public_key,
-                algorithms=[unverified.get("alg", "RS256")],
+                algorithms=["RS256"],
                 options={"verify_aud": False},
             )
         except JWTError:
@@ -95,7 +95,7 @@ async def _verify_clerk_token(token: str) -> dict:
         return jwt.decode(
             token,
             rsa_key,
-            algorithms=[unverified.get("alg", "RS256")],
+            algorithms=["RS256"],
             options={"verify_aud": False},
         )
     except JWTError:
@@ -272,7 +272,6 @@ async def get_api_key_auth(
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail=_t("api_key.missing_header"))
-    )
 
 
 AuthedAPIKey = Annotated[APIKey, Depends(get_api_key_auth)]

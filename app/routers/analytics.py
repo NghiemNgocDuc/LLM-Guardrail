@@ -18,7 +18,7 @@ from app.database import get_db
 from app.deps import CurrentUser
 from app.models import APIKey, RequestLog, TokenWallet, User
 from app.schemas import (
-    AnalyticsDashboard, ProviderUsage, TimeSeriesPoint, TopFiredRule, UsageSummary,
+    AnalyticsDashboard, ProviderUsage, TimeSeriesPoint, TopBlockedReason, TopFiredRule, UsageSummary,
 )
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
@@ -179,6 +179,44 @@ async def dashboard(
         recent_suspicious=recent_suspicious,
         recent_logs=recent_logs,
     )
+
+
+@router.get("/top-blocked-reasons", response_model=list[TopBlockedReason])
+async def top_blocked_reasons(
+    current_user: CurrentUser,
+    days: int = Query(default=7, ge=1, le=90),
+    limit: int = Query(default=10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+):
+    """Most frequent fired rules among blocked requests, with the most recent occurrence of each."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    filters = [
+        RequestLog.created_at >= since,
+        RequestLog.status.in_(["input_blocked", "output_blocked"]),
+        RequestLog.fired_rule.isnot(None),
+    ]
+    if current_user.org_id:
+        filters.append(RequestLog.org_id == current_user.org_id)
+
+    result = await db.execute(
+        select(
+            RequestLog.fired_rule,
+            func.count().label("cnt"),
+            func.max(RequestLog.created_at).label("last_occurred_at"),
+        )
+        .where(*filters)
+        .group_by(RequestLog.fired_rule)
+        .order_by(func.count().desc())
+        .limit(limit)
+    )
+    return [
+        TopBlockedReason(
+            fired_rule=r.fired_rule,
+            count=r.cnt,
+            last_occurred_at=r.last_occurred_at,
+        )
+        for r in result.all()
+    ]
 
 
 @router.get("/users")

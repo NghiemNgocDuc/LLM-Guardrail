@@ -15,4 +15,4 @@ def test_memory_rate_limit_raises_clear_error():
         rate_limit._check_memory_rate_limit(key, rpm=1, rpd=10)
 
     assert exc.value.status_code == 429
-    assert "requests/minute" in exc.value.detail
+    assert "Rate limit exceeded" in exc.value.detail

@@ -12,9 +12,17 @@ from app.database import get_db
 from app.deps import CurrentUser
 from app.i18n import _t
 from app.models import OrgPolicy
-from app.schemas import PolicyOut, PolicyUpdate
+from app.schemas import PolicyDiffEntry, PolicyDiffRequest, PolicyOut, PolicyUpdate
 
 router = APIRouter(prefix="/policy", tags=["Policy"])
+
+# Fields compared by POST /policy/diff in a flat, field-by-field manner.
+# input_rules/output_rules/topic_policy/compliance_rules are JSON blobs that
+# may contain nested structures — those are compared wholesale, per field.
+_POLICY_DIFF_FIELDS = [
+    "input_rules", "output_rules", "topic_policy", "compliance_rules",
+    "llm_backend", "llm_model", "rate_limit_rpm", "rate_limit_rpd",
+]
 
 
 def _require_admin(user):
@@ -77,3 +85,22 @@ async def reset_policy(current_user: CurrentUser, db: AsyncSession = Depends(get
     policy.llm_model        = None
     await db.flush()
     return policy
+
+
+@router.post("/diff", response_model=list[PolicyDiffEntry])
+async def diff_policy(
+    body: PolicyDiffRequest,
+    current_user: CurrentUser,
+):
+    """
+    Compare two policy blobs field by field. No DB write — pure comparison.
+
+    Nested structures inside the rule blobs (e.g. pii_patterns entries) are
+    compared as whole values per top-level field, not recursively.
+    """
+    a, b = body.policy_a, body.policy_b
+    return [
+        PolicyDiffEntry(field=field, before=a.get(field), after=b.get(field))
+        for field in _POLICY_DIFF_FIELDS
+        if a.get(field) != b.get(field)
+    ]

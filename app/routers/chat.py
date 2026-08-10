@@ -45,7 +45,7 @@ from app.services.token_wallet import (
 from app.config import get_settings
 from app.http_client import get_http_client
 from app.i18n import _t
-from app.utils.url_validation import validate_webhook_url
+from app.utils.url_validation import validate_webhook_url_resolved
 from guardrails.input import InputGuardrail
 from guardrails.output import OutputGuardrail
 from guardrails.pii_redactor import PIIRedactor
@@ -94,7 +94,7 @@ _DEFAULT_COMPLIANCE     = {"block_medical_advice": True}
 
 async def _fire_webhook(url: str, payload: dict) -> None:
     try:
-        validate_webhook_url(url)
+        await validate_webhook_url_resolved(url)
         client = get_http_client()
         await client.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=8.0)
     except Exception:

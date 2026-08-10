@@ -82,8 +82,9 @@ class Settings(BaseSettings):
     # Hard daily token spend cap per user — prevents runaway cost from scrapers.
     # 0 means unlimited (only the wallet balance applies).
     DAILY_TOKEN_BUDGET: int = 0
-    # Comma-separated emails with unlimited gateway tokens (no deduct, no 402)
-    BILLING_UNLIMITED_EMAILS: str = "dnghiem@umass.edu"
+    # Comma-separated emails with unlimited gateway tokens (no deduct, no 402).
+    # MUST be set explicitly via env — never hardcode emails here.
+    BILLING_UNLIMITED_EMAILS: str = ""
 
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
