@@ -121,6 +121,20 @@ class Settings(BaseSettings):
     # output_rules.response_cache flag must ALSO be set for caching to apply.
     RESPONSE_CACHE_ENABLED: bool = False
 
+    # Guardrail regex engine: "rust" (default — uses the compiled guardrail_core
+    # PyO3 extension when importable) or "python" (pure-Python implementation,
+    # no Rust toolchain needed). Falls back to Python automatically when the
+    # extension is not installed.
+    GUARDRAIL_ENGINE: str = "rust"
+
+    # Open Policy Agent sidecar for org custom Rego rules (guardrails/opa.py).
+    # http://opa:8181 is the `opa` service on the API's internal Docker
+    # network; local dev: http://localhost:8181
+    OPA_URL: str = "http://opa:8181"
+    # Explicit per-query timeout. OPA failures fail CLOSED (the request is
+    # blocked) — this value bounds how long a hung sidecar can hold a request.
+    OPA_TIMEOUT_SECONDS: float = 2.0
+
     @field_validator("DEBUG", mode="before")
     @classmethod
     def parse_debug(cls, value: Any) -> Any:

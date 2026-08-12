@@ -1,6 +1,10 @@
 import re
 
+import pytest
+
 from guardrails.dangerous_commands import DANGEROUS_COMMAND_PATTERNS
+
+pytestmark = pytest.mark.usefixtures("engine_mode")
 
 
 def test_all_dangerous_patterns_compile():

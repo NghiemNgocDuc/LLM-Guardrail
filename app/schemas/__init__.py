@@ -118,6 +118,9 @@ class PolicyUpdate(BaseModel):
     llm_model:        str | None = None
     rate_limit_rpm:   int | None = None
     rate_limit_rpd:   int | None = None
+    # Optional org-authored Rego custom input rule (evaluated by the OPA
+    # sidecar). Send null to clear it. Validated to compile before saving.
+    custom_rule_rego: str | None = None
 
 
 class PolicyOut(PolicyUpdate):
@@ -125,6 +128,17 @@ class PolicyOut(PolicyUpdate):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class RegoValidateRequest(BaseModel):
+    """Rego source to compile-check against the OPA sidecar (no save)."""
+    model_config = {"extra": "forbid"}
+    rego: str = Field(min_length=1, max_length=200_000)
+
+
+class RegoValidateResponse(BaseModel):
+    valid: bool
+    error: str | None = None
 
 
 # ─── Billing (token packs) ────────────────────────────────────────────────────

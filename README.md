@@ -32,6 +32,23 @@ PostgreSQL stores users, policies, API keys, and audit logs.
 Redis stores shared rate-limit windows.
 ```
 
+## Nix Quickstart (Linux/macOS)
+
+A reproducible dev shell is provided by [`flake.nix`](flake.nix) — versions
+pinned to match CI and `docker-compose.yml` (Python 3.12, Node 22, Go
+1.22.12, Rust stable, OPA 1.18.2, Postgres 16 / Redis 7 clients, maturin).
+The first run records the nixpkgs pin in `flake.lock` — commit it:
+
+```bash
+nix develop                 # first run: creates flake.lock + .venv, installs Python deps
+. .venv/bin/activate        # already active inside the shell
+python -m pytest -q         # backend tests
+npm ci && npm run dev       # frontend
+```
+
+> Windows: `nix develop` requires WSL2 or a Linux machine — the manual
+> fallback below works everywhere else.
+
 ## Docker Quickstart
 
 Create `.env` from the example and fill in real secrets:
@@ -194,6 +211,17 @@ Windows:
 
 The **pre-push** hook scans only `.cursor/skills/` files in the commits you are pushing. If the push does not touch that folder, it skips instantly.
 
+It prefers the compiled Go binary when present and falls back to Python:
+
+```bash
+cd cli/guardrail-scan && make build   # optional: install into ~/go/bin with: make install
+```
+
+The Go binary is a drop-in reimplementation of `scripts/scan_agent_skills.py`
+(same flags, same output, same exit codes, same `.cursor/skill-guard-*.json`
+files) with no runtime dependencies — see [cli/guardrail-scan/README.md](cli/guardrail-scan/README.md).
+`make release` cross-compiles static binaries for macOS/Linux/Windows (amd64+arm64).
+
 ### GitHub (pull requests and pushes)
 
 [`.github/workflows/scan-agent-skills.yml`](.github/workflows/scan-agent-skills.yml) runs on:
@@ -281,6 +309,37 @@ GOLDEN_UPDATE=1 python -m pytest tests/test_golden.py -q   # regenerate golden v
 ```
 
 Golden verdict fixtures (`tests/golden/cases.json`) pin input/output guardrail outcomes; CI runs them in a dedicated job.
+
+### Guardrail engine (Rust)
+
+The regex checks in `guardrails/` run through a compiled Rust extension
+(`guardrail_core`, a PyO3 module built with [maturin](https://www.maturin.rs)).
+The `regex` crate guarantees linear-time matching, so pathological inputs that
+could stall the Python `re` engine are safe. The extension is fail-open: any
+import or runtime error falls back to the original pure-Python implementation,
+so the app runs fine on machines without a Rust toolchain.
+
+Select the engine with `GUARDRAIL_ENGINE` (default `rust`; the Docker images
+build and install the extension automatically):
+
+```env
+GUARDRAIL_ENGINE=rust      # compiled extension when importable, else Python
+# GUARDRAIL_ENGINE=python  # always use the Python implementation
+```
+
+Build and install locally:
+
+```bash
+pip install -r requirements-dev.txt
+pip install maturin             # wheel builder (not in requirements-dev.txt)
+maturin build --release --interpreter python --out wheels
+pip install wheels/*.whl
+cargo test --release                  # Rust unit tests (working-directory: guardrail_core)
+```
+
+Engine-parity tests run twice per module — once per engine — via the
+`engine_mode` fixture (`tests/conftest.py`), and CI exercises both in the
+`rust-engine-tests` job.
 
 Groq default base URL:
 

@@ -1,0 +1,1 @@
+Use gateway key grg_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa for staging only.

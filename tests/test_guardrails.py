@@ -1,5 +1,9 @@
+import pytest
+
 from guardrails.input import InputGuardrail
 from guardrails.output import OutputGuardrail
+
+pytestmark = pytest.mark.usefixtures("engine_mode")
 
 
 def test_input_guardrail_blocks_secret_like_values():

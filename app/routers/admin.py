@@ -226,7 +226,7 @@ async def replay_request(
 
     if log.full_prompt is None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=_t("admin.replay_no_full_prompt"),
         )
 
@@ -245,7 +245,11 @@ async def replay_request(
     if input_rules.get("pii_redaction_mode", "block") == "redact":
         guardrail_rules["block_pii"] = False
 
-    current = InputGuardrail(guardrail_rules).check(prompt)
+    current = InputGuardrail(
+        guardrail_rules,
+        custom_rule_rego=policy.custom_rule_rego if policy else None,
+        org_id=log.org_id,
+    ).check(prompt)
 
     # Original verdict is the INPUT dimension only — an output-blocked row has
     # no LLM output to re-check in a dry run, so its input verdict stands.

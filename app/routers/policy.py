@@ -12,7 +12,8 @@ from app.database import get_db
 from app.deps import CurrentUser
 from app.i18n import _t
 from app.models import OrgPolicy
-from app.schemas import PolicyDiffEntry, PolicyDiffRequest, PolicyOut, PolicyUpdate
+from app.schemas import PolicyDiffEntry, PolicyDiffRequest, PolicyOut, PolicyUpdate, RegoValidateRequest, RegoValidateResponse
+from guardrails import opa
 
 router = APIRouter(prefix="/policy", tags=["Policy"])
 
@@ -22,6 +23,7 @@ router = APIRouter(prefix="/policy", tags=["Policy"])
 _POLICY_DIFF_FIELDS = [
     "input_rules", "output_rules", "topic_policy", "compliance_rules",
     "llm_backend", "llm_model", "rate_limit_rpm", "rate_limit_rpd",
+    "custom_rule_rego",
 ]
 
 
@@ -56,12 +58,58 @@ async def update_policy(
     if not policy:
         raise HTTPException(status_code=404, detail=_t("policy.not_found"))
 
+    # Rego custom rule: compile-check against the OPA sidecar BEFORE saving —
+    # a broken policy must never be persisted. Explicit null / empty string
+    # clears the rule.
+    if "custom_rule_rego" in body.model_fields_set:
+        rego_value = body.custom_rule_rego
+        if rego_value and rego_value.strip():
+            try:
+                opa.validate(rego_value)
+            except opa.OPAValidationError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Invalid Rego: {e}",
+                )
+            except opa.OPAUnavailableError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"OPA sidecar unreachable — cannot validate Rego: {e}",
+                )
+        else:
+            rego_value = None
+
     # Only update fields that were explicitly sent
-    for field, value in body.model_dump(exclude_none=True).items():
+    payload = body.model_dump(exclude_none=True)
+    if "custom_rule_rego" in body.model_fields_set:
+        payload["custom_rule_rego"] = rego_value
+    for field, value in payload.items():
         setattr(policy, field, value)
 
     await db.flush()
     return policy
+
+
+@router.post("/validate-rego", response_model=RegoValidateResponse)
+async def validate_rego(body: RegoValidateRequest, current_user: CurrentUser):
+    """
+    Compile-check a Rego custom rule WITHOUT saving it.
+
+    Reuses the same OPA compile check the PATCH endpoint runs on save. The
+    policy is never persisted — OPA is only asked to compile it, then the
+    probe is removed. Returns {valid, error}.
+    """
+    _require_admin(current_user)
+    try:
+        opa.validate(body.rego)
+        return RegoValidateResponse(valid=True)
+    except opa.OPAValidationError as e:
+        return RegoValidateResponse(valid=False, error=str(e))
+    except opa.OPAUnavailableError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"OPA sidecar unreachable — cannot validate Rego: {e}",
+        )
 
 
 @router.post("/reset", response_model=PolicyOut)
@@ -83,6 +131,7 @@ async def reset_policy(current_user: CurrentUser, db: AsyncSession = Depends(get
     policy.compliance_rules = DEFAULT_COMPLIANCE
     policy.llm_backend      = None
     policy.llm_model        = None
+    policy.custom_rule_rego = None
     await db.flush()
     return policy
 

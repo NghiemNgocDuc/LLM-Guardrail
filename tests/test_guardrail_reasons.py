@@ -1,7 +1,11 @@
 """Tests for localized guardrail reason strings (_t_or + en.json templates)."""
+import pytest
+
 from app.i18n import _t, _t_or
 from guardrails.input import InputGuardrail
 from guardrails.output import OutputGuardrail
+
+pytestmark = pytest.mark.usefixtures("engine_mode")
 
 
 def _input_policy(**overrides):

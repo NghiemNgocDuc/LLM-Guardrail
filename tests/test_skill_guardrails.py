@@ -1,4 +1,8 @@
+import pytest
+
 from guardrails.skill import SkillGuardrail
+
+pytestmark = pytest.mark.usefixtures("engine_mode")
 
 
 def test_skill_scan_clean_instructions():

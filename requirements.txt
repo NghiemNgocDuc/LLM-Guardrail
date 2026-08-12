@@ -31,8 +31,11 @@ redis==5.2.1
 # Billing (optional — set STRIPE_* in .env)
 stripe==11.4.1
 
-# Clerk (auth replacement — verify JWTs signups via webhooks)
-clerk-sdk-python==1.0.0
+# Clerk (auth replacement — verify JWTs via python-jose/JWKS in app/deps.py;
+# user lifecycle via /auth/clerk-webhook HMAC signature verification in
+# app/routers/auth.py). Deliberately NO clerk SDK dependency: the only PyPI
+# package named clerk-sdk-python (0.1.0) is an unofficial REST client that
+# pins pydantic<2, and nothing in this codebase imports it.
 
 # Error tracking
 sentry-sdk[fastapi]==2.19.2
@@ -47,3 +50,6 @@ pinecone==5.4.1
 #   Pinecone vectorstore degrades gracefully without it (semantic similarity checks skip).
 # litellm>=1.55.0                # OPTIONAL — provider-failover LLM backend (llm_backend="litellm").
 #   Install only if you need litellm's provider-level failover/caching.
+
+# GraphQL analytics layer (read-only mirror of /analytics REST routes)
+strawberry-graphql==0.324.0

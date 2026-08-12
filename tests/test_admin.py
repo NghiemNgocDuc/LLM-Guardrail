@@ -42,8 +42,9 @@ class _Log:
 
 
 class _Policy:
-    def __init__(self, input_rules):
+    def __init__(self, input_rules, custom_rule_rego=None):
         self.input_rules = input_rules
+        self.custom_rule_rego = custom_rule_rego
 
 
 class _FakeDb:

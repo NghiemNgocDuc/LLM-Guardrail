@@ -7,6 +7,21 @@ This app is safest to run as a public demo with:
 - Upstash Redis for shared rate limiting
 - provider keys stored only as host-side environment variables
 
+## Recommended: Terraform
+
+The Render deployment (web service + Upstash Redis, wired to Supabase) is
+provisioned with Terraform — see [`terraform/README.md`](terraform/README.md)
+for the full guide: providers, remote state, `terraform.tfvars.example`, and
+the apply-from-scratch steps.
+
+Terraform replaces the *mechanical* parts of the manual steps below (creating
+the Render service, Upstash Redis, and wiring environment variables). Two
+things stay manual because no official providers exist or the dashboard
+requires it: creating the Supabase project and setting the `VITE_*` Docker
+build args. The manual steps below remain a valid alternative (Render/Koyeb
+dashboards, or Docker Compose on a VPS) and are also what Terraform does
+under the hood.
+
 References:
 
 - Supabase Postgres connection strings: https://supabase.com/docs/reference/postgres/connection-strings

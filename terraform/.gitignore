@@ -1,0 +1,16 @@
+# Terraform local state and credentials — never commit these.
+# (Remote state lives in Terraform Cloud; these protect against accidental
+#  local state files and stray .tfvars.)
+
+.terraform/
+.terraform.lock.hcl.local
+*.tfstate
+*.tfstate.*
+crash.log
+
+terraform.tfvars
+terraform.tfvars.*
+!terraform.tfvars.example
+
+*.tfvars.local
+*.tfvars.json

@@ -1,0 +1,17 @@
+[package]
+name = "guardrail-core"
+version = "0.1.0"
+edition = "2021"
+description = "Rust regex guardrail engine (PyO3) — secrets, PII, prompt injection, dangerous commands, agent-skill scanning"
+
+[lib]
+name = "guardrail_core"
+crate-type = ["cdylib"]
+
+[features]
+default = ["extension-module"]
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["abi3-py38"] }
+regex = "1.10"

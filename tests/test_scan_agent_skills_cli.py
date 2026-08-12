@@ -2,8 +2,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "scan_agent_skills.py"
+
+pytestmark = pytest.mark.usefixtures("engine_mode")
 
 
 def test_scan_cli_passes_on_safe_example_skill():

@@ -1,5 +1,9 @@
+import pytest
+
 from guardrails.skill import SkillFinding, SkillGuardrail
 from guardrails.skill_overrides import SkillOverrides, apply_overrides, finding_key
+
+pytestmark = pytest.mark.usefixtures("engine_mode")
 
 
 def test_finding_key_stable():

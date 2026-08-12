@@ -47,6 +47,38 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  opa:
+    # Policy engine for org custom Rego rules (OrgPolicy.custom_rule_rego).
+    # Reachable ONLY on the internal Docker network — no published ports, so
+    # it is not reachable from the public internet or from Nginx hosts.
+    image: openpolicyagent/opa:1.18.2
+    restart: unless-stopped
+    command:
+      - run
+      - --server
+      - --addr=0.0.0.0:8181
+      - --log-level=error
+    expose:
+      - "8181"
+    healthcheck:
+      # Shell-free probe (the opa image has no shell); verifies the engine boots.
+      test: ["CMD", "opa", "eval", "1 == 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
   api:
     build: .
     restart: unless-stopped
@@ -65,6 +97,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      opa:
+        # service_started, NOT service_healthy: the API must boot even if the
+        # sidecar is down so requests can fail CLOSED per policy instead of
+        # the whole API being unreachable.
+        condition: service_started
     networks:
       - internal
     deploy:

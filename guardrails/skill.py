@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from guardrails import _engine
 from guardrails.dangerous_commands import DANGEROUS_COMMAND_PATTERNS
 
 _DEFAULT_INPUT_POLICY = {
@@ -105,6 +106,33 @@ def _severity(score: float) -> str:
 
 class SkillGuardrail:
     def scan(self, content: str) -> SkillScanResult:
+        if _engine.enabled():
+            try:
+                data = _engine.module().scan_skill(content)
+                if data is None:
+                    return SkillScanResult(safe=True, risk_score=0.0, line_count=0, char_count=0)
+                findings = [
+                    SkillFinding(
+                        category=f["category"],
+                        severity=f["severity"],
+                        check=f["check"],
+                        reason=f["reason"],
+                        reason_code=f["reason_code"],
+                        line_number=f["line_number"],
+                        snippet=f["snippet"],
+                        risk_score=f["risk_score"],
+                    )
+                    for f in data["findings"]
+                ]
+                return SkillScanResult(
+                    safe=len(findings) == 0,
+                    risk_score=data["risk_score"],
+                    findings=findings,
+                    line_count=data["line_count"],
+                    char_count=data["char_count"],
+                )
+            except Exception:
+                pass  # fall through to the Python implementation
         if not content or not content.strip():
             return SkillScanResult(safe=True, risk_score=0.0, line_count=0, char_count=0)
 

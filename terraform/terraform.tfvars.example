@@ -1,0 +1,81 @@
+# terraform.tfvars.example
+# Copy to terraform.tfvars, fill in real values, and never commit it.
+# Everything between <...> is a placeholder — every `<` prevents the repo's
+# CI secret-scan from treating this file as a real credential.
+#
+# Secrets are also accepted via environment variables (TF_VAR_render_api_key,
+# TF_VAR_secret_key, ...), which keeps them out of the shell history of git.
+
+# ── Provider credentials ────────────────────────────────────────────────
+render_api_key   = "<paste Render API key from https://dashboard.render.com/u/settings#api-keys>"
+upstash_api_key  = "<paste Upstash API key from https://console.upstash.com/account/api>"
+upstash_email    = "<your-upstash-account@example.com>"
+
+# ── Render web service ──────────────────────────────────────────────────
+service_name = "llm-guardrails"          # becomes https://llm-guardrails.onrender.com
+repo_url     = "<https://github.com/you/llm_guardrails_v2_wired>"   # deploy from this repo
+branch       = "main"
+render_plan  = "starter"                 # starter = free tier
+render_region = "oregon"
+
+# ── Database — Supabase Postgres (external; create in Supabase dashboard) ─
+# DEPLOYMENT.md §Supabase Postgres — pooler connection string, asyncpg scheme:
+supabase_database_url = "<postgresql+asyncpg://postgres.<project-ref>:<YOUR-PASSWORD>@<pooler-host>:6543/postgres>"
+# ...or the POSTGRES_* component form from render.yaml (then the app builds
+# DATABASE_URL itself, config.py:normalize_database_url):
+# postgres_user     = "postgres"
+# postgres_password = "<YOUR-PASSWORD>"
+# postgres_db       = "postgres"
+# postgres_host     = "<db.<project-ref>.supabase.co>"
+# postgres_port     = "6543"
+
+# ── Cache — Upstash Redis (provisioned by Terraform) ─────────────────────
+redis_database_name = "llm-guardrails-redis"
+redis_region        = "us-east-1"
+redis_tls           = true
+
+# ── SECURITY.md required production secrets ──────────────────────────────
+# Generate SECRET_KEY with:
+#   python -c "import secrets; print(secrets.token_urlsafe(48))"
+secret_key        = "<long-random-secret-at-least-32-chars>"
+groq_api_key      = ""                   # or your selected LLM backend's key
+# anthropic_api_key = "<ANTHROPIC-API-KEY>"   # render.yaml's DEFAULT_LLM_BACKEND is anthropic
+
+# ── App defaults (render.yaml values) ────────────────────────────────────
+default_llm_backend = "anthropic"
+default_model       = "claude-sonnet-4-20250514"
+log_level           = "INFO"
+billing_enabled     = true
+free_signup_tokens  = 10000
+pinecone_environment = "us-east-1"
+pinecone_index_name  = "guardrails"
+# pinecone_api_key   = "<...>"           # vector store — optional per render.yaml
+
+# ── Email / SMTP (DEPLOYMENT.md §Email) — omit to skip verification ──────
+# smtp_host     = "smtp.resend.com"
+# smtp_port     = 587
+# smtp_user     = "resend"
+# smtp_password = "<your-smtp-password>"
+# smtp_from     = "LLM Guardrail <onboarding@yourdomain.com>"
+# smtp_use_tls  = true
+
+# ── Demo mode (DEPLOYMENT.md §Public Demo Rate Limits) — off by default ──
+# demo_mode              = true
+# demo_rate_limit_rpm    = 3
+# demo_rate_limit_rpd    = 20
+# demo_ip_rate_limit_rpm = 10
+# demo_ip_rate_limit_rpd = 50
+
+# ── Optional integrations (render.yaml sync:false — set only if you use them)
+# clerk_secret_key          = "<...>"
+# clerk_jwks_url            = "<https://your-app.clerk.accounts.dev/.well-known/jwks.json>"
+# stripe_secret_key         = "<...>"
+# stripe_webhook_secret     = "<...>"
+# stripe_publishable_key    = "<...>"
+# billing_unlimited_emails  = "<ops@example.com>"
+#
+# ── NOT managed by Terraform (see terraform/README.md "Not covered") ─────
+# VITE_* Docker build args (VITE_CLERK_PUBLISHABLE_KEY, VITE_POSTHOG_API_KEY,
+# VITE_POSTHOG_HOST, VITE_SENTRY_DSN, VITE_API_BASE_URL) cannot be passed by
+# the official Render provider — set them in the Render dashboard under
+# the service's Docker build settings.

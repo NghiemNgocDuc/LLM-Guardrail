@@ -269,7 +269,11 @@ async def chat(
     if pii_mode == "redact":
         guardrail_rules["block_pii"] = False
 
-    in_guard = InputGuardrail(guardrail_rules)
+    in_guard = InputGuardrail(
+        guardrail_rules,
+        custom_rule_rego=policy.custom_rule_rego if policy else None,
+        org_id=api_key.org_id,
+    )
     in_result = in_guard.check(prompt_for_llm)
 
     pii_found = (redaction_result is not None and redaction_result.pii_found)

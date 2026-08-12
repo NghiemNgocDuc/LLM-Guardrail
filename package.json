@@ -6,16 +6,24 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.0.0",
     "@sentry/react": "^9.0.0",
-    "posthog-js": "^1.200.0",
     "@vitejs/plugin-react": "^5.1.1",
+    "posthog-js": "^1.200.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "recharts": "^3.5.1",
     "vite": "^7.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.9.3"
   }
 }

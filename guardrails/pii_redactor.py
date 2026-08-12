@@ -14,6 +14,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
+from guardrails import _engine
+
 
 # ─── PII Pattern Definitions ─────────────────────────────────────────────────
 
@@ -80,6 +82,22 @@ class PIIRedactor:
         Returns a RedactionResult containing the cleaned text and a
         mapping that can be used to restore the originals later.
         """
+        if _engine.enabled():
+            try:
+                res = _engine.module().redact_pii(
+                    text,
+                    [(p["name"], p["regex"], p["placeholder"]) for p in self.patterns],
+                )
+                return RedactionResult(
+                    redacted_text=res["redacted_text"],
+                    original_text=text,
+                    pii_found=res["pii_count"] > 0,
+                    pii_count=res["pii_count"],
+                    pii_types=list(res["pii_types"]),
+                    mapping=dict(res["mapping"]),
+                )
+            except Exception:
+                pass  # fall through to the Python implementation
         mapping: dict[str, str] = {}
         pii_types: list[str] = []
         counter = 0
@@ -111,6 +129,11 @@ class PIIRedactor:
         Reverse the redaction — replace placeholders back with originals.
         Useful if the policy allows PII to appear in the response.
         """
+        if _engine.enabled():
+            try:
+                return _engine.module().restore_pii(text, list(mapping.items()))
+            except Exception:
+                pass  # fall through to the Python implementation
         restored = text
         for placeholder, original in mapping.items():
             restored = restored.replace(placeholder, original)

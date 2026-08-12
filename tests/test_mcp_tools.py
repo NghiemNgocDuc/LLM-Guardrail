@@ -2,12 +2,16 @@
 import asyncio
 import json
 
+import pytest
+
 from app.mcp_server import (
     MAX_CONTENT_CHARS,
     TOOL_REGISTRY,
     _call_tool,
     _validate_tool_call,
 )
+
+pytestmark = pytest.mark.usefixtures("engine_mode")
 
 
 def _call(name: str, args: dict):

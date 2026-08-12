@@ -16,8 +16,12 @@ import json
 import os
 import pathlib
 
+import pytest
+
 from guardrails.input import InputGuardrail
 from guardrails.output import OutputGuardrail
+
+pytestmark = pytest.mark.usefixtures("engine_mode")
 
 _GOLDEN_FILE = pathlib.Path(__file__).parent / "golden" / "cases.json"
 

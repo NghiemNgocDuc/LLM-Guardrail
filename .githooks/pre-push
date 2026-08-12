@@ -1,9 +1,25 @@
 #!/bin/sh
 # Block git push when agent skills under .cursor/skills/ contain leaks or destructive commands.
+# Uses the compiled Go binary (cli/guardrail-scan/guardrail-scan) when present,
+# falls back to the Python script.
 set -e
 
 ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+BIN="${SKILL_GUARD_BIN:-}"
+if [ -z "$BIN" ]; then
+  if [ -x "$ROOT/cli/guardrail-scan/guardrail-scan" ]; then
+    BIN="$ROOT/cli/guardrail-scan/guardrail-scan"
+  elif [ -x "$ROOT/cli/guardrail-scan/guardrail-scan.exe" ]; then
+    BIN="$ROOT/cli/guardrail-scan/guardrail-scan.exe"
+  fi
+fi
+
+if [ -n "$BIN" ]; then
+  echo "Skill Guard: checking agent skills before push to GitHub (guardrail-scan)..."
+  exec "$BIN" --pre-push
+fi
 
 PYTHON="${PYTHON:-python3}"
 if ! command -v "$PYTHON" >/dev/null 2>&1; then

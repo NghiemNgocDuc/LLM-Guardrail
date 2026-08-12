@@ -27,6 +27,8 @@ from app.middleware.abuse_protection import AbuseProtectionMiddleware, close_abu
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.routers import admin, auth, api_keys, billing, chat, analytics, health, org, policy, skills, vector
 from app.mcp_server import get_mcp_app
+from strawberry.fastapi import GraphQLRouter
+from app.graphql import schema, get_graphql_context
 from sqlalchemy import text
 
 from app.services.vectorstore import init as init_vectorstore, shutdown as shutdown_vectorstore
@@ -149,6 +151,10 @@ app.include_router(vector.router)
 # Mount MCP server on /mcp for SSE transport (connectable by MCP clients)
 mcp_app = get_mcp_app()
 app.mount("/mcp", mcp_app, name="mcp")
+
+# Read-only GraphQL analytics layer (mirrors the /analytics REST routes)
+graphql_app = GraphQLRouter(schema, context_getter=get_graphql_context)
+app.include_router(graphql_app, prefix="/graphql")
 
 
 @app.get("/health", tags=["Meta"])

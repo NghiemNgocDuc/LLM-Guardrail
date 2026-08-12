@@ -9,7 +9,7 @@ Relationships:
 """
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     Boolean, DateTime, ForeignKey,
@@ -64,6 +64,12 @@ class OrgPolicy(Base):
     # Rate limits (override global defaults)
     rate_limit_rpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rate_limit_rpd: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Optional org-authored custom input rule in Rego, evaluated by the OPA
+    # sidecar (docker-compose `opa` service) after the standard input checks
+    # as the FINAL gate. Fail-closed: if OPA is unreachable the request is
+    # blocked. See guardrails/opa.py for the policy contract.
+    custom_rule_rego: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -289,3 +295,47 @@ class ChatFeedback(Base):
     created_at:     Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     request_log: Mapped["RequestLog"] = relationship("RequestLog", back_populates="feedback")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Analytics materialized views (alembic/versions/...0011_analytics_views.py)
+#
+# Read-model tables refreshed on a schedule by
+# scripts/refresh_analytics_views.py (REFRESH MATERIALIZED VIEW CONCURRENTLY).
+# They are kept in sync with request_logs / chat_feedback only as of the last
+# refresh — endpoints reading them document the staleness window. No FK
+# constraints (materialized views cannot have them); the columns mirror the
+# base tables exactly.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class MvBlockedReasonsDaily(Base):
+    """Per-org, per-day blocked-request counts by fired rule.
+
+    Unique key (org_id, day, fired_rule) doubles as the query index for the
+    /analytics/top-blocked-reasons endpoint.
+    """
+    __tablename__ = "mv_blocked_reasons_daily"
+
+    org_id:           Mapped[str] = mapped_column(primary_key=True)
+    day:              Mapped[date] = mapped_column(primary_key=True)
+    fired_rule:       Mapped[str] = mapped_column(primary_key=True)
+    cnt:              Mapped[int] = mapped_column(Integer)
+    last_occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MvFalsePositiveCandidatesDaily(Base):
+    """Per-org, per-day disputed blocks: blocked request + thumbs-up feedback
+    OR the fired rule in the owner's always-allow overrides. Unique on
+    request_log_id so REFRESH ... CONCURRENTLY is allowed.
+    """
+    __tablename__ = "mv_false_positive_candidates_daily"
+
+    request_log_id:    Mapped[str] = mapped_column(primary_key=True)
+    org_id:            Mapped[str] = mapped_column(index=True)
+    day:               Mapped[date] = mapped_column(index=True)
+    fired_rule:        Mapped[str] = mapped_column(String)
+    status:            Mapped[str] = mapped_column(String)
+    prompt_preview:    Mapped[str | None] = mapped_column(Text)
+    created_at:        Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    positive_feedback: Mapped[bool] = mapped_column(Boolean)
+    override_hit:      Mapped[bool] = mapped_column(Boolean)

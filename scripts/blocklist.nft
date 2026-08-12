@@ -1,0 +1,23 @@
+# One-time bootstrap (as root) for the nftables blocklist set:
+#   sudo nft -f scripts/blocklist.nft
+# Afterwards keep it in sync on a timer:
+#   5 * * * *  cd /opt/guardrails && scripts/sync_ip_blocklist.sh
+#
+# Self-hosted Linux only: the Render/Fly deploy target has no host nftables.
+# The sync script rebuilds this set from scratch each run (flush + add all
+# current IPs), so stale entries disappear automatically.
+#
+# The set drops IPv4 sources only — nft set "type ipv4_addr". IPv6 addresses
+# are skipped by the sync script.
+table inet guardrails {
+    set blocklist {
+        type ipv4_addr
+        comment "LLM guardrails IP blocklist (synced from org_policies.compliance_rules.blocked_ips + Redis abuse:violations)"
+    }
+
+    chain input {
+        type filter hook input priority filter
+        policy accept
+        ip saddr @blocklist drop
+    }
+}

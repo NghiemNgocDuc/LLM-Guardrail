@@ -1,0 +1,14 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "guardrail-core"
+version = "0.1.0"
+description = "Rust regex guardrail engine (PyO3) — secrets, PII, prompt injection, dangerous commands, agent-skill scanning"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+
+[tool.maturin]
+module-name = "guardrail_core"
+manifest-path = "guardrail_core/Cargo.toml"

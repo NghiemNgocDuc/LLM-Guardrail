@@ -36,3 +36,10 @@ dev.db
 .cursor/skill-guard-overrides.json
 .cursor/skill-guard-decision.json
 .cursor/skill-guard-pause.json
+
+# Go port (guardrail-scan)
+cli/guardrail-scan/guardrail-scan
+cli/guardrail-scan/guardrail-scan.exe
+cli/guardrail-scan/dist/
+
+guardrail_core/target/

@@ -6,6 +6,9 @@ Runs before `git push` and scans `.cursor/skills/**` files included in the outgo
 
 Blocks the push when the scanner finds secrets, PII, or destructive shell/SQL commands.
 
+The hook prefers the compiled Go binary (`cli/guardrail-scan/guardrail-scan`) and falls back to the
+Python script when it is not built. `SKILL_GUARD_BIN=/path/to/binary` overrides the location explicitly.
+
 If the push touches skills and issues are found, the hook accepts **chat-style commands** first:
 
 - Type **`always allow`** or **`always allow all`** once (no per-issue key presses)
@@ -36,6 +39,10 @@ This sets `core.hooksPath` to `.githooks` for this repository only.
 ```bash
 python scripts/scan_agent_skills.py
 python scripts/scan_agent_skills.py --git-range origin/main..HEAD
+
+# Same checks, no Python needed (static Go binary — see cli/guardrail-scan/README.md):
+guardrail-scan
+guardrail-scan --git-range origin/main..HEAD
 ```
 
 GitHub Actions also runs the same scanner on pull requests and pushes (see `.github/workflows/scan-agent-skills.yml`).

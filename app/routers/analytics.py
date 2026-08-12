@@ -16,7 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.billing.pricing import estimate_cost_usd
 from app.database import get_db
 from app.deps import CurrentUser
-from app.models import APIKey, ChatFeedback, RequestLog, TokenWallet, User, UserSkillGuardOverrides
+from app.models import (
+    APIKey, MvBlockedReasonsDaily, MvFalsePositiveCandidatesDaily,
+    RequestLog, TokenWallet, User,
+)
 from app.schemas import (
     AnalyticsDashboard, ProviderUsage, TimeSeriesPoint, TopBlockedReason, TopFiredRule, UsageSummary,
 )
@@ -188,31 +191,33 @@ async def top_blocked_reasons(
     limit: int = Query(default=10, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
 ):
-    """Most frequent fired rules among blocked requests, with the most recent occurrence of each."""
+    """Most frequent fired rules among blocked requests, with the most recent occurrence of each.
+
+    Backed by the mv_blocked_reasons_daily materialized view: counts are
+    aggregated from the per-org per-day rows for the requested window. The
+    view is refreshed on a schedule (scripts/refresh_analytics_views.py) —
+    data can lag live request logs by up to one refresh interval.
+    """
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    filters = [
-        RequestLog.created_at >= since,
-        RequestLog.status.in_(["input_blocked", "output_blocked"]),
-        RequestLog.fired_rule.isnot(None),
-    ]
+    filters = [MvBlockedReasonsDaily.day >= since.date()]
     if current_user.org_id:
-        filters.append(RequestLog.org_id == current_user.org_id)
+        filters.append(MvBlockedReasonsDaily.org_id == current_user.org_id)
 
     result = await db.execute(
         select(
-            RequestLog.fired_rule,
-            func.count().label("cnt"),
-            func.max(RequestLog.created_at).label("last_occurred_at"),
+            MvBlockedReasonsDaily.fired_rule,
+            func.sum(MvBlockedReasonsDaily.cnt).label("cnt"),
+            func.max(MvBlockedReasonsDaily.last_occurred_at).label("last_occurred_at"),
         )
         .where(*filters)
-        .group_by(RequestLog.fired_rule)
-        .order_by(func.count().desc())
+        .group_by(MvBlockedReasonsDaily.fired_rule)
+        .order_by(func.sum(MvBlockedReasonsDaily.cnt).desc())
         .limit(limit)
     )
     return [
         TopBlockedReason(
             fired_rule=r.fired_rule,
-            count=r.cnt,
+            count=int(r.cnt),
             last_occurred_at=r.last_occurred_at,
         )
         for r in result.all()
@@ -408,52 +413,44 @@ async def false_positive_candidates(
     """Blocked requests that users later disputed — either via positive feedback
     (thumbs-up on a blocked request) or because the owner later added the rule
     to their always-allow overrides. Grouped by fired rule so you can spot the
-    guardrails most likely throwing false positives."""
+    guardrails most likely throwing false positives.
+
+    Backed by the mv_false_positive_candidates_daily materialized view, which
+    precomputes the feedback/override join once per refresh instead of per
+    request. The view is refreshed on a schedule
+    (scripts/refresh_analytics_views.py) — data can lag live request logs by
+    up to one refresh interval; newly-arriving feedback is only visible after
+    the next refresh.
+    """
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    filters = [
-        RequestLog.created_at >= since,
-        RequestLog.status.in_(["input_blocked", "output_blocked"]),
-        RequestLog.fired_rule.isnot(None),
-    ]
+    filters = [MvFalsePositiveCandidatesDaily.day >= since.date()]
     if current_user.org_id:
-        filters.append(RequestLog.org_id == current_user.org_id)
+        filters.append(MvFalsePositiveCandidatesDaily.org_id == current_user.org_id)
 
     rows = (
         await db.execute(
-            select(
-                RequestLog,
-                ChatFeedback.rating,
-                UserSkillGuardOverrides.overrides,
-            )
-            .outerjoin(ChatFeedback, ChatFeedback.request_log_id == RequestLog.id)
-            .outerjoin(APIKey, APIKey.id == RequestLog.api_key_id)
-            .outerjoin(UserSkillGuardOverrides, UserSkillGuardOverrides.user_id == APIKey.owner_id)
+            select(MvFalsePositiveCandidatesDaily)
             .where(*filters)
-            .order_by(RequestLog.created_at.desc())
+            .order_by(MvFalsePositiveCandidatesDaily.created_at.desc())
             .limit(500)
         )
-    ).all()
+    ).scalars().all()
 
     by_rule: dict[str, dict] = {}
-    for log, rating, overrides in rows:
-        override_hit = False
-        if overrides:
-            override_hit = log.fired_rule in set(overrides.get("always_allow_reason_codes") or [])
-        if rating != 1 and not override_hit:
-            continue
+    for r in rows:
         entry = by_rule.setdefault(
-            log.fired_rule,
-            {"fired_rule": log.fired_rule, "count": 0, "examples": []},
+            r.fired_rule,
+            {"fired_rule": r.fired_rule, "count": 0, "examples": []},
         )
         entry["count"] += 1
         if len(entry["examples"]) < 5:
             entry["examples"].append({
-                "id": log.id,
-                "status": log.status,
-                "prompt_preview": log.prompt_preview,
-                "created_at": log.created_at.isoformat(),
-                "positive_feedback": rating == 1,
-                "override_hit": override_hit,
+                "id": r.request_log_id,
+                "status": r.status,
+                "prompt_preview": r.prompt_preview,
+                "created_at": r.created_at.isoformat(),
+                "positive_feedback": r.positive_feedback,
+                "override_hit": r.override_hit,
             })
 
     return sorted(by_rule.values(), key=lambda r: r["count"], reverse=True)[:limit]

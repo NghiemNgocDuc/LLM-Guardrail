@@ -1,4 +1,9 @@
-"""Tests for GET /analytics/false-positive-candidates."""
+"""Tests for GET /analytics/false-positive-candidates (view-backed).
+
+The endpoint reads mv_false_positive_candidates_daily — one row per disputed
+request, with the feedback/override join already applied by the view — and
+groups by fired rule. The fake DB below stands in for the view.
+"""
 import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -6,13 +11,16 @@ from types import SimpleNamespace
 from app.routers.analytics import false_positive_candidates
 
 
-class _Log:
-    def __init__(self, rule, status="input_blocked", preview="prompt"):
-        self.id = f"log-{rule}-{preview}"
+class _Row:
+    def __init__(self, rule, preview="prompt", positive=False, override=False,
+                 status="input_blocked"):
+        self.request_log_id = f"log-{rule}-{preview}"
         self.status = status
         self.fired_rule = rule
         self.prompt_preview = preview
         self.created_at = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+        self.positive_feedback = positive
+        self.override_hit = override
 
 
 class _Result:
@@ -21,6 +29,9 @@ class _Result:
 
     def all(self):
         return self._rows
+
+    def scalars(self):
+        return self
 
 
 class _FakeDB:
@@ -41,9 +52,9 @@ def _run(rows, org_id="org-1", limit=10):
 
 def test_positive_feedback_rows_are_candidates():
     rows = [
-        (_Log("pii_detected"), 1, None),        # disputed: thumbs-up
-        (_Log("pii_detected"), 1, None),
-        (_Log("toxic_content"), 1, None),
+        _Row("pii_detected", preview="a", positive=True),
+        _Row("pii_detected", preview="b", positive=True),
+        _Row("toxic_content", preview="c", positive=True),
     ]
     result = _run(rows)
 
@@ -53,18 +64,8 @@ def test_positive_feedback_rows_are_candidates():
     assert result[0]["examples"][0]["positive_feedback"] is True
 
 
-def test_rows_without_signal_are_excluded():
-    rows = [
-        (_Log("secret_detected"), -1, None),          # thumbs-down: user agreed with the block
-        (_Log("jailbreak_attempt"), None, None),      # no feedback, no override
-        (_Log("jailbreak_attempt"), 0, None),
-    ]
-    assert _run(rows) == []
-
-
 def test_always_allow_override_counts_as_signal():
-    overrides = {"always_allow_reason_codes": ["toxic_content"], "always_allow_keys": ["x"]}
-    rows = [(_Log("toxic_content"), None, overrides)]
+    rows = [_Row("toxic_content", positive=False, override=True)]
     result = _run(rows)
 
     assert len(result) == 1
@@ -73,19 +74,9 @@ def test_always_allow_override_counts_as_signal():
     assert result[0]["examples"][0]["positive_feedback"] is False
 
 
-def test_override_for_other_rules_is_not_a_signal():
-    rows = [(_Log("toxic_content"), None, {"always_allow_reason_codes": ["pii_detected"]})]
-    assert _run(rows) == []
-
-
-def test_empty_overrides_dict_is_not_a_signal():
-    rows = [(_Log("toxic_content"), None, {})]
-    assert _run(rows) == []
-
-
 def test_examples_capped_and_limit_applied():
     rows = [
-        (_Log("pii_detected", preview=chr(97 + i)), 1, None)
+        _Row("pii_detected", preview=chr(97 + i), positive=True)
         for i in range(10)
     ]
     result = _run(rows, limit=1)
@@ -97,17 +88,17 @@ def test_examples_capped_and_limit_applied():
 
 def test_results_sorted_by_count_desc():
     rows = [
-        (_Log("a"), 1, None),
-        (_Log("b"), 1, None),
-        (_Log("b"), 1, None),
-        (_Log("b"), 1, None),
+        _Row("a", preview="a", positive=True),
+        _Row("b", preview="b", positive=True),
+        _Row("b", preview="c", positive=True),
+        _Row("b", preview="d", positive=True),
     ]
     result = _run(rows)
     assert [r["fired_rule"] for r in result] == ["b", "a"]
 
 
 def test_works_without_org_scope():
-    rows = [(_Log("medical_advice"), 1, None)]
+    rows = [_Row("medical_advice", positive=True)]
     result = _run(rows, org_id=None)
     assert result[0]["fired_rule"] == "medical_advice"
     assert result[0]["count"] == 1

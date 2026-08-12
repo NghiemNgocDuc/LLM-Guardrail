@@ -658,6 +658,17 @@ def explain_policy(policy_json: str) -> str:
     else:
         bullets.append("Input: semantic similarity blocking is disabled")
 
+    if input_rules.get("custom_rule_rego"):
+        bullets.append(
+            "Input: runs an org-defined Rego custom rule (custom_rule_rego) in the "
+            "OPA sidecar that is the FINAL gate: when configured, the standard checks "
+            "below run only to feed their findings to the rule, which then blocks, "
+            "warns, or passes. Fails closed (blocks) if OPA is unreachable, the "
+            "request times out, or the decision is malformed."
+        )
+    else:
+        bullets.append("Input: no custom Rego rule configured")
+
     # Output checks — same fields OutputGuardrail.check reads (guardrails/output.py).
     # Secret leakage is unconditional there and always runs, regardless of policy.
     bullets.append("Output: credential leakage in responses always blocks (cannot be disabled)")
