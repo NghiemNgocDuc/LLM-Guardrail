@@ -25,7 +25,8 @@ from app.middleware.content_type import ContentTypeMiddleware
 from app.middleware.i18n import I18nMiddleware
 from app.middleware.abuse_protection import AbuseProtectionMiddleware, close_abuse_protection
 from app.middleware.request_logging import RequestLoggingMiddleware
-from app.routers import admin, auth, api_keys, billing, chat, analytics, health, org, policy, skills, vector
+from app.middleware.secret_scrub import SecretScrubMiddleware
+from app.routers import admin, auth, api_keys, billing, chat, analytics, health, org, policy, skills, vector, memories
 from app.mcp_server import get_mcp_app
 from strawberry.fastapi import GraphQLRouter
 from app.graphql import schema, get_graphql_context
@@ -35,21 +36,58 @@ from app.services.vectorstore import init as init_vectorstore, shutdown as shutd
 
 settings = get_settings()
 
+def _sentry_before_send(event, hint):
+    try:
+        from app.utils.secret_redaction import scrub_text
+        # scrub message, exception values, and breadcrumbs
+        if event.get("message"):
+            event["message"] = scrub_text(event["message"])
+        for exc in event.get("exception", {}).get("values", []) or []:
+            if exc.get("value"):
+                exc["value"] = scrub_text(exc["value"])
+        for crumb in event.get("breadcrumbs", {}).get("values", []) or []:
+            if crumb.get("message"):
+                crumb["message"] = scrub_text(crumb["message"])
+    except Exception:
+        pass
+    return event
+
 if settings.SENTRY_DSN:
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,
         environment=settings.APP_ENV,
         traces_sample_rate=0.1,
         profiles_sample_rate=0.1,
+        before_send=_sentry_before_send,
     )
+
+def _scrub_value(v: str) -> str:
+    try:
+        from app.utils.secret_redaction import scrub_text
+        return scrub_text(v)
+    except Exception:
+        return v
+
+class SecretScrubFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # scrub the rendered message and any string args
+        if isinstance(record.msg, str):
+            record.msg = _scrub_value(record.msg)
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {k: _scrub_value(v) if isinstance(v, str) else v for k, v in record.args.items()}
+            elif isinstance(record.args, tuple):
+                record.args = tuple(_scrub_value(a) if isinstance(a, str) else a for a in record.args)
+        return True
 
 class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        msg = _scrub_value(record.getMessage())
         return json.dumps({
             "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
             "level": record.levelname,
             "name": record.name,
-            "message": record.getMessage(),
+            "message": msg,
             "module": record.module,
             "func": record.funcName,
             "line": record.lineno,
@@ -57,11 +95,15 @@ class JSONFormatter(logging.Formatter):
 
 _handler = logging.StreamHandler()
 _handler.setFormatter(JSONFormatter())
+_handler.addFilter(SecretScrubFilter())
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
     handlers=[_handler],
     force=True,
 )
+# also scrub any pre-existing handlers (uvicorn, etc.)
+for h in logging.getLogger().handlers:
+    h.addFilter(SecretScrubFilter())
 allowed_origins = [origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
 
@@ -99,12 +141,13 @@ app = FastAPI(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logging.getLogger("app.error").exception("Unhandled exception")
+    logging.getLogger("app.error").exception("Unhandled exception: %s", _scrub_value(str(exc)))
     if settings.APP_ENV == "production":
         return JSONResponse(
             status_code=500,
             content={"detail": "Internal server error"},
         )
+    # in dev, still scrub the detail so a stack trace never echoes a key
     raise
 
 
@@ -134,6 +177,7 @@ app.add_middleware(GlobalRateLimitMiddleware)
 app.add_middleware(AbuseProtectionMiddleware)
 app.add_middleware(BodySizeMiddleware)
 app.add_middleware(ContentTypeMiddleware)
+app.add_middleware(SecretScrubMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(auth.router)
@@ -147,6 +191,7 @@ app.include_router(billing.router)
 app.include_router(org.router)
 app.include_router(health.router)
 app.include_router(vector.router)
+app.include_router(memories.router)
 
 # Mount MCP server on /mcp for SSE transport (connectable by MCP clients)
 mcp_app = get_mcp_app()

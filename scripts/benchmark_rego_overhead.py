@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 """Benchmark the OPA/Rego final-gate overhead added to /chat.
 
 The Rego rule is the FINAL gate inside InputGuardrail.check â€” the only part

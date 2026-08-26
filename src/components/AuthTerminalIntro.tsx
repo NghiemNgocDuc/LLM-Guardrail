@@ -42,7 +42,7 @@ function useTypewriter(text: string, { speed = 36, delay = 0, active = false, wo
 
 function TypeCursor({ visible }: { visible: boolean }) {
   if (!visible) return null;
-  return <span className="auth-cursor">▍</span>;
+  return <span className="auth-cursor"></span>;
 }
 
 function AnimatedCounter({ end, suffix = "", duration = 2000, delay = 0, active = false }: {

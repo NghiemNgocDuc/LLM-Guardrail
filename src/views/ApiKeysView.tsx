@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { api, maskGatewayKey } from "../utils/api";
 import { trackEvent } from "../utils/analytics";
 import { s } from "../styles/theme";
@@ -6,318 +6,216 @@ import type { components } from "../api-types";
 
 type APIKeyOut = components["schemas"]["APIKeyOut"];
 
-interface ScopeOption { label: string; color: string; bg: string; border: string }
-
-const DEFAULT_SCOPE_OPTIONS: ScopeOption[] = [
-  { label: "chat",          color: "#6366f1", bg: "#eef2ff",  border: "#c7d2fe" },
-  { label: "policy:read",   color: "#0f766e", bg: "#ccfbf1",  border: "#99f6e4" },
-  { label: "policy:write",  color: "#0f766e", bg: "#ccfbf1",  border: "#99f6e4" },
-  { label: "logs:read",     color: "#1d4ed8", bg: "#dbeafe",  border: "#bfdbfe" },
-  { label: "analytics",     color: "#7c3aed", bg: "#f5f3ff",  border: "#ddd6fe" },
-  { label: "skills:read",   color: "#b45309", bg: "#fef9c3",  border: "#fde68a" },
-  { label: "skills:write",  color: "#b45309", bg: "#fef9c3",  border: "#fde68a" },
-  { label: "admin",         color: "#be123c", bg: "#fff1f2",  border: "#fecdd3" },
+const SCOPE_CATALOG: { scope: string; desc: string; group: string }[] = [
+  { scope: "chat", desc: "Send prompts via /chat", group: "Gateway" },
+  { scope: "chat:stream", desc: "Stream via /chat/stream", group: "Gateway" },
+  { scope: "logs:read", desc: "Read request logs", group: "Observability" },
+  { scope: "analytics", desc: "Read analytics", group: "Observability" },
+  { scope: "policy:read", desc: "Read policy", group: "Policy" },
+  { scope: "policy:write", desc: "Edit policy", group: "Policy" },
+  { scope: "skills:read", desc: "Scan skills", group: "Skills" },
+  { scope: "skills:write", desc: "Manage rejections", group: "Skills" },
+  { scope: "admin", desc: "Org admin", group: "Admin" },
 ];
 
-function scopeStyle(label: string): React.CSSProperties {
-  const found = DEFAULT_SCOPE_OPTIONS.find((o) => o.label === label);
-  if (found) return { color: found.color, background: found.bg, border: `1px solid ${found.border}` };
-  return { color: "#405166", background: "#eef3f8", border: "1px solid #dce7f0" };
+function timeAgo(iso: string | null | undefined) {
+  if (!iso) return "Never";
+  const d = new Date(iso);
+  const diff = (Date.now() - d.getTime())/1000;
+  if (diff < 60) return "now";
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff/86400)}d ago`;
+  return d.toLocaleDateString();
+}
+function expiresIn(iso: string | null | undefined) {
+  if (!iso) return { label: "Never", color: "#7b8a9d" };
+  const diff = (new Date(iso).getTime() - Date.now())/1000;
+  if (diff < 0) return { label: "Expired", color: "#be123c" };
+  if (diff < 86400) return { label: `${Math.floor(diff/3600)}h left`, color: "#d97706" };
+  if (diff < 604800) return { label: `${Math.floor(diff/86400)}d left`, color: "#0f766e" };
+  return { label: new Date(iso!).toLocaleDateString(), color: "#7b8a9d" };
 }
 
-/** Per-key row with its own scope state */
-function ApiKeyRow({ k, toggling, onToggle, onRevoke }: {
-  k: APIKeyOut;
-  toggling: string | null;
-  onToggle: () => void;
-  onRevoke: () => void;
-}) {
-  const [scopes, setScopes] = useState<string[]>(k.is_active ? ["chat", "logs:read"] : []);
-  const [addingScope, setAddingScope] = useState(false);
-  const [scopeInput, setScopeInput] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  function removeScope(sc: string) { setScopes((prev) => prev.filter((x) => x !== sc)); }
-
-  function addScope(val: string) {
-    const v = val.trim();
-    if (!v || scopes.includes(v)) { setScopeInput(""); setAddingScope(false); return; }
-    setScopes((prev) => [...prev, v]);
-    setScopeInput("");
-    setAddingScope(false);
-  }
-
-  function openAdder() {
-    setAddingScope(true);
-    setTimeout(() => inputRef.current?.focus(), 40);
-  }
-
-  return (
-    <tr>
-      <td style={s.td}>{k.name}</td>
-      <td style={{ ...s.td, fontFamily: "monospace", color: "#0f766e", fontWeight: 800 }}>
-        {maskGatewayKey(k.key_prefix + "0".repeat(24))}
-      </td>
-      <td style={s.td}>{k.total_requests.toLocaleString()}</td>
-      <td style={s.td}>{k.total_blocked.toLocaleString()}</td>
-      <td style={s.td}>{new Date(k.created_at).toLocaleDateString()}</td>
-
-      {/* ── Enabled / Scopes column ── */}
-      <td style={{ ...s.td, minWidth: 260 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-
-          {/* On/Off toggle */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button
-              style={s.toggle(k.is_active)}
-              disabled={toggling === k.id}
-              onClick={onToggle}
-              title={k.is_active ? "Disable key" : "Enable key"}
-              aria-label={k.is_active ? "Disable key" : "Enable key"}
-            >
-              <div style={s.toggleDot(k.is_active)} />
-            </button>
-            <span style={{ fontSize: 11, color: k.is_active ? "#0f766e" : "#9aabba", fontWeight: 750 }}>
-              {k.is_active ? "Active" : "Disabled"}
-            </span>
-          </div>
-
-          {/* Active scope chips + + button */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
-            {scopes.map((sc) => (
-              <span
-                key={sc}
-                style={{
-                  ...scopeStyle(sc),
-                  display: "inline-flex", alignItems: "center", gap: 4,
-                  padding: "3px 7px", borderRadius: 999, fontSize: 11, fontWeight: 700,
-                  fontFamily: "ui-monospace, monospace",
-                }}
-              >
-                {sc}
-                <button
-                  onClick={() => removeScope(sc)}
-                  title={`Remove ${sc}`}
-                  style={{
-                    background: "none", border: "none", cursor: "pointer", padding: 0,
-                    lineHeight: 1, fontSize: 12, color: "inherit", opacity: 0.6,
-                    display: "inline-flex", alignItems: "center",
-                  }}
-                  aria-label={`Remove scope ${sc}`}
-                >×</button>
-              </span>
-            ))}
-
-            {addingScope ? (
-              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                <input
-                  ref={inputRef}
-                  value={scopeInput}
-                  onChange={(e) => setScopeInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") addScope(scopeInput);
-                    if (e.key === "Escape") { setScopeInput(""); setAddingScope(false); }
-                  }}
-                  placeholder="scope name…"
-                  style={{
-                    width: 110, padding: "3px 7px", fontSize: 11,
-                    fontFamily: "ui-monospace, monospace",
-                    border: "1px solid #6366f1", borderRadius: 999, outline: "none",
-                    background: "#eef2ff", color: "#4338ca",
-                  }}
-                />
-                <button
-                  onClick={() => addScope(scopeInput)}
-                  style={{ ...s.btn("primary"), padding: "3px 9px", fontSize: 11, borderRadius: 999 }}
-                >↵</button>
-                <button
-                  onClick={() => { setScopeInput(""); setAddingScope(false); }}
-                  style={{ ...s.btn("secondary"), padding: "3px 7px", fontSize: 11, borderRadius: 999 }}
-                >✕</button>
-              </div>
-            ) : (
-              <button
-                onClick={openAdder}
-                title="Add custom scope"
-                aria-label="Add custom scope"
-                style={{
-                  width: 22, height: 22, borderRadius: "50%", border: "1.5px dashed #6366f1",
-                  background: "#eef2ff", color: "#6366f1", fontSize: 15, fontWeight: 800,
-                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  cursor: "pointer", lineHeight: 1, padding: 0, flexShrink: 0,
-                }}
-              >+</button>
-            )}
-          </div>
-
-          {/* Quick-add preset scopes */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-            {DEFAULT_SCOPE_OPTIONS.filter((o) => !scopes.includes(o.label)).map((o) => (
-              <button
-                key={o.label}
-                onClick={() => setScopes((prev) => [...prev, o.label])}
-                title={`Add ${o.label}`}
-                style={{
-                  ...scopeStyle(o.label),
-                  display: "inline-flex", alignItems: "center", gap: 3,
-                  padding: "2px 7px", borderRadius: 999, fontSize: 10, fontWeight: 700,
-                  fontFamily: "ui-monospace, monospace", cursor: "pointer",
-                  opacity: 0.6, transition: "opacity 0.15s",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.6"; }}
-              >+ {o.label}</button>
-            ))}
-          </div>
-        </div>
-      </td>
-
-      {/* Status + Revoke */}
-      <td style={s.td}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={s.badge(k.is_active ? "delivered" : "error")}>
-            {k.is_active ? "active" : "disabled"}
-          </span>
-          {k.is_active && (
-            <button
-              style={{ ...s.btn("danger"), padding: "5px 10px", fontSize: 11 }}
-              onClick={onRevoke}
-            >Revoke</button>
-          )}
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-// API KEYS VIEW
 export default function ApiKeysView() {
   const [keys, setKeys] = useState<APIKeyOut[]>([]);
   const [newName, setNewName] = useState("");
+  const [newExpiry, setNewExpiry] = useState("");
+  const [newScopes, setNewScopes] = useState<string[]>(["chat"]);
+  const [showCreate, setShowCreate] = useState(false);
   const [rawKey, setRawKey] = useState("");
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [toggling, setToggling] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    api<APIKeyOut[]>("/api-keys").then(setKeys).catch((e: Error) => setError(e.message));
+    api<APIKeyOut[]>("/api-keys").then(setKeys).catch((e: Error)=>setError(e.message));
   }, []);
-
-  useEffect(() => { load(); }, [load]);
+  useEffect(()=>{ load(); }, [load]);
 
   async function create() {
     if (!newName.trim()) return;
     setError(""); setLoading(true);
     try {
-      const data = await api<components["schemas"]["APIKeyCreated"]>("/api-keys", { method: "POST", body: { name: newName.trim() } });
+      const data = await api<components["schemas"]["APIKeyCreated"]>("/api-keys", { method:"POST", body:{ name: newName.trim(), scopes: newScopes, expires_at: newExpiry || null }});
       trackEvent("api_key_created", { name: newName.trim() });
       setRawKey(data.raw_key);
-      setNewName("");
+      setNewName(""); setNewExpiry(""); setNewScopes(["chat"]); setShowCreate(false);
       load();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setLoading(false); }
+    } catch(e){ setError(e instanceof Error ? e.message : String(e)); }
+    finally{ setLoading(false); }
   }
-
   async function revoke(id: string) {
-    if (!confirm("Revoke this key? This cannot be undone.")) return;
-    try {
-      await api("/api-keys/" + id, { method: "DELETE" });
-      trackEvent("api_key_revoked");
-      load();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-  }
-
-  async function toggleKey(k: APIKeyOut) {
-    setToggling(k.id);
-    setError("");
-    try {
-      await api("/api-keys/" + k.id, { method: "PATCH", body: { is_active: !k.is_active } });
-      load();
-    } catch (e) {
-      setError("Toggle not supported by server yet — use Revoke to permanently remove.");
-    } finally {
-      setToggling(null);
-    }
+    if (!confirm("Revoke this key? Apps using it will get 401 immediately.")) return;
+    setRevoking(id);
+    try { await api("/api-keys/" + id, { method:"DELETE" }); trackEvent("api_key_revoked"); load(); }
+    catch(e){ setError(e instanceof Error ? e.message : String(e)); }
+    finally{ setRevoking(null); }
   }
 
   return (
     <div>
-      <div style={s.heroPanel}>
-        <div style={{ ...s.pageTitle, marginBottom: 8 }}>Gateway API Keys</div>
-        <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6 }}>
-          Create scoped keys for applications that need guardrail protection before calling the LLM provider.
-          Toggle keys on/off without revoking, and manage per-key permission scopes inline.
+      {/* Hero — GitHub + Stripe */}
+      <div style={{ ...s.heroPanel, background:"linear-gradient(135deg,#ffffff 0%,#f8fafc 60%,#f0fdfa 100%)", border:"1px solid #e2e8f0", position:"relative", overflow:"hidden" }}>
+        <div style={{ position:"absolute", inset:0, background:"radial-gradient(500px 220px at 92% 0%, rgba(99,102,241,0.08), transparent 60%)", pointerEvents:"none"}}/>
+        <div style={{ position:"relative", display:"flex", justifyContent:"space-between", gap:16, flexWrap:"wrap", alignItems:"flex-start" }}>
+          <div style={{ minWidth:300 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
+              <div style={{ ...s.pageTitle, marginBottom:0 }}>API keys</div>
+              <span style={{ background:"#111827", color:"#fff", fontSize:10, fontWeight:800, letterSpacing:"0.06em", textTransform:"uppercase", padding:"3px 8px", borderRadius:999 }}>GitHub • Stripe</span>
+            </div>
+            <div style={{ color:"#405166", fontSize:14, lineHeight:1.6, maxWidth:620 }}>
+              Scoped <code style={{ background:"#f1f5f9", border:"1px solid #e2e8f0", padding:"1px 6px", borderRadius:6, fontSize:12 }}>grg_…</code> keys for apps. Keep them secret — like GitHub PATs.
+              <span style={{ color:"#dc2626", fontWeight:700 }}> Never commit to git.</span>
+            </div>
+            <div style={{ display:"flex", gap:8, marginTop:10, flexWrap:"wrap" }}>
+              <span style={{ fontSize:11, fontWeight:700, color:"#6366f1", background:"#eef2ff", border:"1px solid #c7d2fe", padding:"5px 9px", borderRadius:999 }}> Hashed with bcrypt</span>
+              <span style={{ fontSize:11, fontWeight:700, color:"#0f766e", background:"#ecfdf5", border:"1px solid #a7f3d0", padding:"5px 9px", borderRadius:999 }}>{keys.filter(k=>k.is_active).length} active • {keys.length} total</span>
+            </div>
+          </div>
+          <button style={{ ...s.btn("primary"), borderRadius:10, padding:"10px 18px", boxShadow:"0 8px 20px rgba(17,24,39,0.14)" }} onClick={()=>setShowCreate(true)}>+ New key</button>
         </div>
       </div>
 
-      {error && <div style={s.alert("error")}>{error}</div>}
-      {keys.length === 0 && !rawKey && (
-        <div style={s.alert("info")}>
-          Create a gateway API key before using Chat Tester or integrating an app.
-        </div>
-      )}
+      {error && <div style={{ ...s.alert("error"), marginBottom:14 }}>{error}</div>}
       {rawKey && (
-        <div style={s.alert("success")}>
-          <div style={{ marginBottom: 6 }}>
-            Key created and saved for Chat Tester. Copy it once — it will not be shown again.
+        <div style={{ background:"#f0fdf4", border:"1px solid #86efac", borderRadius:12, padding:16, marginBottom:16, display:"flex", gap:12, alignItems:"flex-start", flexWrap:"wrap" }}>
+          <div style={{ width:36, height:36, borderRadius:10, background:"#0f766e", color:"#fff", display:"grid", placeItems:"center", fontSize:16, flexShrink:0 }}></div>
+          <div style={{ minWidth:260, flex:1 }}>
+            <div style={{ fontSize:13, fontWeight:850, color:"#065f46" }}>Key created — copy now, it won't be shown again.</div>
+            <code style={{ display:"block", marginTop:8, padding:"10px 12px", background:"#fff", border:"1px solid #a7f3d0", borderRadius:8, fontSize:12, wordBreak:"break-all", color:"#0f766e", fontWeight:700 }}>{rawKey}</code>
+            <div style={{ fontSize:11, color:"#065f46", marginTop:6 }}>Stored as bcrypt hash • prefix <code>{rawKey.slice(0,12)}</code> is what you'll see below.</div>
           </div>
-          <code style={{ fontSize: 12, wordBreak: "break-all", color: "#067647", fontWeight: 800 }}>
-            {maskGatewayKey(rawKey)}
-          </code>
-          <div style={{ marginTop: 8 }}>
-            <button style={s.btn("secondary")} onClick={() => { navigator.clipboard.writeText(rawKey); }}>
-              Copy key
-            </button>
-            <button style={{ ...s.btn("secondary"), marginLeft: 8 }} onClick={() => setRawKey("")}>
-              Dismiss
-            </button>
+          <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+            <button style={{ ...s.btn("primary"), borderRadius:8, background: copied ? "#065f46" : undefined }} onClick={()=>{ navigator.clipboard.writeText(rawKey); setCopied(true); setTimeout(()=>setCopied(false),2000); }}>{copied ? "Copied" : "Copy"}</button>
+            <button style={s.btn("secondary")} onClick={()=>setRawKey("")}>Dismiss</button>
           </div>
         </div>
       )}
 
-      <div style={{ ...s.card, marginBottom: 24 }}>
-        <div style={s.sectionTitle}>Create new key</div>
-        <div style={{ display: "flex", gap: 12 }}>
-          <input style={{ ...s.input, flex: 1 }} placeholder="Key name (e.g. production)"
-            value={newName} onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && create()} />
-          <button style={s.btn("primary")} onClick={create} disabled={loading}>
-            {loading ? "Creating..." : "Create"}
-          </button>
+      {/* Create drawer — Stripe style */}
+      {showCreate && (
+        <div style={{ ...s.card, marginBottom:16, borderColor:"#6366f1", background:"linear-gradient(135deg,#fff 0%,#f5f3ff 100%)", position:"relative" }}>
+          <button onClick={()=>setShowCreate(false)} style={{ position:"absolute", top:12, right:12, width:28, height:28, borderRadius:8, border:"1px solid #e2e8f0", background:"#fff", cursor:"pointer" }}>x</button>
+          <div style={s.sectionTitle}>Create new key</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))", gap:12, marginTop:12 }}>
+            <div>
+              <label style={s.label}>Name <span style={{ color:"#dc2626" }}>*</span></label>
+              <input style={s.input} placeholder="production • ci • playground" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&create()} autoFocus />
+              <div style={{ fontSize:11, color:"#7b8a9d", marginTop:6 }}>Human label — not secret.</div>
+            </div>
+            <div>
+              <label style={s.label}>Expires (optional)</label>
+              <input type="date" style={s.input} value={newExpiry} onChange={e=>setNewExpiry(e.target.value)} />
+              <div style={{ fontSize:11, color:"#7b8a9d", marginTop:6 }}>Leave empty for no expiry.</div>
+            </div>
+          </div>
+          <div style={{ marginTop:14 }}>
+            <label style={s.label}>Scopes</label>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+              {SCOPE_CATALOG.map(o=>(
+                <label key={o.scope} style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"7px 12px", borderRadius:999, border: newScopes.includes(o.scope) ? "1px solid #6366f1" : "1px solid #e2e8f0", background: newScopes.includes(o.scope) ? "#eef2ff" : "#fff", color: newScopes.includes(o.scope) ? "#4338ca" : "#475569", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                  <input type="checkbox" checked={newScopes.includes(o.scope)} onChange={e=>setNewScopes(v=> e.target.checked ? [...v, o.scope] : v.filter(x=>x!==o.scope))} style={{ accentColor:"#6366f1" }}/>
+                  {o.scope}
+                  <span style={{ fontSize:10, color:"#7b8a9d", fontWeight:600 }}>· {o.group}</span>
+                </label>
+              ))}
+            </div>
+            <div style={{ fontSize:11, color:"#7b8a9d", marginTop:8 }}>Least privilege — e.g. read-only CI gets <code>logs:read</code> only.</div>
+          </div>
+          <div style={{ display:"flex", gap:8, marginTop:14 }}>
+            <button style={{ ...s.btn("primary"), borderRadius:10, opacity: loading?0.6:1 }} onClick={create} disabled={loading || !newName.trim()}>{loading ? "Creating…" : "Create key"}</button>
+            <button style={s.btn("secondary")} onClick={()=>setShowCreate(false)}>Cancel</button>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div style={s.card}>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ ...s.table, minWidth: 920 }}>
-            <thead>
-              <tr>
-                {["Name","Prefix","Requests","Blocked","Created","Enabled / Scopes","Status"].map(h => (
-                  <th key={h} style={s.th}>{h}</th>
-                ))}
-              </tr>
+      {/* Keys table — GitHub style */}
+      <div style={{ ...s.card, padding:0, overflow:"hidden" }}>
+        <div style={{ padding:"14px 18px", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom:"1px solid #eef3f8", background:"#f8fafc" }}>
+          <div style={{ fontSize:13, fontWeight:800, color:"#102033" }}>{keys.length} keys</div>
+          <div style={{ display:"flex", gap:6, alignItems:"center", fontSize:11, color:"#7b8a9d" }}>
+            <span style={{ width:8, height:8, borderRadius:999, background:"#22c55e", display:"inline-block" }}/> bcrypt • prefix shown
+          </div>
+        </div>
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ ...s.table, minWidth:900 }}>
+            <thead style={{ background:"#f8fafc" }}>
+              <tr>{["Key","Last used","Expires","Scopes","Usage","Status",""].map(h=> <th key={h} style={{ ...s.th, background:"transparent", fontSize:11 }}>{h}</th>)}</tr>
             </thead>
             <tbody>
-              {keys.map(k => (
-                <ApiKeyRow
-                  key={k.id}
-                  k={k}
-                  toggling={toggling}
-                  onToggle={() => toggleKey(k)}
-                  onRevoke={() => revoke(k.id)}
-                />
-              ))}
-              {keys.length === 0 && (
-                <tr><td colSpan={7} style={{ ...s.td, textAlign: "center", color: "#7b8a9d" }}>
-                  No keys yet
-                </td></tr>
-              )}
+              {keys.map(k=>{
+                const exp = expiresIn(k.expires_at);
+                const isExpired = k.expires_at && new Date(k.expires_at).getTime() < Date.now();
+                return (
+                  <tr key={k.id} style={{ opacity: !k.is_active || isExpired ? 0.6 : 1, background: isExpired ? "#fff1f2" : undefined, transition:"background .12s" }} onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"} onMouseLeave={e=>e.currentTarget.style.background=isExpired ? "#fff1f2" : "transparent"}>
+                    <td style={s.td}>
+                      <div style={{ fontWeight:800, color:"#102033", fontSize:13 }}>{k.name}</div>
+                      <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:4 }}>
+                        <code style={{ fontSize:11, background:"#0f172a", color:"#e2e8f0", padding:"3px 7px", borderRadius:6, fontWeight:700, letterSpacing:"0.04em" }}>{maskGatewayKey(k.key_prefix + "0".repeat(24))}</code>
+                        <button onClick={()=>navigator.clipboard.writeText(k.key_prefix)} title="Copy prefix" style={{ border:"1px solid #e2e8f0", background:"#fff", borderRadius:6, padding:"2px 6px", cursor:"pointer", fontSize:11 }}>Copy</button>
+                        <span style={{ fontSize:10, color:"#7b8a9d" }}>• {k.key_prefix}</span>
+                      </div>
+                    </td>
+                    <td style={s.td}>
+                      <div style={{ fontSize:13, fontWeight:700, color:"#102033" }}>{timeAgo(k.last_used_at)}</div>
+                      <div style={{ fontSize:11, color:"#7b8a9d" }}>{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "—"}</div>
+                    </td>
+                    <td style={s.td}><span style={{ fontSize:12, fontWeight:700, color: exp.color }}>{exp.label}</span></td>
+                    <td style={{ ...s.td, maxWidth:240 }}>
+                      <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                        {(k.scopes || ["chat"]).slice(0,4).map(sc=>(
+                          <span key={sc} style={{ fontSize:10, fontWeight:700, padding:"3px 7px", borderRadius:999, border:"1px solid #e2e8f0", background:"#f8fafc", color:"#334155" }}>{sc}</span>
+                        ))}
+                        {(k.scopes?.length || 0) > 4 && <span style={{ fontSize:10, color:"#7b8a9d" }}>+{k.scopes.length-4}</span>}
+                      </div>
+                    </td>
+                    <td style={s.td}>
+                      <div style={{ fontSize:12, fontWeight:700, color:"#0f766e" }}>{k.total_requests.toLocaleString()} req</div>
+                      <div style={{ fontSize:11, color: k.total_blocked ? "#dc2626" : "#7b8a9d" }}>{k.total_blocked.toLocaleString()} blocked</div>
+                      <div style={{ marginTop:4, height:4, background:"#e7eef6", borderRadius:999, overflow:"hidden", width:80 }}><div style={{ width: `${Math.min(100, k.total_requests ? (k.total_requests/(k.total_requests+1))*100 : 0)}%`, height:"100%", background:"#6366f1" }}/></div>
+                    </td>
+                    <td style={s.td}>
+                      {isExpired ? <span style={{ ...s.badge("error") }}>expired</span> :
+                       k.is_active ? <span style={{ display:"inline-flex", alignItems:"center", gap:6, background:"#ecfdf5", border:"1px solid #a7f3d0", color:"#065f46", padding:"4px 10px", borderRadius:999, fontSize:11, fontWeight:800 }}><span style={{ width:6, height:6, borderRadius:999, background:"#10b981", boxShadow:"0 0 0 4px rgba(16,185,129,0.18)" }}/> active</span> :
+                       <span style={s.badge("error")}>revoked</span>}
+                    </td>
+                    <td style={{ ...s.td, textAlign:"right" }}>
+                      {k.is_active && !isExpired ? <button style={{ ...s.btn("danger"), padding:"6px 12px", fontSize:11, borderRadius:8 }} onClick={()=>revoke(k.id)} disabled={revoking===k.id}>{revoking===k.id ? "…" : "Revoke"}</button> : <span style={{ fontSize:11, color:"#7b8a9d" }}>—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+              {keys.length===0 && <tr><td colSpan={7} style={{ ...s.td, textAlign:"center", padding:28 }}><div style={{ fontSize:32, marginBottom:8 }}></div><div style={{ fontWeight:800, color:"#102033" }}>No keys yet</div><div style={{ fontSize:13, color:"#7b8a9d", marginTop:4 }}>Create your first <code>grg_…</code> key to call <code>/chat</code>.</div><button style={{ ...s.btn("primary"), marginTop:12, borderRadius:8 }} onClick={()=>setShowCreate(true)}>Create key</button></td></tr>}
             </tbody>
           </table>
+        </div>
+        <div style={{ padding:"12px 18px", background:"#f8fafc", borderTop:"1px solid #eef3f8", display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+          <span style={{ fontSize:11, color:"#7b8a9d", lineHeight:1.5 }}> Keys are bcrypt-hashed. <b>Copy once.</b> Rotate every 90 days. Use <code style={{ background:"#fff", border:"1px solid #e2e8f0", padding:"1px 5px", borderRadius:4 }}>grg_</code> not <code style={{ background:"#fff1f2", border:"1px solid #fecdd3", padding:"1px 5px", borderRadius:4 }}>gsk_/sk-</code>.</span>
+          <a href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens" target="_blank" rel="noreferrer" style={{ marginLeft:"auto", fontSize:11, fontWeight:700, color:"#6366f1" }}>GitHub PAT docs --</a>
         </div>
       </div>
     </div>
   );
 }
-
-// LOGS VIEW

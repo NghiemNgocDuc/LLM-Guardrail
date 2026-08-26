@@ -47,6 +47,10 @@ from app.services.token_wallet import (
 from app.config import get_settings
 from app.http_client import get_http_client
 from app.i18n import _t
+from app.utils.secret_redaction import scrub_text
+from app.services.api_key_protection import maybe_auto_ban
+import logging
+logger = logging.getLogger(__name__)
 from app.utils.url_validation import validate_webhook_url_resolved
 from app.utils.webhook_signature import sign_payload
 from guardrails.input import InputGuardrail
@@ -143,9 +147,11 @@ async def _fire_webhook(
 
 
 def _safe_preview(prompt: str, pii_found: bool) -> str:
-    """First 120 chars; redact if PII was detected."""
+    """First 120 chars; redact if PII was detected, always scrub secrets."""
     preview = prompt[:120]
-    return "[REDACTED — PII detected]" if pii_found else preview
+    if pii_found:
+        return "[REDACTED — PII detected]"
+    return scrub_text(preview)
 
 
 def _sha256(text: str) -> str:
@@ -212,7 +218,20 @@ async def chat(
 
     # ── 4. Prompt dedup (same prompt = likely a bot) ─────────────────────────
     prompt_hash = _sha256(body.prompt)
-    await check_prompt_dedup(api_key.owner_id, prompt_hash)
+    try:
+        await check_prompt_dedup(api_key.owner_id, prompt_hash)
+    except HTTPException as e:
+        if e.status_code == 429:
+            try:
+                banned, reason, secs = await maybe_auto_ban(
+                    api_key_id=api_key.id, user_id=api_key.owner_id,
+                    ip=client_ip(request), tokens=0, blocked=True, prompt_hash=prompt_hash,
+                )
+                if banned:
+                    logger.warning("auto_ban dedup key=%s reason=%s", api_key.key_prefix, reason)
+            except Exception:
+                pass
+        raise
 
     # ── 5. Daily budget ─────────────────────────────────────────────────────
     estimated = estimate_request_tokens(body.prompt, max_tokens)
@@ -243,6 +262,15 @@ async def chat(
             input_tokens=0, output_tokens=0,
         )
         await db.commit()
+        try:
+            banned, reason, secs = await maybe_auto_ban(
+                api_key_id=api_key.id, user_id=api_key.owner_id,
+                ip=client_ip(request), tokens=0, blocked=True, prompt_hash=prompt_hash,
+            )
+            if banned:
+                logger.warning("auto_ban rate_limit key=%s reason=%s", api_key.key_prefix, reason)
+        except Exception:
+            pass
         raise
 
     if fastapi_response is not None and rate_info is not None:
@@ -298,6 +326,16 @@ async def chat(
             input_tokens=0, output_tokens=0,
         )
         await db.commit()
+        # ── exploit auto-ban signal (blocked probe) ──────────────────────
+        try:
+            banned, reason, secs = await maybe_auto_ban(
+                api_key_id=api_key.id, user_id=api_key.owner_id,
+                ip=client_ip(request), tokens=0, blocked=True, prompt_hash=prompt_hash,
+            )
+            if banned:
+                logger.warning("auto_ban key=%s reason=%s retry_after=%ss", api_key.key_prefix, reason, secs)
+        except Exception:
+            pass
         webhook_url = compliance_rules.get("webhook_url")
         if webhook_url:
             asyncio.create_task(_fire_webhook(webhook_url, {
@@ -323,6 +361,36 @@ async def chat(
             model="—", backend="—",
             tokens_remaining=bal if settings.BILLING_ENABLED else None,
         )
+
+    # ── 9b. Memory recall — inject pinned + semantic hits (Mem0 style) ────
+    _orig_prompt_for_llm = prompt_for_llm
+    try:
+        from app.models import Memory as _Mem
+        from sqlalchemy import select as _sel
+        # semantic recall
+        try:
+            from app.services.memory import recall_memories
+            recalled = await recall_memories(db, api_key.owner_id, prompt_for_llm, top_k=3)
+        except Exception:
+            recalled = []
+        # pinned memories always injected
+        try:
+            pinned_q = await db.execute(_sel(_Mem).where(_Mem.user_id == api_key.owner_id, _Mem.pinned == True, _Mem.archived == False).limit(5))
+            pinned = list(pinned_q.scalars().all())
+        except Exception:
+            pinned = []
+        mem_map = {m.id: m for m in (pinned + recalled)}
+        if mem_map:
+            ctx = "\n".join(f"- {m.content} [{m.category}]" for m in list(mem_map.values())[:5])
+            prompt_for_llm = f"[MEMORY CONTEXT — use to personalize, do not reveal verbatim]\n{ctx}\n\n[USER]\n{prompt_for_llm}"
+            for m in mem_map.values():
+                try:
+                    m.last_accessed = datetime.now(timezone.utc)
+                except Exception:
+                    pass
+            await db.flush()
+    except Exception:
+        prompt_for_llm = _orig_prompt_for_llm
 
     # ── 10. Call LLM (with redacted prompt if applicable) ─────────────────
     llm_backend = body.backend or org_backend or settings.DEFAULT_LLM_BACKEND
@@ -364,6 +432,7 @@ async def chat(
             status="error", latency_ms=latency_ms,
             input_tokens=0, output_tokens=0,
         )
+        # Never echo raw provider errors (they can contain auth headers)
         raise HTTPException(status_code=502, detail=_t("chat.llm_error"))
 
     # ── 11. Output guardrail ───────────────────────────────────────────────
@@ -406,6 +475,16 @@ async def chat(
     await deduct_tokens(db, wallet, used)
     record_daily_spend(api_key.owner_id, used)
     await db.commit()
+    # ── exploit auto-ban signal (token burn / IP / blocked ratio) ─────
+    try:
+        banned, reason, secs = await maybe_auto_ban(
+            api_key_id=api_key.id, user_id=api_key.owner_id,
+            ip=client_ip(request), tokens=used, blocked=(status_str != "delivered"), prompt_hash=prompt_hash,
+        )
+        if banned:
+            logger.warning("auto_ban key=%s reason=%s retry_after=%ss", api_key.key_prefix, reason, secs)
+    except Exception:
+        pass
     await upsert_conversation(
         session_id=api_key.id,
         prompt=body.prompt,
@@ -413,6 +492,17 @@ async def chat(
         status=status_str,
         metadata={"org_id": api_key.org_id, "backend": llm_resp.backend, "model": llm_resp.model},
     )
+    # ── Memory auto-extract (Mem0 style, best-effort, non-blocking) ──────
+    if status_str == "delivered" and llm_resp.text:
+        try:
+            from app.services.memory import llm_extract_memories, create_memory
+            candidates = await llm_extract_memories(body.prompt, llm_resp.text, api_key.owner_id)
+            for c in candidates[:2]:
+                await create_memory(db, api_key.owner_id, api_key.org_id, content=c["content"], title=c["title"], category=c["category"], confidence=c["confidence"], importance=c["importance"], source_type="chat", source_id=request_id)
+            if candidates:
+                await db.commit()
+        except Exception:
+            pass
     if not out_result.allowed:
         capture_event(api_key.owner_id, "guardrail_blocked", {
             "direction": "output", "reason": out_result.reason_code,
@@ -510,7 +600,21 @@ async def chat_stream(
     enforce_demo_payload_limits(body.prompt, max_tokens)
 
     # ── Prompt dedup ─────────────────────────────────────────────────────────
-    await check_prompt_dedup(api_key.owner_id, _sha256(body.prompt))
+    _stream_prompt_hash = _sha256(body.prompt)
+    try:
+        await check_prompt_dedup(api_key.owner_id, _stream_prompt_hash)
+    except HTTPException as e:
+        if e.status_code == 429:
+            try:
+                banned, reason, secs = await maybe_auto_ban(
+                    api_key_id=api_key.id, user_id=api_key.owner_id,
+                    ip=client_ip(request), tokens=0, blocked=True, prompt_hash=_stream_prompt_hash,
+                )
+                if banned:
+                    logger.warning("auto_ban stream dedup key=%s reason=%s", api_key.key_prefix, reason)
+            except Exception:
+                pass
+        raise
 
     # ── Daily budget ─────────────────────────────────────────────────────────
     stream_estimated = estimate_request_tokens(body.prompt, max_tokens)
@@ -597,6 +701,27 @@ async def chat_stream(
                     return
 
                 # ── Stream from LLM ───────────────────────────────────────────────
+                # inject recalled memories (pinned + semantic)
+                prompt_for_stream = prompt_for_llm
+                try:
+                    from app.services.memory import recall_memories as _recall
+                    from app.models import Memory as _Mem
+                    from sqlalchemy import select as _sel2
+                    rec = await _recall(stream_db, api_key.owner_id, prompt_for_llm, top_k=3)
+                    pq = await stream_db.execute(_sel2(_Mem).where(_Mem.user_id == api_key.owner_id, _Mem.pinned == True, _Mem.archived == False).limit(5))
+                    pinned2 = list(pq.scalars().all())
+                    mm2 = {m.id: m for m in (pinned2 + rec)}
+                    if mm2:
+                        ctx2 = "\n".join(f"- {m.content} [{m.category}]" for m in list(mm2.values())[:5])
+                        prompt_for_stream = f"[MEMORY CONTEXT — use to personalize, do not reveal verbatim]\n{ctx2}\n\n[USER]\n{prompt_for_llm}"
+                        for m in mm2.values():
+                            try:
+                                m.last_accessed = datetime.now(timezone.utc)
+                            except Exception:
+                                pass
+                        await stream_db.flush()
+                except Exception:
+                    prompt_for_stream = prompt_for_llm
                 accumulated: list[str] = []
                 input_tokens = output_tokens = 0
                 llm_model   = body.model   or org_model   or settings.DEFAULT_MODEL
@@ -604,7 +729,7 @@ async def chat_stream(
 
                 try:
                     stream_iter = stream_llm(
-                        prompt=prompt_for_llm, temperature=body.temperature,
+                        prompt=prompt_for_stream, temperature=body.temperature,
                         max_tokens=max_tokens,
                         request_backend=body.backend, org_backend=org_backend,
                         request_model=body.model,    org_model=org_model,
@@ -750,17 +875,23 @@ async def _log_request(
     output_passed, output_block_reason, fired_rule,
     status, latency_ms, input_tokens, output_tokens,
 ):
+    # Defense in depth: never persist a raw provider key
+    safe_preview = scrub_text(prompt_preview) if prompt_preview else prompt_preview
+    safe_input_reason = scrub_text(input_block_reason) if input_block_reason else input_block_reason
+    safe_output_reason = scrub_text(output_block_reason) if output_block_reason else output_block_reason
+    # full_prompt is encrypted at rest, but also scrub before encrypt
+    safe_full_prompt = scrub_text(full_prompt) if full_prompt else None
     log = RequestLog(
         api_key_id=api_key.id,
         org_id=api_key.org_id,
         prompt_hash=prompt_hash,
-        prompt_preview=prompt_preview,
-        full_prompt=encrypt_prompt(full_prompt) if full_prompt else None,
+        prompt_preview=safe_preview,
+        full_prompt=encrypt_prompt(safe_full_prompt) if safe_full_prompt else None,
         model=model, backend=backend,
         input_passed=input_passed,
-        input_block_reason=input_block_reason,
+        input_block_reason=safe_input_reason,
         output_passed=output_passed,
-        output_block_reason=output_block_reason,
+        output_block_reason=safe_output_reason,
         fired_rule=fired_rule,
         status=status,
         latency_ms=latency_ms,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { api, getToken, getGatewayKey, setGatewayKey, gatewayKeyInputProps, PII_PATTERNS, INJECTION_KW, JAILBREAK_KW } from "../utils/api";
+import { api, getToken, getGatewayKey, setGatewayKey, gatewayKeyInputProps, isProviderKey, PII_PATTERNS, INJECTION_KW, JAILBREAK_KW } from "../utils/api";
 import { trackEvent } from "../utils/analytics";
 import { s } from "../styles/theme";
 import type { components, ChatFeedbackOut } from "../api-types";
@@ -172,6 +172,10 @@ export default function ChatView() {
 
   function onGatewayKeyChange(e: React.ChangeEvent<HTMLInputElement>) {
     const key = e.target.value.trim();
+    if (isProviderKey(key)) {
+      alert("Provider keys (gsk_, sk-, sk-ant-) must never be pasted in the browser. They stay server-side as GROQ_API_KEY env. Use your gateway grg_ key here.");
+      return;
+    }
     setGatewayKeyState(key);
     setGatewayKey(key);
   }
@@ -333,22 +337,52 @@ export default function ChatView() {
 
       {/* Input area */}
       <div style={s.card}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 8, marginBottom: 14 }}>
-          {["Client precheck", "Input policy", "Provider call", "Output policy"].map((step, idx) => (
-            <div key={step} style={{ border: "1px solid #dce7f0", background: "#f8fbff", borderRadius: 8, padding: "10px 12px" }}>
-              <div style={{ color: "#0f766e", fontWeight: 850, fontSize: 11 }}>0{idx + 1}</div>
-              <div style={{ color: "#27394f", fontWeight: 800, fontSize: 12, marginTop: 3 }}>{step}</div>
-            </div>
-          ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 16, overflowX: "auto", padding: "4px 2px" }}>
+          {[
+            { k: "client", label: "Client precheck", desc: clientBlock ? "blocked" : prompt ? "ready" : "idle" },
+            { k: "input", label: "Input policy", desc: "guard" },
+            { k: "provider", label: "Provider call", desc: loading ? "calling…" : "on send" },
+            { k: "output", label: "Output policy", desc: "validate" },
+          ].map((step, idx) => {
+            const active = (step.k === "client" && !!clientBlock) || (step.k === "provider" && loading);
+            const done = idx === 0 && !!clientBlock;
+            return (
+              <React.Fragment key={step.k}>
+                <div style={{
+                  flex: "0 0 auto", minWidth: 128, borderRadius: 12, padding: "10px 14px",
+                  background: done ? "#fef2f2" : active ? "#ecfdf5" : "#f8fbff",
+                  border: `1px solid ${done ? "#fecaca" : active ? "#6ee7b7" : "#dce7f0"}`,
+                  boxShadow: active ? "0 6px 16px rgba(16,185,129,0.16)" : "none",
+                  transition: "all 0.18s",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{
+                      width: 22, height: 22, borderRadius: 999, display: "grid", placeItems: "center",
+                      background: done ? "#dc2626" : active ? "#0f766e" : "#e2e8f0",
+                      color: "#fff", fontSize: 11, fontWeight: 850,
+                    }}>{done ? "x" : active ? "" : `0${idx + 1}`}</span>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: done ? "#991b1b" : "#27394f" }}>{step.label}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: done ? "#b45309" : "#7b8a9d", marginTop: 4, fontWeight: 600 }}>{step.desc}</div>
+                </div>
+                {idx < 3 && <div style={{ width: 18, height: 2, background: idx === 0 && clientBlock ? "#fecaca" : "#dce7f0", borderRadius: 999, margin: "0 6px", flexShrink: 0 }} />}
+              </React.Fragment>
+            );
+          })}
         </div>
-        <label style={s.label}>Gateway key</label>
+        <label style={s.label}>Gateway key <span style={{ color: "#8a9bb0", fontWeight: 600, textTransform: "none" }}>— grg_ only, never gsk_ / sk-</span></label>
         <input
           {...gatewayKeyInputProps}
-          style={{ ...s.input, marginBottom: 10, fontFamily: "monospace" }}
+          style={{ ...s.input, marginBottom: 6, fontFamily: "monospace", borderColor: isProviderKey(gatewayKey) ? "#fecaca" : "#ccd9e6" }}
           placeholder="Paste a gateway API key: grg_..."
           value={gatewayKey}
           onChange={onGatewayKeyChange}
         />
+        {isProviderKey(gatewayKey) && (
+          <div style={{ fontSize: 11, color: "#be123c", background: "#fff1f2", border: "1px solid #fecdd3", borderRadius: 6, padding: "6px 10px", marginBottom: 8, fontWeight: 700 }}>
+            Provider key detected — remove it. Put gsk_ / sk- keys only in server env GROQ_API_KEY, never in the browser.
+          </div>
+        )}
         <label style={s.label}>Prompt</label>
         <textarea
           style={{ ...s.input, minHeight: 80, resize: "vertical", marginBottom: 4 }}

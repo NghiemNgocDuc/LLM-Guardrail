@@ -79,30 +79,49 @@ export default function DashboardView() {
       </div>
 
       <div style={s.grid2}>
-        {/* Area chart */}
-        <div style={s.card}>
-          <div style={s.sectionTitle}>Delivered vs Blocked</div>
-          <ResponsiveContainer width="100%" height={180}>
-            <AreaChart data={time_series} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+        {/* Area chart — ultra-smooth */}
+        <div style={{ ...s.card, padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "18px 22px 6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={s.sectionTitle}>Delivered vs Blocked</div>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#8a9bb0", letterSpacing: "0.04em", textTransform: "uppercase" }}>7 days · smooth</span>
+          </div>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={time_series} margin={{ top: 8, right: 16, left: -10, bottom: 0 }}>
               <defs>
-                <linearGradient id="colorDelivered" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#0f766e" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#0f766e" stopOpacity={0}/>
+                <linearGradient id="colorDelivered2" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0f766e" stopOpacity={0.32}/>
+                  <stop offset="55%" stopColor="#14b8a6" stopOpacity={0.12}/>
+                  <stop offset="100%" stopColor="#14b8a6" stopOpacity={0}/>
                 </linearGradient>
-                <linearGradient id="colorBlocked" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                <linearGradient id="colorBlocked2" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#f97316" stopOpacity={0.30}/>
+                  <stop offset="60%" stopColor="#fb7185" stopOpacity={0.10}/>
+                  <stop offset="100%" stopColor="#fb7185" stopOpacity={0}/>
                 </linearGradient>
+                <filter id="shadowDelivered" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="8" stdDeviation="10" floodColor="#0f766e" floodOpacity="0.14" />
+                </filter>
+                <filter id="shadowBlocked" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="6" stdDeviation="8" floodColor="#f97316" floodOpacity="0.14" />
+                </filter>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e7eef6" />
-              <XAxis dataKey="ts" tick={{ fontSize: 11, fill: "#7b8a9d" }} />
-              <YAxis tick={{ fontSize: 11, fill: "#7b8a9d" }} />
-              <Tooltip contentStyle={{ background: "rgba(255, 255, 255, 0.9)", border: "1px solid #dce7f0",
-                borderRadius: 8, fontSize: 12, backdropFilter: "blur(10px)", boxShadow: "0 12px 28px rgba(15,118,110,0.1)" }} />
-              <Area type="monotone" dataKey="delivered" stroke="#0f766e" fillOpacity={1} fill="url(#colorDelivered)" strokeWidth={2} />
-              <Area type="monotone" dataKey="blocked"   stroke="#f97316" fillOpacity={1} fill="url(#colorBlocked)" strokeWidth={2} />
+              <CartesianGrid strokeDasharray="6 8" stroke="#eef3f8" vertical={false} />
+              <XAxis dataKey="ts" tick={{ fontSize: 11, fill: "#7b8a9d", fontWeight: 600 }} axisLine={false} tickLine={false} dy={6}
+                tickFormatter={(v: string) => { try { return new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric" }); } catch { return v; } }} />
+              <YAxis tick={{ fontSize: 11, fill: "#7b8a9d", fontWeight: 600 }} axisLine={false} tickLine={false} dx={-6} />
+              <Tooltip
+                contentStyle={{ background: "rgba(16,32,51,0.92)", border: "none", borderRadius: 12, fontSize: 12, color: "#fff", backdropFilter: "blur(12px)", boxShadow: "0 16px 40px rgba(0,0,0,0.18)" }}
+                labelStyle={{ color: "#7dd3fc", fontWeight: 700, marginBottom: 4 }}
+                cursor={{ stroke: "#0f766e", strokeDasharray: "4 6", strokeOpacity: 0.35 }}
+              />
+              <Area type="monotone" dataKey="delivered" stroke="#0f766e" strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round" fillOpacity={1} fill="url(#colorDelivered2)" filter="url(#shadowDelivered)" dot={false} activeDot={{ r: 5, fill: "#fff", stroke: "#0f766e", strokeWidth: 2.2 }} animationDuration={900} />
+              <Area type="monotone" dataKey="blocked"   stroke="#f43f5e" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" fillOpacity={1} fill="url(#colorBlocked2)" filter="url(#shadowBlocked)" dot={false} activeDot={{ r: 4.5, fill: "#fff", stroke: "#f43f5e", strokeWidth: 2 }} animationDuration={900} />
             </AreaChart>
           </ResponsiveContainer>
+          <div style={{ display: "flex", gap: 14, justifyContent: "center", padding: "8px 0 14px", fontSize: 11, fontWeight: 700, color: "#607086" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 999, background: "#0f766e" }} />Delivered</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 999, background: "#f43f5e" }} />Blocked</span>
+          </div>
         </div>
 
         {/* Top rules */}
@@ -129,30 +148,46 @@ export default function DashboardView() {
       </div>
 
       <div style={s.grid2}>
-        <div style={s.card}>
-          <div style={s.sectionTitle}>Requests by Provider</div>
-          <ResponsiveContainer width="100%" height={220}>
+        <div style={{ ...s.card, padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "18px 22px 4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={s.sectionTitle}>Requests by Provider</div>
+            <span style={{ fontSize: 10, fontWeight: 800, color: "#8a9bb0", letterSpacing: "0.06em", textTransform: "uppercase" }}> Donut · smooth </span>
+          </div>
+          <ResponsiveContainer width="100%" height={250}>
             <PieChart>
-              <Pie data={provider_usage} dataKey="count" nameKey="backend" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
+              <defs>
+                <filter id="pieShadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="8" stdDeviation="10" floodOpacity="0.12" /></filter>
+              </defs>
+              <Pie data={provider_usage} dataKey="count" nameKey="backend" cx="50%" cy="50%" innerRadius={68} outerRadius={92} paddingAngle={4} cornerRadius={8} stroke="#fff" strokeWidth={2} filter="url(#pieShadow)" animationDuration={900}>
                 {provider_usage.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={["#0f766e", "#3b82f6", "#10b981", "#8b5cf6"][index % 4]} />
+                  <Cell key={`cell-${index}`} fill={["#0f766e", "#3b82f6", "#14b8a6", "#8b5cf6", "#f59e0b"][index % 5]} />
                 ))}
               </Pie>
-              <Tooltip contentStyle={{ background: "rgba(255, 255, 255, 0.9)", border: "1px solid #dce7f0", borderRadius: 8, fontSize: 12, backdropFilter: "blur(10px)" }} />
-              <Legend wrapperStyle={{ fontSize: 11, color: "#7b8a9d" }} />
+              <Tooltip contentStyle={{ background: "rgba(16,32,51,0.92)", border: "none", borderRadius: 10, fontSize: 12, color: "#fff", backdropFilter: "blur(10px)", boxShadow: "0 16px 32px rgba(0,0,0,0.18)" }} />
+              <Legend wrapperStyle={{ fontSize: 11, color: "#7b8a9d", paddingTop: 10 }} iconType="circle" />
             </PieChart>
           </ResponsiveContainer>
         </div>
 
-        <div style={s.card}>
-          <div style={s.sectionTitle}>Tokens by Model</div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={provider_usage} margin={{ top: 0, right: 0, left: -20, bottom: 0 }} maxBarSize={40}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e7eef6" vertical={false} />
-              <XAxis dataKey="model" tick={{ fontSize: 11, fill: "#7b8a9d" }} tickLine={false} axisLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#7b8a9d" }} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={{ background: "rgba(255, 255, 255, 0.9)", border: "1px solid #dce7f0", borderRadius: 8, fontSize: 12, backdropFilter: "blur(10px)" }} cursor={{ fill: "rgba(15,118,110,0.05)" }} />
-              <Bar dataKey="tokens" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+        <div style={{ ...s.card, padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "18px 22px 4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={s.sectionTitle}>Tokens by Model</div>
+            <span style={{ fontSize: 10, fontWeight: 800, color: "#8a9bb0", letterSpacing: "0.06em", textTransform: "uppercase" }}> Rounded · gradient </span>
+          </div>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={provider_usage} margin={{ top: 8, right: 16, left: -10, bottom: 0 }} maxBarSize={44} barCategoryGap="22%">
+              <defs>
+                <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#14b8a6" stopOpacity={0.98} />
+                  <stop offset="100%" stopColor="#0f766e" stopOpacity={0.98} />
+                </linearGradient>
+                <filter id="barShadow2" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="8" floodColor="#0f766e" floodOpacity="0.14" /></filter>
+              </defs>
+              <CartesianGrid strokeDasharray="6 8" stroke="#eef3f8" vertical={false} />
+              <XAxis dataKey="model" tick={{ fontSize: 11, fill: "#7b8a9d", fontWeight: 600 }} tickLine={false} axisLine={false} dy={6} />
+              <YAxis tick={{ fontSize: 11, fill: "#7b8a9d", fontWeight: 600 }} tickLine={false} axisLine={false} dx={-6} />
+              <Tooltip contentStyle={{ background: "rgba(16,32,51,0.92)", border: "none", borderRadius: 10, fontSize: 12, color: "#fff", backdropFilter: "blur(10px)" }} cursor={{ fill: "rgba(15,118,110,0.06)", radius: 8 } as unknown as Record<string, unknown>} />
+              <Bar dataKey="tokens" fill="url(#barGrad)" radius={[10, 10, 0, 0]} filter="url(#barShadow2)" animationDuration={900} />
             </BarChart>
           </ResponsiveContainer>
         </div>

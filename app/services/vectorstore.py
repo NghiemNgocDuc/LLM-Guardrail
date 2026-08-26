@@ -90,6 +90,45 @@ async def upsert_conversation(
         logger.exception("vectorstore.upsert_failed")
 
 
+async def upsert_memory(memory_id: str, content: str, metadata: dict[str, Any] | None = None) -> None:
+    idx = _index()
+    if idx is None:
+        return
+    try:
+        model = _get_embedding_model()
+        vec = model.encode(content).tolist()
+        # use namespace "memories" so conversation and memory vectors stay separate
+        kwargs: dict[str, Any] = {"vectors": [(memory_id, vec, {"type": "memory", "content": content[:500], **(metadata or {})})]}
+        # pinecone 3.x supports namespace kwarg
+        try:
+            idx.upsert(**kwargs, namespace="memories")
+        except TypeError:
+            idx.upsert(**kwargs)
+    except Exception:
+        logger.exception("vectorstore.upsert_memory_failed")
+
+
+async def query_memories(query: str, user_id: str | None = None, top_k: int = 5) -> list[dict]:
+    idx = _index()
+    if idx is None:
+        return []
+    try:
+        model = _get_embedding_model()
+        vec = model.encode(query).tolist()
+        flt = {"user_id": user_id} if user_id else None
+        try:
+            res = idx.query(vector=vec, top_k=top_k, include_metadata=True, filter=flt, namespace="memories")
+        except TypeError:
+            res = idx.query(vector=vec, top_k=top_k, include_metadata=True, filter=flt)
+        out = []
+        for m in getattr(res, "matches", []) or []:
+            out.append({"id": m.id, "score": getattr(m, "score", 0), "metadata": getattr(m, "metadata", {}) or {}})
+        return out
+    except Exception:
+        logger.exception("vectorstore.query_memories_failed")
+        return []
+
+
 async def semantic_similarity(text: str, top_k: int = 3) -> list[dict]:
     idx = _index()
     if idx is None:

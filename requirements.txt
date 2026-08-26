@@ -53,3 +53,7 @@ pinecone==5.4.1
 
 # GraphQL analytics layer (read-only mirror of /analytics REST routes)
 strawberry-graphql==0.324.0
+
+# gRPC input-guard service (grpc_gateway/) — same InputGuardrail engine as
+# /chat, exposed for high-throughput streaming check clients.
+grpcio==1.83.0

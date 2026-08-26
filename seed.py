@@ -1,4 +1,4 @@
-﻿import asyncio, sys, os
+import asyncio, sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from sqlalchemy import select
 from app.database import AsyncSessionLocal

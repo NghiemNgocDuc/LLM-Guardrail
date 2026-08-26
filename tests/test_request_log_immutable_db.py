@@ -10,8 +10,8 @@ PostgreSQL) — run against a scratch database:
 
     $env:TEST_DATABASE_URL = "postgresql+asyncpg://postgres:password@localhost:5432/guardrails_test"
 """
+import asyncio
 import os
-from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import text
@@ -74,68 +74,80 @@ _INSERT = (
 )
 
 
-@pytest.fixture
-async def db():
-    engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
-    async with engine.begin() as conn:
-        for stmt in _DROP:
-            await conn.execute(text(stmt))
-        for stmt in _DDL:
-            await conn.execute(text(stmt))
-    yield engine
-    async with engine.begin() as conn:
-        for stmt in _DROP:
-            await conn.execute(text(stmt))
-    await engine.dispose()
+def _run(test_fn):
+    """Create a scratch schema, run one async test body, tear the schema down."""
+
+    async def runner():
+        engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
+        try:
+            async with engine.begin() as conn:
+                for stmt in _DROP:
+                    await conn.execute(text(stmt))
+                for stmt in _DDL:
+                    await conn.execute(text(stmt))
+                await conn.execute(text(_INSERT))
+            await test_fn(engine)
+        finally:
+            async with engine.begin() as conn:
+                for stmt in _DROP:
+                    await conn.execute(text(stmt))
+            await engine.dispose()
+
+    asyncio.run(runner())
 
 
-@pytest.fixture
-async def seeded(db):
-    async with db.begin() as conn:
-        await conn.execute(text(_INSERT))
-    return db
-
-
-async def test_insert_still_works(seeded):
-    async with seeded.begin() as conn:
-        await conn.execute(
-            text(
-                "INSERT INTO request_logs (id, api_key_id, org_id, prompt_hash, prompt_preview, "
-                "model, backend, input_passed, status, latency_ms, created_at) VALUES "
-                "('r2', 'k1', 'org-a', 'hash2', 'again', 'llama', 'groq', TRUE, 'delivered', 5, "
-                "'2026-08-01 11:00:00+00')"
-            )
-        )
-    async with seeded.connect() as conn:
-        count = (await conn.execute(text("SELECT COUNT(*) FROM request_logs"))).scalar()
-    assert count == 2
-
-
-async def test_update_blocked(seeded):
-    with pytest.raises(Exception, match="immutable audit trail"):
-        async with seeded.begin() as conn:
+def test_insert_still_works():
+    async def body(engine):
+        async with engine.begin() as conn:
             await conn.execute(
-                text("UPDATE request_logs SET status = 'error' WHERE id = 'r1'")
+                text(
+                    "INSERT INTO request_logs (id, api_key_id, org_id, prompt_hash, prompt_preview, "
+                    "model, backend, input_passed, status, latency_ms, created_at) VALUES "
+                    "('r2', 'k1', 'org-a', 'hash2', 'again', 'llama', 'groq', TRUE, 'delivered', 5, "
+                    "'2026-08-01 11:00:00+00')"
+                )
             )
+        async with engine.connect() as conn:
+            count = (await conn.execute(text("SELECT COUNT(*) FROM request_logs"))).scalar()
+        assert count == 2
+
+    _run(body)
 
 
-async def test_delete_blocked(seeded):
-    with pytest.raises(Exception, match="immutable audit trail"):
-        async with seeded.begin() as conn:
-            await conn.execute(text("DELETE FROM request_logs WHERE id = 'r1'"))
-
-
-async def test_rows_survive_attempted_mutation(seeded):
-    for stmt in (
-        "UPDATE request_logs SET status = 'error' WHERE id = 'r1'",
-        "DELETE FROM request_logs WHERE id = 'r1'",
-    ):
+def test_update_blocked():
+    async def body(engine):
         with pytest.raises(Exception, match="immutable audit trail"):
-            async with seeded.begin() as conn:
-                await conn.execute(text(stmt))
-    async with seeded.connect() as conn:
-        row = (await conn.execute(
-            text("SELECT status FROM request_logs WHERE id = 'r1'")
-        )).first()
-    assert row is not None
-    assert row.status == "delivered"
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("UPDATE request_logs SET status = 'error' WHERE id = 'r1'")
+                )
+
+    _run(body)
+
+
+def test_delete_blocked():
+    async def body(engine):
+        with pytest.raises(Exception, match="immutable audit trail"):
+            async with engine.begin() as conn:
+                await conn.execute(text("DELETE FROM request_logs WHERE id = 'r1'"))
+
+    _run(body)
+
+
+def test_rows_survive_attempted_mutation():
+    async def body(engine):
+        for stmt in (
+            "UPDATE request_logs SET status = 'error' WHERE id = 'r1'",
+            "DELETE FROM request_logs WHERE id = 'r1'",
+        ):
+            with pytest.raises(Exception, match="immutable audit trail"):
+                async with engine.begin() as conn:
+                    await conn.execute(text(stmt))
+        async with engine.connect() as conn:
+            row = (await conn.execute(
+                text("SELECT status FROM request_logs WHERE id = 'r1'")
+            )).first()
+        assert row is not None
+        assert row.status == "delivered"
+
+    _run(body)

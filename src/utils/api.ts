@@ -14,6 +14,11 @@ export function maskGatewayKey(key: string): string {
   return key.slice(0, visible) + "*".repeat(Math.max(8, key.length - visible));
 }
 
+export function isProviderKey(key: string): boolean {
+  const k = key.trim();
+  return /^(gsk_|sk-|sk-ant-|AKIA)/.test(k) || /sk-proj-/.test(k);
+}
+
 export const gatewayKeyInputProps = {
   type: "password",
   autoComplete: "off",
@@ -44,6 +49,11 @@ export type ApiOptions = {
 let _getClerkToken: (() => Promise<string | null>) | null = null;
 export function setClerkTokenProvider(fn: () => Promise<string | null>): void {
   _getClerkToken = fn;
+}
+
+export async function getAuthToken(): Promise<string | null> {
+  if (!_getClerkToken) return null;
+  try { return await _getClerkToken(); } catch { return null; }
 }
 
 export function getToken(): null { return null; }

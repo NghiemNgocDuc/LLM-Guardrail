@@ -43,3 +43,42 @@ cli/guardrail-scan/guardrail-scan.exe
 cli/guardrail-scan/dist/
 
 guardrail_core/target/
+
+# Zig env-check
+zig/env-check/.zig-cache/
+zig/env-check/zig-out/
+zig/env-check/zig-out-linux/
+zig/env-check/zig-out-linux-arm/
+zig/env-check/zig-out-macos/
+zig/env-check/envcheck-test-linux
+
+# Elixir / Phoenix
+**/_build/
+**/deps/
+.elixir_ls/
+
+# Haskell
+**/dist-newstyle/
+**/.stack-work/
+**/dist/
+
+# Julia
+**/Manifest.toml
+.julia/
+
+# Kotlin / Swift SDKs
+**/build/
+**/.gradle/
+**/.build/
+
+# gRPC gateway
+**/__pycache__/
+**/*.pyc
+
+# Analytics charts (generated)
+julia/analytics/charts/
+
+# Zig build done (keep fixtures, ignore outputs)
+zig/**/zig-out*
+
+# Frontend: keep dist ignored (already)

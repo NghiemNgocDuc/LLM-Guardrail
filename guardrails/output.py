@@ -122,6 +122,16 @@ class OutputGuardrail:
         )
 
     def _check_secret_leakage(self, response: str) -> Optional[str]:
+        from app.utils.secret_redaction import contains_secret  # lazy
+
+        hit, kind = contains_secret(response)
+        if hit:
+            return _t_or(
+                "guardrail.secret_leakage",
+                "Potential credential leakage detected ({kind})",
+                kind=kind or "secret",
+            )
+        # Keep the old broad heuristic as a safety net (e.g. non-standard prefixes)
         lower = response.lower()
         if "api_key=" in lower or "authorization: bearer" in lower:
             return _t_or("guardrail.secret_leakage", "Potential credential leakage detected")

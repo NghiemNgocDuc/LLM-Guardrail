@@ -135,6 +135,24 @@ class Settings(BaseSettings):
     # blocked) — this value bounds how long a hung sidecar can hold a request.
     OPA_TIMEOUT_SECONDS: float = 2.0
 
+    # ── API key exploit protection / auto-ban ───────────────────────────────
+    EXPLOIT_PROTECTION_ENABLED: bool = True
+    # Burst: requests/min that triggers exploit flag (separate from normal RPM limit)
+    EXPLOIT_RPM_THRESHOLD: int = 120
+    # Token burn velocity: tokens consumed in 5-min sliding window
+    EXPLOIT_TOKEN_BURN_5M: int = 50_000
+    # Distinct IPs using same key in 10 min (key sharing / leaked key)
+    EXPLOIT_IP_DIVERSITY_THRESHOLD: int = 5
+    EXPLOIT_IP_WINDOW_S: int = 600
+    # Blocked-ratio: >80% blocked in last 20 requests = probing guardrails
+    EXPLOIT_BLOCKED_RATIO: float = 0.8
+    EXPLOIT_BLOCKED_WINDOW: int = 20
+    # Ban durations (minutes) — exponential on repeat offense, capped
+    EXPLOIT_BAN_DURATION_MINUTES: int = 15
+    EXPLOIT_MAX_BAN_DURATION_MINUTES: int = 1440  # 24h
+    # Dedup abuse: same prompt hash retried this many times in 5 min
+    EXPLOIT_DEDUP_THRESHOLD: int = 6
+
     @field_validator("DEBUG", mode="before")
     @classmethod
     def parse_debug(cls, value: Any) -> Any:

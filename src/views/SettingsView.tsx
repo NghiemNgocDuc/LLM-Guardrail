@@ -181,7 +181,7 @@ export default function SettingsView({ user, onUserUpdate, darkMode, setDarkMode
       {error   && <div style={{ ...s.alert("error"),   marginBottom: 16 }}>{error}</div>}
       {success && <div style={{ ...s.alert("success"), marginBottom: 16 }}>{success}</div>}
 
-      {/* ── Profile ── */}
+      {/* -- Profile -- */}
       <Card title="Profile" subtitle="Your public display name shown to teammates">
         <form onSubmit={saveProfile}>
           <div style={field}>
@@ -201,7 +201,7 @@ export default function SettingsView({ user, onUserUpdate, darkMode, setDarkMode
         </form>
       </Card>
 
-      {/* ── Password ── */}
+      {/* -- Password -- */}
       <Card title="Change Password" subtitle="Use a strong password of at least 8 characters">
         <form onSubmit={savePassword}>
           <div style={field}>
@@ -228,7 +228,7 @@ export default function SettingsView({ user, onUserUpdate, darkMode, setDarkMode
         </form>
       </Card>
 
-      {/* ── Appearance ── */}
+      {/* -- Appearance -- */}
       <Card title="Appearance" subtitle="Customise how the dashboard looks">
         <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "4px 0" }}>
           <div style={{ flex: 1 }}>
@@ -247,7 +247,7 @@ export default function SettingsView({ user, onUserUpdate, darkMode, setDarkMode
         </div>
       </Card>
 
-      {/* ── Organisation (admin only) ── */}
+      {/* -- Organisation (admin only) -- */}
       {user?.is_admin && user?.org_id && (
         <Card title="Organisation" subtitle="Rename your organisation — the slug will update automatically">
           <form onSubmit={saveOrg}>
@@ -263,7 +263,7 @@ export default function SettingsView({ user, onUserUpdate, darkMode, setDarkMode
         </Card>
       )}
 
-      {/* ── Security (admin only) ── */}
+      {/* -- Security (admin only) -- */}
       {user?.is_admin && (
         <Card title="Security" subtitle="Guardrail webhook notifications and IP-level access control">
           <form onSubmit={saveSecurity}>
@@ -295,7 +295,7 @@ export default function SettingsView({ user, onUserUpdate, darkMode, setDarkMode
         </Card>
       )}
 
-      {/* ── Account / Sign out ── */}
+      {/* -- Account / Sign out -- */}
       <Card title="Account" subtitle="Manage your session">
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",

@@ -22,7 +22,7 @@ async def rotate_api_key():
     settings = get_settings()
 
     if not settings.DATABASE_URL:
-        print("❌ DATABASE_URL not configured")
+        print("[FAIL] DATABASE_URL not configured")
         return False
 
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
@@ -40,11 +40,11 @@ async def rotate_api_key():
             key = result.scalar_one_or_none()
 
             if not key:
-                print(f"❌ API key {target[:12]} not found")
+                print(f"[FAIL] API key {target[:12]} not found")
                 return False
 
             if not key.is_active:
-                print(f"❌ API key {key.key_prefix} is already revoked")
+                print(f"[FAIL] API key {key.key_prefix} is already revoked")
                 return False
 
             owner = await session.get(User, key.owner_id)
@@ -67,19 +67,19 @@ async def rotate_api_key():
             session.add(new_key)
             await session.commit()
 
-            print("✓ API key rotated")
+            print("[OK] API key rotated")
             print(f"  Name:     {key.name}")
             print(f"  Owner:    {owner_label}")
             print(f"  Org:      {key.org_id}")
             print(f"  Old key:  {key.key_prefix} (revoked)")
             print(f"  New key:  {new_key.key_prefix}")
             print("")
-            print("⚠️  New raw API key — shown exactly once, store it now:")
+            print("[WARN]  New raw API key — shown exactly once, store it now:")
             print(raw_key)
             return True
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[FAIL] Error: {e}")
         return False
     finally:
         await engine.dispose()

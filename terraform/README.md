@@ -28,7 +28,7 @@ fullstack container. The mapping:
 | `db` (postgres:16) | Supabase Postgres | `modules/database` | **External.** No official Supabase provider exists, so the project is created in the Supabase dashboard (DEPLOYMENT.md §Supabase Postgres) and its pooler URL is passed in as the sensitive `supabase_database_url` variable. The module validates the `postgresql+asyncpg://` scheme the app requires. |
 | `redis` (redis:7) | Upstash Redis | `modules/cache` | **Provisioned.** Official `upstash/upstash` provider creates the database; the module builds `RATE_LIMIT_REDIS_URL` in the documented `rediss://` form. |
 | `api` (FastAPI :8000) | Render web service | `modules/api` | One `render_web_service` (runtime `docker`, `Dockerfile.fullstack`), which also serves the built frontend — it plays the compose `api` **and** `web` roles (SECURITY.md: the `web`/fullstack image is the public entrypoint). |
-| `web` (nginx, public) | (part of fullstack) | ↑ same service | No separate static site is provisioned — DEPLOYMENT.md's "separate frontend/backend" shape is the documented alternative and stays manual (see "Not covered"). |
+| `web` (nginx, public) | (part of fullstack) |  same service | No separate static site is provisioned — DEPLOYMENT.md's "separate frontend/backend" shape is the documented alternative and stays manual (see "Not covered"). |
 
 ## Environment variables
 

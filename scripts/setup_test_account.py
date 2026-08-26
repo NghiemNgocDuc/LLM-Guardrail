@@ -15,7 +15,7 @@ async def setup_test_account():
     settings = get_settings()
     
     if not settings.DATABASE_URL:
-        print("❌ DATABASE_URL not configured")
+        print("[FAIL] DATABASE_URL not configured")
         return False
     
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
@@ -31,13 +31,13 @@ async def setup_test_account():
             if user:
                 # Promote existing account
                 if user.is_admin:
-                    print("✓ Test account cs@umass.edu is already admin")
+                    print("[OK] Test account cs@umass.edu is already admin")
                 else:
                     user.is_admin = True
                     user.email_verified = True
                     session.add(user)
                     await session.commit()
-                    print("✓ Test account cs@umass.edu promoted to admin")
+                    print("[OK] Test account cs@umass.edu promoted to admin")
             else:
                 # Create new account
                 user = User(
@@ -51,16 +51,16 @@ async def setup_test_account():
                 )
                 session.add(user)
                 await session.commit()
-                print("✓ Test account cs@umass.edu created as admin")
+                print("[OK] Test account cs@umass.edu created as admin")
             
             print(f"\n  Email:     cs@umass.edu")
             print(f"  Password:  123456789")
-            print(f"  Admin:     ✓")
+            print(f"  Admin:     [OK]")
             print("\nThe test account is ready for use!")
             return True
             
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[FAIL] Error: {e}")
         import traceback
         traceback.print_exc()
         return False

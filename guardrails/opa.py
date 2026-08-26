@@ -46,7 +46,10 @@ adds no per-request writes in the common case.
 """
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 import uuid
 
 import httpx
@@ -112,6 +115,29 @@ def reset_client() -> None:
         _CLIENT = None
 
 
+def rego_lint(rego: str) -> None:
+    """Optional fast-fail pre-check via the Haskell `rego-lint` CLI.
+
+    Runs before the authoritative OPA compile check in ``validate`` when a
+    rego-lint binary is available (``REGOLINT_BIN`` env var, or on PATH).
+    Skipped silently when the binary is not installed — the OPA round trip
+    stays the source of truth.
+
+    Raises ``OPAValidationError`` with the linter's per-issue output on a
+    failed check.
+    """
+    binary = os.environ.get("REGOLINT_BIN") or shutil.which("rego-lint")
+    if not binary:
+        return None
+    proc = subprocess.run(
+        [binary, "-"], input=rego, capture_output=True, text=True, timeout=10
+    )
+    if proc.returncode == 0:
+        return None
+    detail = proc.stderr.strip() or f"rego-lint exited with status {proc.returncode}"
+    raise OPAValidationError(f"rego-lint: {detail}")
+
+
 def validate(rego: str) -> None:
     """Compile-check a Rego source WITHOUT keeping it in OPA.
 
@@ -121,6 +147,7 @@ def validate(rego: str) -> None:
     """
     if not rego or not rego.strip():
         raise OPAValidationError("Rego source is empty")
+    rego_lint(rego)  # optional fast-fail; the OPA check below is authoritative
     if _PACKAGE_RE.search(rego) is None:
         raise OPAValidationError(
             "Rego must declare a package (e.g. `package guardrails`)"

@@ -9,6 +9,7 @@ import GlobalStyles from "./styles/GlobalStyles";
 import AuthFlowBackground from "./components/AuthFlowBackground";
 import DashboardView from "./views/DashboardView";
 import ChatView from "./views/ChatView";
+import MemoryView from "./views/MemoryView";
 import SkillGuardView from "./views/SkillGuardView";
 import BillingView from "./views/BillingView";
 import LogsView from "./views/LogsView";
@@ -28,6 +29,7 @@ type NavItem = { id: string; label: string; icon: string; adminOnly?: boolean };
 const NAV: NavItem[] = [
   { id: "dashboard",  label: "Dashboard",      icon: "01" },
   { id: "chat",       label: "LLM Playground", icon: "02" },
+  { id: "memory",     label: "Memory",         icon: "" },
   { id: "skills",     label: "Rejected access", icon: "SG" },
   { id: "analytics",  label: "Analytics",      icon: "AN" },
   { id: "billing",    label: "Billing",        icon: "$"  },
@@ -155,7 +157,7 @@ export default function App() {
                   onClick={() => setDarkMode(d => !d)}
                   title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
                 >
-                  {darkMode ? "☀" : "◑"}
+                  {darkMode ? "Light" : "Dark"}
                 </button>
               </div>
               <div style={{ fontSize: 11, color: "#7b8a9d", marginTop: 4 }}>Models · agents · skills</div>
@@ -181,12 +183,13 @@ export default function App() {
               boxShadow: "0 4px 12px rgba(15,118,110,0.3)",
             }}
           >
-            ☰
+            Menu
           </button>
 
           <div className="app-main" style={s.main}>
             {view === "dashboard"  && <DashboardView />}
             {view === "chat"       && <ChatView />}
+            {view === "memory"     && <MemoryView />}
             {view === "skills"     && <SkillGuardView />}
             {view === "analytics"  && <AnalyticsView />}
             {view === "billing"    && <BillingView />}

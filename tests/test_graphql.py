@@ -1,4 +1,4 @@
-﻿"""Tests for the GraphQL analytics layer (app/graphql.py).
+"""Tests for the GraphQL analytics layer (app/graphql.py).
 
 Resolvers delegate 1:1 to the /analytics REST router functions, so the heavy
 query semantics are covered by the REST tests; here we verify (a) auth wiring

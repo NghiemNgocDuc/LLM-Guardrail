@@ -6,6 +6,7 @@ import uuid
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.utils.secret_redaction import scrub_text
 
 logger = logging.getLogger("app.requests")
 
@@ -27,7 +28,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                     {
                         "request_id": request_id,
                         "method": request.method,
-                        "path": request.url.path,
+                        "path": scrub_text(request.url.path),
                         "status_code": status_code,
                         "latency_ms": latency_ms,
                         "client_ip": request.client.host if request.client else "unknown",

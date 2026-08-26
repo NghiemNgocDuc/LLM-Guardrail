@@ -204,6 +204,53 @@ async def list_webhook_deliveries(
     return await recent_deliveries(current_user.org_id, limit)
 
 
+@router.get("/bans")
+async def list_bans(current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """Active exploit auto-bans (API key + user). Auto-expire after TTL. Scoped to org."""
+    require_org_admin(current_user)
+    from app.services.api_key_protection import list_active_bans  # noqa: PLC0415
+    bans = await list_active_bans()
+    # scope to current org (keys + users)
+    try:
+        result = await db.execute(select(APIKey.id).where(APIKey.org_id == current_user.org_id))
+        org_key_ids = {r[0] for r in result.all()}
+        result2 = await db.execute(select(User.id).where(User.org_id == current_user.org_id))
+        org_user_ids = {r[0] for r in result2.all()}
+        bans = [b for b in bans if (b["type"] == "api_key" and b["id"] in org_key_ids) or (b["type"] == "user" and b["id"] in org_user_ids)]
+    except Exception:
+        pass
+    return bans
+
+
+@router.post("/bans/unban", status_code=204)
+async def unban(
+    body: dict,
+    current_user: CurrentUser,
+):
+    """Manually lift a temporary ban. Body: {"api_key_id": "...", "user_id": "..."}"""
+    require_org_admin(current_user)
+    from app.services.api_key_protection import unban_api_key  # noqa: PLC0415
+    api_key_id = (body.get("api_key_id") or "").strip()
+    user_id = (body.get("user_id") or "").strip() or None
+    if not api_key_id and not user_id:
+        raise HTTPException(status_code=400, detail="api_key_id or user_id required")
+    # if only api_key_id given, also clear its owner
+    if api_key_id and not user_id:
+        # best-effort: lookup owner
+        from app.database import get_sessionmaker  # noqa: PLC0415
+        from sqlalchemy import select  # noqa: PLC0415
+        try:
+            sm = get_sessionmaker()
+            async with sm() as db:
+                key = await db.get(APIKey, api_key_id)
+                if key:
+                    user_id = key.owner_id
+        except Exception:
+            pass
+    await unban_api_key(api_key_id or "", user_id)
+    return None
+
+
 @router.post("/replay/{request_id}", response_model=ReplayResponse)
 async def replay_request(
     request_id: str,

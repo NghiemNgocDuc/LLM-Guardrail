@@ -2,10 +2,10 @@
 Database models.
 
 Relationships:
-  User  ──belongs to──▶  Organization
-  Org   ──has one──────▶  OrgPolicy       (per-tenant guardrail rules)
-  User  ──has many──────▶  APIKey
-  APIKey ──has many─────▶  RequestLog      (full audit trail)
+  User  ──belongs to──  Organization
+  Org   ──has one──────  OrgPolicy       (per-tenant guardrail rules)
+  User  ──has many──────  APIKey
+  APIKey ──has many─────  RequestLog      (full audit trail)
 """
 import secrets
 import uuid
@@ -295,6 +295,45 @@ class ChatFeedback(Base):
     created_at:     Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     request_log: Mapped["RequestLog"] = relationship("RequestLog", back_populates="feedback")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Memory  (user/org long-term memory — Mem0 + OpenAI style)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Memory(Base):
+    """Long-term memory — extracted from chats, skills, or manual entries.
+
+    Design copied from Mem0 + OpenAI Memory + Linear:
+      - categories like Mem0 (fact / preference / procedure / persona / goal)
+      - confidence + importance like Mem0 graph
+      - Pinecone embedding for semantic recall (vectorstore.py, namespace 'memories')
+      - Linear-style UX: pin, archive, search, timeline
+    """
+    __tablename__ = "memories"
+
+    id:          Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id:     Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    org_id:      Mapped[str | None] = mapped_column(ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    title:       Mapped[str] = mapped_column(String(160), nullable=False)
+    content:     Mapped[str] = mapped_column(Text, nullable=False)
+    category:    Mapped[str] = mapped_column(String(24), default="fact", index=True)  # fact|preference|procedure|persona|goal|skill
+    kind:        Mapped[str] = mapped_column(String(16), default="user", index=True)  # user|org|agent
+    confidence:  Mapped[float] = mapped_column(default=0.82)
+    importance:  Mapped[int] = mapped_column(Integer, default=3)  # 1-5
+    pinned:      Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    archived:    Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+    source_type: Mapped[str | None] = mapped_column(String(16), nullable=True)  # chat|manual|skill|import
+    source_id:   Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    created_at:     Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at:     Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, index=True)
+    last_accessed:  Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped["User"] = relationship("User", backref="memories")
+    org:  Mapped["Organization | None"] = relationship("Organization", backref="memories")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

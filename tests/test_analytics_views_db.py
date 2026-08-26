@@ -13,7 +13,7 @@ views read — run against a scratch database:
 """
 import asyncio
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -98,113 +98,129 @@ _DROP = [
 ]
 
 
-@pytest.fixture
-async def db():
-    engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
-    async with engine.begin() as conn:
-        for stmt in _DROP:
-            await conn.execute(text(stmt))
-        for stmt in _DDL:
-            await conn.execute(text(stmt))
-    yield engine
-    async with engine.begin() as conn:
-        for stmt in _DROP:
-            await conn.execute(text(stmt))
-    await engine.dispose()
-
-
-@pytest.fixture
-async def seeded(db):
-    async with db.begin() as conn:
-        await conn.execute(text("INSERT INTO users (id) VALUES ('u1')"))
-        await conn.execute(
-            text("INSERT INTO api_keys (id, owner_id) VALUES ('k1', 'u1'), ('k2', 'u1')")
+async def _seed(conn) -> None:
+    await conn.execute(text("INSERT INTO users (id) VALUES ('u1')"))
+    await conn.execute(
+        text("INSERT INTO api_keys (id, owner_id) VALUES ('k1', 'u1'), ('k2', 'u1')")
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO request_logs (id, org_id, api_key_id, status, fired_rule, "
+            "prompt_preview, created_at) VALUES "
+            "('r1', 'org-a', 'k1', 'input_blocked', 'pii_detected', 'email in prompt', '2026-08-01 10:00:00+00'), "
+            "('r2', 'org-a', 'k1', 'input_blocked', 'pii_detected', 'another email', '2026-08-02 10:00:00+00'), "
+            "('r3', 'org-a', 'k2', 'input_blocked', 'toxic_content', 'bad word', '2026-08-02 11:00:00+00'), "
+            "('r4', 'org-a', 'k1', 'delivered', NULL, 'fine', '2026-08-02 12:00:00+00'), "
+            "('r5', 'org-b', 'k1', 'output_blocked', 'pii_detected', 'org b', '2026-08-02 13:00:00+00')"
         )
-        await conn.execute(
-            text(
-                "INSERT INTO request_logs (id, org_id, api_key_id, status, fired_rule, "
-                "prompt_preview, created_at) VALUES "
-                "('r1', 'org-a', 'k1', 'input_blocked', 'pii_detected', 'email in prompt', '2026-08-01 10:00:00+00'), "
-                "('r2', 'org-a', 'k1', 'input_blocked', 'pii_detected', 'another email', '2026-08-02 10:00:00+00'), "
-                "('r3', 'org-a', 'k2', 'input_blocked', 'toxic_content', 'bad word', '2026-08-02 11:00:00+00'), "
-                "('r4', 'org-a', 'k1', 'delivered', NULL, 'fine', '2026-08-02 12:00:00+00'), "
-                "('r5', 'org-b', 'k1', 'output_blocked', 'pii_detected', 'org b', '2026-08-02 13:00:00+00')"
+    )
+    await conn.execute(
+        text("INSERT INTO chat_feedback (request_log_id, user_id, rating) VALUES ('r1', 'u1', 1)")
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO user_skill_guard_overrides (user_id, overrides) VALUES "
+            "('u1', '{\"always_allow_reason_codes\": [\"toxic_content\"]}')"
+        )
+    )
+    await conn.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_blocked_reasons_daily"))
+    await conn.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_false_positive_candidates_daily"))
+
+
+def _run(test_fn):
+    """Create the scratch schema (views + seed), run one async test body, drop it."""
+
+    async def runner():
+        engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
+        try:
+            async with engine.begin() as conn:
+                for stmt in _DROP:
+                    await conn.execute(text(stmt))
+                for stmt in _DDL:
+                    await conn.execute(text(stmt))
+                await _seed(conn)
+            await test_fn(engine)
+        finally:
+            async with engine.begin() as conn:
+                for stmt in _DROP:
+                    await conn.execute(text(stmt))
+            await engine.dispose()
+
+    asyncio.run(runner())
+
+
+def test_blocked_reasons_view_rolls_up_per_org_per_day():
+    async def body(engine):
+        async with engine.connect() as conn:
+            rows = (await conn.execute(
+                text("SELECT org_id, day, fired_rule, cnt FROM mv_blocked_reasons_daily "
+                     "ORDER BY org_id, day, fired_rule")
+            )).fetchall()
+
+        assert rows == [
+            ("org-a", datetime(2026, 8, 1).date(), "pii_detected", 1),
+            ("org-a", datetime(2026, 8, 2).date(), "pii_detected", 1),
+            ("org-a", datetime(2026, 8, 2).date(), "toxic_content", 1),
+            ("org-b", datetime(2026, 8, 2).date(), "pii_detected", 1),
+        ]
+
+    _run(body)
+
+
+def test_blocked_reasons_endpoint_reads_view():
+    async def body(engine):
+        async with AsyncSession(engine) as session:
+            result = await top_blocked_reasons(
+                SimpleNamespace(org_id="org-a"),
+                days=90,
+                limit=10,
+                db=session,
             )
-        )
-        await conn.execute(
-            text("INSERT INTO chat_feedback (request_log_id, user_id, rating) VALUES ('r1', 'u1', 1)")
-        )
-        await conn.execute(
-            text(
-                "INSERT INTO user_skill_guard_overrides (user_id, overrides) VALUES "
-                "('u1', '{\"always_allow_reason_codes\": [\"toxic_content\"]}')"
+
+        assert [(r.fired_rule, r.count) for r in result] == [("pii_detected", 2), ("toxic_content", 1)]
+        assert result[0].last_occurred_at is not None
+
+    _run(body)
+
+
+def test_false_positive_view_joins_feedback_and_overrides():
+    async def body(engine):
+        async with engine.connect() as conn:
+            rows = (await conn.execute(
+                text("SELECT fired_rule, positive_feedback, override_hit, org_id "
+                     "FROM mv_false_positive_candidates_daily ORDER BY request_log_id")
+            )).fetchall()
+
+        # r1: thumbs-up → positive. r3: override hit (no feedback → NULL). r5: org-b, no signal → out.
+        assert rows == [
+            ("pii_detected", True, False, "org-a"),
+            ("toxic_content", None, True, "org-a"),
+        ]
+
+    _run(body)
+
+
+def test_refresh_concurrently_allows_incremental_update():
+    async def body(engine):
+        # Add a fresh disputed row AFTER the initial refresh, then refresh again —
+        # exercising the exact incremental path the scheduled job uses.
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO request_logs (id, org_id, api_key_id, status, fired_rule, "
+                    "prompt_preview, created_at) VALUES "
+                    "('r6', 'org-a', 'k1', 'input_blocked', 'jailbreak_attempt', 'dan', '2026-08-03 09:00:00+00')"
+                )
             )
-        )
-        await conn.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_blocked_reasons_daily"))
-        await conn.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_false_positive_candidates_daily"))
-    return db
-
-
-async def test_blocked_reasons_view_rolls_up_per_org_per_day(seeded):
-    async with seeded.connect() as conn:
-        rows = (await conn.execute(
-            text("SELECT org_id, day, fired_rule, cnt FROM mv_blocked_reasons_daily "
-                 "ORDER BY org_id, day, fired_rule")
-        )).fetchall()
-
-    assert rows == [
-        ("org-a", datetime(2026, 8, 1).date(), "pii_detected", 1),
-        ("org-a", datetime(2026, 8, 2).date(), "pii_detected", 1),
-        ("org-a", datetime(2026, 8, 2).date(), "toxic_content", 1),
-        ("org-b", datetime(2026, 8, 2).date(), "pii_detected", 1),
-    ]
-
-
-async def test_blocked_reasons_endpoint_reads_view(seeded):
-    async with AsyncSession(seeded) as session:
-        result = await top_blocked_reasons(
-            SimpleNamespace(org_id="org-a"),
-            days=7,
-            limit=10,
-            db=session,
-        )
-
-    assert [(r.fired_rule, r.count) for r in result] == [("pii_detected", 2), ("toxic_content", 1)]
-    assert result[0].last_occurred_at is not None
-
-
-async def test_false_positive_view_joins_feedback_and_overrides(seeded):
-    async with seeded.connect() as conn:
-        rows = (await conn.execute(
-            text("SELECT fired_rule, positive_feedback, override_hit, org_id "
-                 "FROM mv_false_positive_candidates_daily ORDER BY request_log_id")
-        )).fetchall()
-
-    # r1: thumbs-up → positive. r3: override hit. r5: org-b, no signal → out.
-    assert rows == [
-        ("pii_detected", True, False, "org-a"),
-        ("toxic_content", False, True, "org-a"),
-    ]
-
-
-async def test_refresh_concurrently_allows_incremental_update(seeded):
-    # Add a fresh disputed row AFTER the initial refresh, then refresh again —
-    # exercising the exact incremental path the scheduled job uses.
-    async with seeded.begin() as conn:
-        await conn.execute(
-            text(
-                "INSERT INTO request_logs (id, org_id, api_key_id, status, fired_rule, "
-                "prompt_preview, created_at) VALUES "
-                "('r6', 'org-a', 'k1', 'input_blocked', 'jailbreak_attempt', 'dan', '2026-08-03 09:00:00+00')"
+            await conn.execute(
+                text("INSERT INTO chat_feedback (request_log_id, user_id, rating) VALUES ('r6', 'u1', 1)")
             )
-        )
-        await conn.execute(
-            text("INSERT INTO chat_feedback (request_log_id, user_id, rating) VALUES ('r6', 'u1', 1)")
-        )
-        await conn.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_false_positive_candidates_daily"))
+            await conn.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_false_positive_candidates_daily"))
 
-    async with seeded.connect() as conn:
-        count = (await conn.execute(
-            text("SELECT COUNT(*) FROM mv_false_positive_candidates_daily WHERE org_id = 'org-a'")
-        )).scalar()
-    assert count == 3
+        async with engine.connect() as conn:
+            count = (await conn.execute(
+                text("SELECT COUNT(*) FROM mv_false_positive_candidates_daily WHERE org_id = 'org-a'")
+            )).scalar()
+        assert count == 3
+
+    _run(body)

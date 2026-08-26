@@ -132,6 +132,57 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  elixir_feed:
+    # Live request feed (pg_notify -> Phoenix channels, see elixir/live_feed).
+    # Not exposed to the public: nginx proxies the /live-feed/ websocket here.
+    build:
+      context: elixir/live_feed
+    restart: unless-stopped
+    expose:
+      - "4000"
+    environment:
+      FEED_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-postgres}
+      FEED_CLERK_JWKS_URL: ${CLERK_JWKS_URL:-}
+      FEED_CLERK_JWT_KEY: ${CLERK_JWT_KEY:-}
+      FEED_SECRET_KEY: ${SECRET_KEY:-}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-}
+      PHX_HOST: ${PHX_HOST:-localhost}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    security_opt:
+      - no-new-privileges:true
+
+  grpc:
+    # gRPC input-guard service (grpc_gateway/) — same InputGuardrail engine
+    # as /chat on its own port/service. Internal network only; not published.
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "grpc_gateway.server"]
+    expose:
+      - "50051"
+    environment:
+      DATABASE_URL: ""
+      APP_ENV: production
+      DEBUG: "false"
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
 networks:
   internal:
     driver: bridge

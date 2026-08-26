@@ -5,7 +5,7 @@ The test account `cs@umass.edu` with password `123456789` has been added to the 
 
 ## What Changed
 
-### 1. **Frontend - Login Page Info Box** ✓
+### 1. **Frontend - Login Page Info Box** [OK]
 - A blue info box now appears above the login form when on the login tab
 - Displays the test credentials: `cs@umass.edu` / `123456789`
 - Allows outsiders to test the product without creating their own account
@@ -89,10 +89,10 @@ VALUES (
 ## What Can the Test Account Access?
 
 As an admin account, `cs@umass.edu` can:
-- ✓ Access the **Dashboard** (all analytics)
-- ✓ Access the **LLM Playground** (chat)
-- ✓ Manage **Policy** rules
-- ✓ Access **Admin** panel to:
+- [OK] Access the **Dashboard** (all analytics)
+- [OK] Access the **LLM Playground** (chat)
+- [OK] Manage **Policy** rules
+- [OK] Access **Admin** panel to:
   - Manage users (invite, remove, change roles)
   - Manage API keys
   - View all organization settings

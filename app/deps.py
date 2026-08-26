@@ -165,6 +165,14 @@ async def resolve_api_key(raw_key: str, db: AsyncSession) -> APIKey:
         if verify_api_key(raw_key, key.key_hash):
             if key.expires_at and key.expires_at < datetime.now(timezone.utc):
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_t("api_key.expired"))
+            # ── exploit auto-ban check (key + owner) ─────────────────────
+            try:
+                from app.services.api_key_protection import check_ban_or_raise
+                await check_ban_or_raise(key.id, key.owner_id)
+            except HTTPException:
+                raise
+            except Exception:
+                pass
             return key
 
     raise HTTPException(
@@ -267,7 +275,24 @@ async def get_api_key_auth(
 
         if not user or not user.is_active:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_t("auth.user_not_found"))
-        return await api_key_for_user(user, db)
+        # check temporary ban for JWT-sourced user as well
+        try:
+            from app.services.api_key_protection import check_ban_or_raise
+            # user-level ban; key not yet known so check user first
+            await check_ban_or_raise(api_key_id="", user_id=user.id)
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+        key = await api_key_for_user(user, db)
+        try:
+            from app.services.api_key_protection import check_ban_or_raise as _check
+            await _check(key.id, key.owner_id)
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+        return key
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

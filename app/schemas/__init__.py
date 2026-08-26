@@ -386,6 +386,55 @@ class PolicyDiffEntry(BaseModel):
     after:  Any | None = None
 
 
+# ─── Memory (Mem0 + OpenAI style) ────────────────────────────────────────────
+
+class MemoryCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    title: str | None = Field(default=None, max_length=160)
+    content: str = Field(min_length=1, max_length=4000)
+    category: str = Field(default="fact", pattern="^(fact|preference|procedure|persona|goal|skill)$")
+    kind: str = Field(default="user", pattern="^(user|org|agent)$")
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    importance: int | None = Field(default=None, ge=1, le=5)
+    pinned: bool = False
+
+class MemoryUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+    title: str | None = Field(default=None, max_length=160)
+    content: str | None = Field(default=None, min_length=1, max_length=4000)
+    category: str | None = Field(default=None, pattern="^(fact|preference|procedure|persona|goal|skill)$")
+    pinned: bool | None = None
+    archived: bool | None = None
+    importance: int | None = Field(default=None, ge=1, le=5)
+
+class MemoryOut(BaseModel):
+    id: str
+    title: str
+    content: str
+    category: str
+    kind: str
+    confidence: float
+    importance: int
+    pinned: bool
+    archived: bool
+    source_type: str | None
+    source_id: str | None
+    created_at: datetime
+    updated_at: datetime
+    last_accessed: datetime | None
+
+    model_config = {"from_attributes": True}
+
+class MemoryRecallRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    query: str = Field(min_length=1, max_length=2000)
+    top_k: int = Field(default=5, ge=1, le=20)
+    category: str | None = None
+
+class MemoryRecallOut(BaseModel):
+    memories: list[MemoryOut]
+    query: str
+
 # ─── Admin replay (dry-run stored request against current policy) ─────────────
 
 class ReplayOriginalVerdict(BaseModel):

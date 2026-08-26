@@ -13,7 +13,7 @@ async def promote_test_account():
     settings = get_settings()
     
     if not settings.DATABASE_URL:
-        print("❌ DATABASE_URL not configured")
+        print("[FAIL] DATABASE_URL not configured")
         return False
     
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
@@ -27,12 +27,12 @@ async def promote_test_account():
             user = result.scalar_one_or_none()
             
             if not user:
-                print("❌ Test account cs@umass.edu not found")
+                print("[FAIL] Test account cs@umass.edu not found")
                 print("   Create the account first via the signup form")
                 return False
             
             if user.is_admin:
-                print("✓ Test account cs@umass.edu is already admin")
+                print("[OK] Test account cs@umass.edu is already admin")
                 return True
             
             # Promote to admin
@@ -40,7 +40,7 @@ async def promote_test_account():
             await session.merge(user)
             await session.commit()
             
-            print("✓ Test account cs@umass.edu promoted to admin")
+            print("[OK] Test account cs@umass.edu promoted to admin")
             print(f"  Email:    {user.email}")
             print(f"  Name:     {user.full_name}")
             print(f"  Admin:    {user.is_admin}")
@@ -48,7 +48,7 @@ async def promote_test_account():
             return True
             
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[FAIL] Error: {e}")
         return False
     finally:
         await engine.dispose()

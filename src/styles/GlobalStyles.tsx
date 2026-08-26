@@ -14,13 +14,13 @@ export default function GlobalStyles({ darkMode }: { darkMode?: boolean }) {
       .auth-password-toggle:focus-visible { outline: 2px solid #2dd4bf; outline-offset: 2px; }
       tr:last-child td { border-bottom: none !important; }
 
-      /* ───── Sidebar scroll ───── */
+      /* ----- Sidebar scroll ----- */
       .app-sidebar { scrollbar-width: thin; scrollbar-color: rgba(15,118,110,0.18) transparent; }
       .app-sidebar::-webkit-scrollbar { width: 4px; }
       .app-sidebar::-webkit-scrollbar-thumb { background: rgba(15,118,110,0.18); border-radius: 4px; }
       .app-sidebar::-webkit-scrollbar-track { background: transparent; }
 
-      /* ───── Mobile layout ───── */
+      /* ----- Mobile layout ----- */
       @media (max-width: 760px) {
         .app-shell { flex-direction: row; }
         .app-sidebar {
@@ -37,7 +37,7 @@ export default function GlobalStyles({ darkMode }: { darkMode?: boolean }) {
         .hamburger { display: none !important; }
       }
 
-      /* ───── Dark mode ───── */
+      /* ----- Dark mode ----- */
       ${darkMode ? `
         body { background: #0c1824; }
         .app-shell { background: #0c1824; }
@@ -62,7 +62,7 @@ export default function GlobalStyles({ darkMode }: { darkMode?: boolean }) {
       ` : ""}
 
 
-      /* ───── Auth page cursor ───── */
+      /* ----- Auth page cursor ----- */
       .auth-cursor {
         display: inline-block;
         margin-left: 2px;
@@ -83,7 +83,7 @@ export default function GlobalStyles({ darkMode }: { darkMode?: boolean }) {
         to { opacity: 1; transform: translateY(0); }
       }
 
-      /* ───── Auth Hero Background ───── */
+      /* ----- Auth Hero Background ----- */
       .auth-hero-bg {
         position: absolute;
         inset: 0;
@@ -179,7 +179,7 @@ export default function GlobalStyles({ darkMode }: { darkMode?: boolean }) {
         filter: blur(60px);
       }
 
-      /* ───── Auth Intro Panel ───── */
+      /* ----- Auth Intro Panel ----- */
       .auth-intro-panel {
         color: #0f172a;
       }
@@ -233,7 +233,7 @@ export default function GlobalStyles({ darkMode }: { darkMode?: boolean }) {
         animation: authSlideUp 0.7s ease forwards;
       }
 
-      /* ───── Auth Metrics ───── */
+      /* ----- Auth Metrics ----- */
       .auth-metrics-row {
         display: flex;
         gap: 24px;
@@ -259,7 +259,7 @@ export default function GlobalStyles({ darkMode }: { darkMode?: boolean }) {
         margin-top: 2px;
       }
 
-      /* ───── Auth Terminal ───── */
+      /* ----- Auth Terminal ----- */
       .auth-terminal {
         background: rgba(255, 255, 255, 0.8);
         border: 1px solid rgba(15, 118, 110, 0.15);
@@ -294,7 +294,7 @@ export default function GlobalStyles({ darkMode }: { darkMode?: boolean }) {
         min-height: 140px;
       }
 
-      /* ───── Auth Chat Bubbles ───── */
+      /* ----- Auth Chat Bubbles ----- */
       .auth-chat-bubble {
         display: flex;
         gap: 12px;
@@ -345,7 +345,7 @@ export default function GlobalStyles({ darkMode }: { darkMode?: boolean }) {
         animation: authBlink 1.5s infinite;
       }
 
-      /* ───── Auth Feature Cards ───── */
+      /* ----- Auth Feature Cards ----- */
       .auth-features-grid {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
@@ -390,7 +390,7 @@ export default function GlobalStyles({ darkMode }: { darkMode?: boolean }) {
         line-height: 1.5;
       }
 
-      /* ───── Auth Trust Bar ───── */
+      /* ----- Auth Trust Bar ----- */
       .auth-trust-bar {
         display: flex;
         align-items: center;
@@ -409,7 +409,7 @@ export default function GlobalStyles({ darkMode }: { darkMode?: boolean }) {
         background: rgba(15, 118, 110, 0.15);
       }
 
-      /* ───── Auth Form (Light Green Premium context) ───── */
+      /* ----- Auth Form (Light Green Premium context) ----- */
       .auth-form-title {
         font-size: 18px;
         font-weight: 800;
@@ -531,7 +531,7 @@ export default function GlobalStyles({ darkMode }: { darkMode?: boolean }) {
         font-family: ui-monospace, SFMono-Regular, monospace;
       }
 
-      /* ───── Auth Logo ───── */
+      /* ----- Auth Logo ----- */
       .auth-form-logo {
         margin-bottom: 24px;
       }
@@ -547,7 +547,7 @@ export default function GlobalStyles({ darkMode }: { darkMode?: boolean }) {
         margin-top: 4px;
       }
 
-      /* ───── Responsive ───── */
+      /* ----- Responsive ----- */
       @media (max-width: 900px) {
         .auth-page-inner {
           grid-template-columns: 1fr !important;

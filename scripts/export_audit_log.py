@@ -47,11 +47,11 @@ async def export_audit_log():
     settings = get_settings()
 
     if not settings.DATABASE_URL:
-        print("❌ DATABASE_URL not configured")
+        print("[FAIL] DATABASE_URL not configured")
         return False
 
     if not ORG_ID:
-        print("❌ ORG_ID is not set — edit the variable at the top of this script")
+        print("[FAIL] ORG_ID is not set — edit the variable at the top of this script")
         return False
 
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
@@ -64,20 +64,20 @@ async def export_audit_log():
                 since = datetime.fromisoformat(START_DATE).replace(tzinfo=timezone.utc)
                 filters.append(RequestLog.created_at >= since)
             except ValueError:
-                print(f"❌ START_DATE {START_DATE!r} is not a valid ISO date")
+                print(f"[FAIL] START_DATE {START_DATE!r} is not a valid ISO date")
                 return False
         if END_DATE:
             try:
                 until = datetime.fromisoformat(END_DATE).replace(tzinfo=timezone.utc)
                 filters.append(RequestLog.created_at <= until)
             except ValueError:
-                print(f"❌ END_DATE {END_DATE!r} is not a valid ISO date")
+                print(f"[FAIL] END_DATE {END_DATE!r} is not a valid ISO date")
                 return False
 
         async with AsyncSessionLocal() as session:
             org = await session.get(Organization, ORG_ID)
             if not org:
-                print(f"❌ Organization {ORG_ID} not found")
+                print(f"[FAIL] Organization {ORG_ID} not found")
                 return False
 
             result = await session.execute(
@@ -113,13 +113,13 @@ async def export_audit_log():
                     "created_at":           log.created_at.isoformat(),
                 })
 
-        print(f"✓ Exported {len(logs)} rows to {filename}")
+        print(f"[OK] Exported {len(logs)} rows to {filename}")
         if not logs:
             print("  (no RequestLog rows matched ORG_ID + date range)")
         return True
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[FAIL] Error: {e}")
         return False
     finally:
         await engine.dispose()

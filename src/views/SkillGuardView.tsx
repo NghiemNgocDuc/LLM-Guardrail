@@ -76,7 +76,7 @@ live_url: ${liveUrl}
 fetched_at: always-fresh
 ---
 
-> ⚡ **Auto-updating skill file** — Do not edit the content below manually.
+>  **Auto-updating skill file** — Do not edit the content below manually.
 > This agent always fetches the latest skills from your AI Guardrails dashboard.
 > Update skills in the dashboard and they take effect immediately — no re-download needed.
 
@@ -93,13 +93,13 @@ fetched_at: always-fresh
 ${liveUrl}
 \`\`\`
 
-<!-- For Cursor / AI agents that support @url auto-fetch: -->
+<!-- For Cursor / AI agents that support @url auto-fetch: ---
 @url ${liveUrl}
 
 ---
 <!-- === CACHED SNAPSHOT (as of ${now}) ===
      The content below is a fallback used if the live URL is unreachable.
-     The live endpoint always takes priority. -->
+     The live endpoint always takes priority. ---
 
 ${agentDef.content}
 `;
@@ -338,24 +338,40 @@ export default function SkillGuardView() {
       </div>
 
 
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap", marginTop: 24 }}>
+      <div style={{ display: "flex", gap: 10, marginTop: 18, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
+        {[
+          { n: 1, t: "Edit live skills", d: "Save -- URL updates" },
+          { n: 2, t: "Push / scan", d: "Blocks appear in queue" },
+          { n: 3, t: "Review & resolve", d: "Allow once / always / keep rejected" },
+        ].map(s => (
+          <React.Fragment key={s.n}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #dce7f0", borderRadius: 999, padding: "8px 14px" }}>
+              <span style={{ width: 24, height: 24, borderRadius: 999, background: "#0f766e", color: "#fff", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 850 }}>{s.n}</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: "#102033" }}>{s.t}</span>
+              <span style={{ fontSize: 11, color: "#7b8a9d", fontWeight: 600 }}>· {s.d}</span>
+            </div>
+            {s.n < 3 && <span style={{ color: "#cbd5e1" }}>--</span>}
+          </React.Fragment>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap", marginTop: 8 }}>
         
         {/* LEFT COLUMN: Tools (Live Skills & Add Manual Case) */}
         <div style={{ flex: "1 1 360px", display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
           
-          {/* ── LIVE SKILLS PANEL ── */}
+          {/* -- LIVE SKILLS PANEL -- */}
           <div style={{ ...s.card, background: "linear-gradient(135deg,#f8fbff 0%,#f0fdf9 100%)", border: "1px solid #99f6e4" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <div>
                 <div style={{ ...s.sectionTitle, color: "#0f766e", marginBottom: 4 }}>Live Skill Files</div>
                 <div style={{ fontSize: 12, color: "#405166", lineHeight: 1.6 }}>
-                  Edit skills here → click Save → the live URL instantly serves the new version.
+                  Edit skills here -- click Save -- the live URL instantly serves the new version.
                 </div>
               </div>
               <button
                 style={{ ...s.btn("secondary"), fontSize: 11 }}
                 onClick={() => setLivePanel((v) => !v)}
-              >{livePanel ? "▲ Collapse" : "▼ Open editor"}</button>
+              >{livePanel ? " Collapse" : " Open editor"}</button>
             </div>
 
             {/* Agent selector tabs */}

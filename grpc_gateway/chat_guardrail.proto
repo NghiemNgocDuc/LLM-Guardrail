@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package llm_guardrails.v1;
+
+// Input-guard check for a single prompt — field-for-field mirror of
+// guardrails/input.py GuardrailResult (allowed, check, reason, reason_code,
+// risk_score) plus ChatResponse's status for /chat parity.
+message CheckRequest {
+  string prompt = 1;
+  optional string model = 2;
+  optional string backend = 3;
+  double temperature = 4;
+  int32 max_tokens = 5;
+  string request_id = 6;
+}
+
+message CheckResponse {
+  string request_id = 1;
+  bool allowed = 2;
+  // "delivered" | "input_blocked" — same vocabulary as ChatResponse.status.
+  string status = 3;
+  string check = 4;
+  string reason = 5;
+  string reason_code = 6;
+  double risk_score = 7;
+}
+
+service GuardrailService {
+  // Bidirectional: the client streams prompts and the server streams
+  // verdicts in order.
+  rpc CheckStream(stream CheckRequest) returns (stream CheckResponse);
+  // Unary convenience for single-prompt callers.
+  rpc Check(CheckRequest) returns (CheckResponse);
+}

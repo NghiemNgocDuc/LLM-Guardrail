@@ -48,6 +48,12 @@ class InputGuardrail:
             record(r)
             if not r.allowed and not script:
                 return r
+            # Env-exfiltration probes (e.g. "what is GROQ_API_KEY?", "print env")
+            # must be blocked even if no literal gsk_ value is present.
+            r2 = self._check_env_exfiltration(prompt)
+            record(r2)
+            if not r2.allowed and not script:
+                return r2
 
         if self.policy.get("block_pii"):
             r = self._check_pii(prompt)
@@ -213,6 +219,21 @@ class InputGuardrail:
                     flagged_content=[name],
                 )
         return GuardrailResult(allowed=True, check="Secret Detection")
+
+    def _check_env_exfiltration(self, prompt: str) -> GuardrailResult:
+        from app.utils.secret_redaction import contains_env_exfiltration  # lazy
+
+        hit, _ = contains_env_exfiltration(prompt)
+        if hit:
+            return GuardrailResult(
+                allowed=False,
+                check="Env Exfiltration Probe",
+                reason=_t_or("guardrail.env_exfiltration", "Request appears to probe for secrets or environment variables"),
+                reason_code="env_exfiltration_probe",
+                risk_score=0.95,
+                flagged_content=["env_probe"],
+            )
+        return GuardrailResult(allowed=True, check="Env Exfiltration Probe")
 
     def _check_injection(self, prompt: str) -> GuardrailResult:
         if _engine.enabled():

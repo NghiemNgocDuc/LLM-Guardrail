@@ -43,6 +43,13 @@ async def record_delivery(
     attempts: int,
     error: str | None = None,
 ) -> None:
+    # scrub any accidental secret from the error payload
+    if error:
+        try:
+            from app.utils.secret_redaction import scrub_text
+            error = scrub_text(error)
+        except Exception:
+            pass
     record = {
         "event": event,
         "ok": ok,
