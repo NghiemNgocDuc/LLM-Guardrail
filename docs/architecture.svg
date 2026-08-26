@@ -1,0 +1,250 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1100" width="1600" height="1100" role="img">
+<title>LLM Guardrails Gateway — Full Underlying Logic (OSS Zero-API variant)</title>
+<desc>End-to-end flow: Clients -&gt; Nginx -&gt; FastAPI Gateway -&gt; Auth -&gt; Abuse/Ratelimit -&gt; Input Guardrails (+OPA) -&gt; Memory Recall -&gt; LLM (Ollama) -&gt; Output Guardrails -&gt; Memory Extract -&gt; Postgres/Redis/Qdrant -&gt; Observability</desc>
+<defs>
+  <linearGradient id="g-teal" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0f766e"/><stop offset="100%" stop-color="#0d5c55"/></linearGradient>
+  <linearGradient id="g-indigo" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#6366f1"/><stop offset="100%" stop-color="#4338ca"/></linearGradient>
+  <linearGradient id="g-amber" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#d97706"/></linearGradient>
+  <linearGradient id="g-slate" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#f8fafc"/><stop offset="100%" stop-color="#e2e8f0"/></linearGradient>
+  <linearGradient id="g-card" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#f8fafc"/></linearGradient>
+  <filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/></filter>
+  <filter id="sh2" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#0f172a" flood-opacity="0.08"/></filter>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker>
+  <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#0f766e"/></marker>
+</defs>
+<style>
+  .t { font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+</style>
+<rect width="1600" height="1100" rx="20" fill="#ffffff" stroke="#e2e8f0"/>
+<!-- Header -->
+<rect x="24" y="18" width="1552" height="78" rx="14" fill="url(#g-teal)" filter="url(#sh)"/>
+<text x="36" y="44" class="t" font-size="16" font-weight="800" fill="#ffffff">LLM Guardrails Gateway — underlying logic</text>
+<text x="36" y="64" class="t" font-size="11" font-weight="600" fill="#ccfbf1">Request → Nginx → FastAPI → Auth → Abuse • RateLimit → Input Guardrails (+OPA) → Memory Recall → LLM (Ollama local) → Output Guardrails → Memory Extract → Postgres/Redis/Qdrant → Response • Zero-API OSS variant highlighted</text>
+<text x="1520" y="48" class="t" font-size="10" font-weight="800" fill="#ffffff" text-anchor="end">APP_ENV=production • OPA fail-closed • pgvector</text>
+<text x="1520" y="66" class="t" font-size="9" font-weight="600" fill="#99f6e4" text-anchor="end">docs/OSS_REPLACEMENTS.md — 14 env vars → self-host</text>
+
+<!-- ROW 1: Clients -->
+<g filter="url(#sh2)">
+  <rect x="24" y="112" width="1552" height="92" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="36" y="130" class="t" font-size="10" font-weight="800" fill="#64748b" letter-spacing="0.06em">CLIENTS — edge</text>
+  <g>
+    <rect x="36" y="138" width="180" height="52" rx="10" fill="#ffffff" stroke="#cbd5e1"/><text x="126" y="158" text-anchor="middle" class="t" font-size="11" font-weight="800" fill="#0f172a">Browser React</text><text x="126" y="172" text-anchor="middle" class="t" font-size="9" fill="#64748b">Vite • /chat • Memory UI</text></rect>
+    <rect x="228" y="138" width="180" height="52" rx="10" fill="#ffffff" stroke="#cbd5e1"/><text x="318" y="158" text-anchor="middle" class="t" font-size="11" font-weight="800" fill="#0f172a">Mobile SDKs</text><text x="318" y="172" text-anchor="middle" class="mono" font-size="8" fill="#64748b">Kotlin • Swift • grg_</text></rect>
+    <rect x="420" y="138" width="180" height="52" rx="10" fill="#ffffff" stroke="#cbd5e1"/><text x="510" y="158" text-anchor="middle" class="t" font-size="11" font-weight="800" fill="#0f172a">CLI / Go scan</text><text x="510" y="172" text-anchor="middle" class="t" font-size="9" fill="#64748b">guardrail-scan</text></rect>
+    <rect x="612" y="138" width="180" height="52" rx="10" fill="#ffffff" stroke="#cbd5e1"/><text x="702" y="158" text-anchor="middle" class="t" font-size="11" font-weight="800" fill="#0f172a">gRPC gateway</text><text x="702" y="172" text-anchor="middle" class="mono" font-size="8" fill="#64748b">:50051 • InputGuardrail</text></rect>
+    <rect x="804" y="138" width="180" height="52" rx="10" fill="#ffffff" stroke="#cbd5e1"/><text x="894" y="158" text-anchor="middle" class="t" font-size="11" font-weight="800" fill="#0f172a">MCP SSE</text><text x="894" y="172" text-anchor="middle" class="t" font-size="9" fill="#64748b">/mcp • 6 tools</text></rect>
+    <rect x="996" y="138" width="180" height="52" rx="10" fill="#ffffff" stroke="#cbd5e1"/><text x="1086" y="158" text-anchor="middle" class="t" font-size="11" font-weight="800" fill="#0f172a">Elixir live feed</text><text x="1086" y="172" text-anchor="middle" class="t" font-size="9" fill="#64748b">Phoenix → pg_notify</text></rect>
+    <rect x="1188" y="138" width="180" height="52" rx="10" fill="#ffffff" stroke="#e2e8f0"/><text x="1278" y="158" text-anchor="middle" class="t" font-size="11" font-weight="800" fill="#334155">GraphQL</text><text x="1278" y="172" text-anchor="middle" class="t" font-size="9" fill="#64748b">/graphql • read-only</text></rect>
+    <rect x="1380" y="138" width="180" height="52" rx="10" fill="#fffbeb" stroke="#fde68a"/><text x="1470" y="158" text-anchor="middle" class="t" font-size="10" font-weight="800" fill="#92400e">OSS swap</text><text x="1470" y="172" text-anchor="middle" class="t" font-size="8" fill="#92400e">no API needed</text></rect>
+  </g>
+</g>
+
+<!-- Nginx -->
+<g filter="url(#sh2)">
+  <rect x="560" y="220" width="480" height="64" rx="12" fill="#0f172a" stroke="#1e293b"/>
+  <text x="800" y="242" text-anchor="middle" class="t" font-size="11" font-weight="800" fill="#ffffff" letter-spacing="0.06em">NGINX  :80  —  TLS • CSP • rate zone</text>
+  <text x="800" y="258" text-anchor="middle" class="mono" font-size="8" fill="#94a3b8">/ → /assets • /api → api:8000 • /live-feed → elixir:4000 • /health • security.txt</text>
+  <text x="800" y="274" text-anchor="middle" class="t" font-size="7" fill="#64748b">limit_req 30r/s • limit_conn • X-Frame DENY • HSTS</text>
+</g>
+<path d="M 800 204 L 800 220" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+<!-- FastAPI Gateway -->
+<g filter="url(#sh)">
+  <rect x="24" y="300" width="1552" height="86" rx="14" fill="url(#g-card)" stroke="#cbd5e1"/>
+  <text x="36" y="320" class="t" font-size="10" font-weight="800" fill="#0f766e" letter-spacing="0.06em">FASTAPI GATEWAY — api:8000 — 7 middlewares (outer → inner)</text>
+  <g font-size="7.5" font-weight="700" text-anchor="middle" class="t">
+    <rect x="36" y="328" width="200" height="34" rx="8" fill="#f0fdfa" stroke="#99f6e4"/><text x="136" y="342" fill="#0f766e">RequestLogging</text><text x="136" y="352" fill="#64748b" font-size="6">scrub_text • X-Request-ID</text></rect>
+    <rect x="244" y="328" width="200" height="34" rx="8" fill="#f0fdfa" stroke="#99f6e4"/><text x="344" y="342" fill="#0f766e">SecretScrub</text><text x="344" y="352" fill="#64748b" font-size="6">egress [REDACTED]</text></rect>
+    <rect x="452" y="328" width="190" height="34" rx="8" fill="#f8fafc" stroke="#cbd5e1"/><text x="547" y="342" fill="#334155">ContentType</text><text x="547" y="352" fill="#64748b" font-size="6">size ≤512k</text></rect>
+    <rect x="650" y="328" width="190" height="34" rx="8" fill="#f8fafc" stroke="#cbd5e1"/><text x="745" y="342" fill="#334155">BodySize</text></rect>
+    <rect x="848" y="328" width="210" height="34" rx="8" fill="#fef2f2" stroke="#fecaca"/><text x="953" y="342" fill="#991b1b">AbuseProtection</text><text x="953" y="352" fill="#64748b" font-size="6">gap 2s • inflight 1 • bots</text></rect>
+    <rect x="1066" y="328" width="210" height="34" rx="8" fill="#eff6ff" stroke="#bfdbfe"/><text x="1171" y="342" fill="#1e40af">GlobalRateLimit</text><text x="1171" y="352" fill="#64748b" font-size="6">200 RPM/IP • Redis</text></rect>
+    <rect x="1284" y="328" width="200" height="34" rx="8" fill="#f5f3ff" stroke="#ddd6fe"/><text x="1384" y="342" fill="#5b21b6">I18n</text><text x="1384" y="352" fill="#64748b" font-size="6">locale</text></rect>
+    <rect x="1492" y="328" width="72" height="34" rx="8" fill="#0f766e"/><text x="1528" y="348" fill="#ffffff" font-size="8">CORS</text></rect>
+  </g>
+  <rect x="36" y="368" width="1530" height="14" rx="7" fill="#f1f5f9"/><text x="800" y="378" text-anchor="middle" class="mono" font-size="7" fill="#64748b">+ Security headers (HSTS • CSP • X-Frame) + Sentry before_send(scrub_text) + JSONFormatter(SecretScrubFilter) → PostHog • GlitchTip</text>
+</g>
+<path d="M 800 284 L 800 300" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+<!-- Auth row -->
+<g filter="url(#sh2)">
+  <rect x="24" y="400" width="520" height="74" rx="12" fill="#ffffff" stroke="#c7d2fe"/>
+  <text x="36" y="418" class="t" font-size="10" font-weight="800" fill="#4338ca">AUTH  •  app/deps.py</text>
+  <text x="36" y="432" class="mono" font-size="7" fill="#475569">X-Api-Key: grg_… (bcrypt) • Authorization: Bearer grg_ / Clerk JWT / local JWT</text>
+  <text x="36" y="444" class="mono" font-size="7" fill="#64748b">resolve_api_key → check_ban → api_key_for_user • is_banned?</text>
+  <rect x="36" y="452" width="240" height="18" rx="6" fill="#eef2ff" stroke="#c7d2fe"/><text x="156" y="463" text-anchor="middle" class="t" font-size="7" font-weight="700" fill="#4338ca">OSS: Keycloak / Supertokens (or local SECRET_KEY)</text></rect>
+  <rect x="284" y="452" width="240" height="18" rx="6" fill="#fef2f2" stroke="#fecaca"/><text x="404" y="463" text-anchor="middle" class="t" font-size="7" font-weight="700" fill="#991b1b">was Clerk — drop CLERK_*</text></rect>
+</g>
+<g filter="url(#sh2)">
+  <rect x="556" y="400" width="520" height="74" rx="12" fill="#ffffff" stroke="#fecaca"/>
+  <text x="568" y="418" class="t" font-size="10" font-weight="800" fill="#991b1b">ABUSE • EXPLOIT • RATE LIMIT</text>
+  <text x="568" y="432" class="mono" font-size="7" fill="#475569">AbuseProtection: gap 2s • inflight 1 • tarpit 1s*2^n • bot list • XFF only behind proxy</text>
+  <text x="568" y="444" class="mono" font-size="7" fill="#475569">RateLimit: RPM/RPD per key (Redis Lua ZCARD) • api_key_protection: RPM&gt;120 • burn&gt;50k/5m • IP≥5 • blocked≥80% → ban 15m→24h</text>
+  <rect x="568" y="452" width="500" height="18" rx="6" fill="#f0fdf4" stroke="#86efac"/><text x="818" y="463" text-anchor="middle" class="t" font-size="7" font-weight="700" fill="#065f46">Redis shared or in-memory fallback • /admin/bans + unban</text></rect>
+</g>
+<g filter="url(#sh2)">
+  <rect x="1088" y="400" width="488" height="74" rx="12" fill="#ffffff" stroke="#a7f3d0"/>
+  <text x="1100" y="418" class="t" font-size="10" font-weight="800" fill="#065f46">BILLING + WALLET</text>
+  <text x="1100" y="432" class="mono" font-size="7" fill="#475569">token_wallet: estimate len/4 + max_tokens → require_balance → deduct → daily_budget → dedup 5m</text>
+  <text x="1100" y="444" class="mono" font-size="7" fill="#475569">Stripe → Lago/KillBill or wallet-only (BILLING_ENABLED=false → instant credit)</text>
+  <rect x="1100" y="452" width="466" height="18" rx="6" fill="#ecfdf5" stroke="#6ee7b7"/><text x="1333" y="463" text-anchor="middle" class="t" font-size="7" font-weight="700" fill="#065f46">POSTHOG self-host • SENTRY → GlitchTip • before_send scrub</text></rect>
+</g>
+<path d="M 800 386 L 800 400" stroke="#0f766e" stroke-width="1.8" marker-end="url(#arrow-teal)"/>
+
+<!-- INPUT GUARDRAILS -->
+<g filter="url(#sh)">
+  <rect x="24" y="490" width="900" height="92" rx="12" fill="#fffbeb" stroke="#fde68a"/>
+  <text x="36" y="508" class="t" font-size="10" font-weight="800" fill="#92400e">INPUT GUARDRAILS — guardrails/input.py • block or pass • fail-closed on OPA</text>
+  <g font-size="7" text-anchor="middle" class="t">
+    <rect x="36" y="516" width="132" height="36" rx="8" fill="#ffffff" stroke="#fde68a"/><text x="102" y="532" fill="#92400e" font-weight="800">Secret</text><text x="102" y="544" fill="#64748b">gsk_ sk- AKIA</text></rect>
+    <rect x="176" y="516" width="132" height="36" rx="8" fill="#ffffff" stroke="#fde68a"/><text x="242" y="532" fill="#92400e" font-weight="800">PII</text><text x="242" y="544" fill="#64748b">SSN/CC/email</text></rect>
+    <rect x="316" y="516" width="132" height="36" rx="8" fill="#ffffff" stroke="#fecaca"/><text x="382" y="532" fill="#991b1b" font-weight="800">Env exfil</text><text x="382" y="544" fill="#64748b">GROQ_API_KEY?</text></rect>
+    <rect x="456" y="516" width="132" height="36" rx="8" fill="#ffffff" stroke="#e2e8f0"/><text x="522" y="532" fill="#334155" font-weight="800">Injection</text><text x="522" y="544" fill="#64748b">ignore previous</text></rect>
+    <rect x="596" y="516" width="132" height="36" rx="8" fill="#ffffff" stroke="#e2e8f0"/><text x="662" y="532" fill="#334155" font-weight="800">Jailbreak</text><text x="662" y="544" fill="#64748b">DAN mode</text></rect>
+    <rect x="736" y="516" width="132" height="36" rx="8" fill="#ede9fe" stroke="#ddd6fe"/><text x="802" y="532" fill="#5b21b6" font-weight="800">Semantic</text><text x="802" y="544" fill="#64748b">vector KNN 0.85</text></rect>
+  </g>
+  <text x="36" y="566" class="mono" font-size="7" fill="#92400e">rust engine (guardrail_core PyO3) → python fallback • findings[] → OPA</text>
+  <rect x="880" y="534" width="32" height="32" rx="8" fill="#1e293b"/><text x="896" y="554" text-anchor="middle" class="t" font-size="8" font-weight="800" fill="#ffffff">→</text></rect>
+</g>
+<!-- OPA -->
+<g filter="url(#sh2)">
+  <rect x="936" y="490" width="298" height="92" rx="12" fill="#0f172a" stroke="#1e293b"/>
+  <text x="1085" y="512" text-anchor="middle" class="t" font-size="10" font-weight="800" fill="#38bdf8">OPA  opa:8181</text>
+  <text x="1085" y="528" text-anchor="middle" class="mono" font-size="7" fill="#94a3b8">OrgPolicy.custom_rule_rego</text>
+  <text x="1085" y="540" text-anchor="middle" class="mono" font-size="7" fill="#94a3b8">findings + prompt → block|warn|pass</text>
+  <text x="1085" y="556" text-anchor="middle" class="t" font-size="7" font-weight="700" fill="#f87171">fail-closed • 2s timeout</text>
+  <text x="1085" y="570" text-anchor="middle" class="t" font-size="6" fill="#475569">openpolicyagent/opa:1.18.2 (self-host)</text>
+</g>
+<!-- Redaction -->
+<g filter="url(#sh2)">
+  <rect x="1246" y="490" width="330" height="92" rx="12" fill="#f0fdfa" stroke="#99f6e4"/>
+  <text x="1411" y="512" text-anchor="middle" class="t" font-size="10" font-weight="800" fill="#0f766e">PII REDACTOR</text>
+  <text x="1411" y="528" text-anchor="middle" class="mono" font-size="7" fill="#475569">mode: block | redact | off</text>
+  <text x="1411" y="540" text-anchor="middle" class="mono" font-size="7" fill="#475569">redact → placeholder • restore</text>
+  <text x="1411" y="556" text-anchor="middle" class="mono" font-size="7" fill="#475569">[EMAIL_1] • [SSN_1]</text>
+  <text x="1411" y="570" text-anchor="middle" class="t" font-size="6" fill="#065f46">vectorstore PII list</text>
+</g>
+<path d="M 474 474 L 474 490" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M 800 474 L 800 490" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+<!-- MEMORY RECALL -->
+<g filter="url(#sh)">
+  <rect x="24" y="598" width="520" height="68" rx="12" fill="#ede9fe" stroke="#ddd6fe"/>
+  <text x="36" y="616" class="t" font-size="10" font-weight="800" fill="#5b21b6">MEMORY RECALL — app/services/memory.py + vectorstore</text>
+  <text x="36" y="630" class="mono" font-size="7" fill="#475569">recall_memories(query, top_k=3) → Qdrant/pgvector:memories → pinned (always)</text>
+  <text x="36" y="642" class="mono" font-size="7" fill="#475569">→ inject [MEMORY CONTEXT] 5× • touch last_accessed •  Mem0+OpenAI</text>
+  <rect x="36" y="648" width="500" height="14" rx="6" fill="#f5f3ff" stroke="#ddd6fe"/><text x="286" y="658" text-anchor="middle" class="t" font-size="6" font-weight="700" fill="#5b21b6">OSS: Qdrant/pgvector (was Pinecone) • namespace memories</text></rect>
+</g>
+<!-- LLM ROUTER -->
+<g filter="url(#sh)">
+  <rect x="556" y="598" width="520" height="68" rx="12" fill="#0f766e" stroke="#0d5c55"/>
+  <text x="816" y="618" text-anchor="middle" class="t" font-size="11" font-weight="800" fill="#ffffff">LLM ROUTER — app/services/llm/  →  Ollama local  ◀ OSS</text>
+  <text x="816" y="632" text-anchor="middle" class="mono" font-size="7" fill="#ccfbf1">DEFAULT_LLM_BACKEND=ollama  •  OLLAMA_BASE_URL=http://ollama:11434  •  phi3 / llama3.1</text>
+  <text x="816" y="644" text-anchor="middle" class="mono" font-size="7" fill="#99f6e4">call_llm • stream_llm • fallbacks • cache (Redis) • LiteLLM ollama/ prefix</text>
+  <text x="816" y="658" text-anchor="middle" class="t" font-size="6" fill="#5eead4">was Groq/OpenAI/Anthropic/Gemini — now zero API</text>
+</g>
+<!-- OUTPUT guard -->
+<g filter="url(#sh)">
+  <rect x="1088" y="598" width="488" height="68" rx="12" fill="#fff1f2" stroke="#fecaca"/>
+  <text x="1332" y="616" text-anchor="middle" class="t" font-size="10" font-weight="800" fill="#991b1b">OUTPUT GUARDRAILS — guardrails/output.py</text>
+  <text x="1332" y="630" text-anchor="middle" class="mono" font-size="7" fill="#475569">secret_leakage (gsk_ in response → block) • toxic • topic • schema • validators</text>
+  <text x="1332" y="642" text-anchor="middle" class="mono" font-size="7" fill="#475569">allow | warn (→ delivered+flag) | block → output_blocked</text>
+  <text x="1332" y="656" text-anchor="middle" class="t" font-size="6" fill="#991b1b">always-on: secret leakage • fail-closed</text>
+</g>
+<path d="M 284 582 L 284 598" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M 816 582 L 816 598" stroke="#0f766e" stroke-width="1.8" marker-end="url(#arrow-teal)"/>
+<path d="M 1332 582 L 1332 598" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+<!-- MEMORY EXTRACT + LOG -->
+<g filter="url(#sh2)">
+  <rect x="24" y="682" width="520" height="64" rx="12" fill="#f5f3ff" stroke="#ddd6fe"/>
+  <text x="36" y="700" class="t" font-size="10" font-weight="800" fill="#5b21b6">MEMORY EXTRACT + LOG</text>
+  <text x="36" y="714" class="mono" font-size="7" fill="#475569">delivered + LLM text → llm_extract_memories(heuristic→LLM JSON) → create_memory ×2 → commit</text>
+  <text x="36" y="726" class="mono" font-size="7" fill="#475569">_log_request: prompt_hash SHA256 • preview [REDACTED] • full_prompt Fernet • fired_rule</text>
+  <text x="36" y="738" class="mono" font-size="6" fill="#7c3aed">Pinecone upsert_memory + conversation → Qdrant/pgvector</text>
+</g>
+<g filter="url(#sh2)">
+  <rect x="556" y="682" width="520" height="64" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="816" y="700" text-anchor="middle" class="t" font-size="10" font-weight="800" fill="#0f172a">POST-PROCESS — wallet • webhook • analytics</text>
+  <text x="816" y="714" text-anchor="middle" class="mono" font-size="7" fill="#475569">deduct_tokens • record_daily_spend • maybe_auto_ban(token/IP/block) • upsert_conversation</text>
+  <text x="816" y="726" text-anchor="middle" class="mono" font-size="7" fill="#475569">_fire_webhook (HMAC) • capture_event(PostHog→self-host) • X-RateLimit headers</text>
+  <text x="816" y="738" text-anchor="middle" class="mono" font-size="6" fill="#64748b">secret scrub on preview/reason/full_prompt + egress middleware</text>
+</g>
+<g filter="url(#sh2)">
+  <rect x="1088" y="682" width="488" height="64" rx="12" fill="#ecfdf5" stroke="#a7f3d0"/>
+  <text x="1332" y="700" text-anchor="middle" class="t" font-size="10" font-weight="800" fill="#065f46">RESPONSE — ChatResponse • SSE stream</text>
+  <text x="1332" y="714" text-anchor="middle" class="mono" font-size="7" fill="#475569">input_guard • output_guard • latency_ms • tokens_remaining • request_id</text>
+  <text x="1332" y="726" text-anchor="middle" class="mono" font-size="7" fill="#475569">StreamingResponse text/event-stream • keepalive 15s • X-Accel-Buffering no</text>
+  <text x="1332" y="738" text-anchor="middle" class="t" font-size="6" fill="#065f46">delivered | input_blocked | output_blocked | rate_limited | 402 | 403 banned</text>
+</g>
+<path d="M 816 666 L 816 682" stroke="#0f766e" stroke-width="1.8" marker-end="url(#arrow-teal)"/>
+
+<!-- DATA LAYER -->
+<g filter="url(#sh)">
+  <rect x="24" y="762" width="1552" height="92" rx="14" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="36" y="780" class="t" font-size="10" font-weight="800" fill="#0f172a" letter-spacing="0.06em">DATA PLANE — docker-compose internal network (no public ports except web:8080)</text>
+  <g font-size="8" text-anchor="middle" class="t">
+    <rect x="36" y="788" width="240" height="52" rx="10" fill="#ffffff" stroke="#10b981"/><text x="156" y="804" fill="#065f46" font-weight="800">Postgres 16</text><text x="156" y="816" fill="#475569" font-size="7">users • orgs • policies • api_keys</text><text x="156" y="826" fill="#475569" font-size="7">memories • logs* • wallets</text></rect>
+    <rect x="288" y="788" width="240" height="52" rx="10" fill="#ffffff" stroke="#f59e0b"/><text x="408" y="804" fill="#92400e" font-weight="800">Redis 7</text><text x="408" y="816" fill="#475569" font-size="7">rate ZCARD • dedup 5m • bans</text><text x="408" y="826" fill="#475569" font-size="7">cache • deliveries ring</text></rect>
+    <rect x="540" y="788" width="260" height="52" rx="10" fill="#ede9fe" stroke="#8b5cf6"/><text x="670" y="804" fill="#5b21b6" font-weight="800">Vector — Qdrant / pgvector</text><text x="670" y="816" fill="#475569" font-size="7">was Pinecone 384 cosine</text><text x="670" y="826" fill="#475569" font-size="7">namespace memories</text></rect>
+    <rect x="812" y="788" width="240" height="52" rx="10" fill="#fffbeb" stroke="#f59e0b"/><text x="932" y="804" fill="#92400e" font-weight="800">Logs immutable</text><text x="932" y="816" fill="#475569" font-size="7">INSERT only • trigger</text><text x="932" y="826" fill="#475569" font-size="7">pg_notify → Elixir</text></rect>
+    <rect x="1064" y="788" width="240" height="52" rx="10" fill="#ffffff" stroke="#0ea5e9"/><text x="1184" y="804" fill="#0c4a6e" font-weight="800">OPA 1.18.2</text><text x="1184" y="816" fill="#475569" font-size="7">custom_rule_rego</text><text x="1184" y="826" fill="#475569" font-size="7">read_only • tmpfs</text></rect>
+    <rect x="1316" y="788" width="240" height="52" rx="10" fill="#0f172a" stroke="#1e293b"/><text x="1436" y="804" fill="#38bdf8" font-weight="800">Ollama</text><text x="1436" y="816" fill="#94a3b8" font-size="7">phi3 / llama3.1 • :11434</text><text x="1436" y="826" fill="#94a3b8" font-size="7">was Groq/OpenAI — OSS</text></rect>
+  </g>
+  <text x="800" y="852" text-anchor="middle" class="mono" font-size="6" fill="#64748b">* request_logs: prompt_hash SHA256 • preview scrub • full_prompt Fernet AES-GCM • api_key FK SET NULL • analytics MVs refresh CONCURRENTLY</text>
+</g>
+<path d="M 284 746 L 284 762" stroke="#7c3aed" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M 816 746 L 816 762" stroke="#0f766e" stroke-width="1.6" marker-end="url(#arrow-teal)"/>
+<path d="M 1332 746 L 1332 762" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+<!-- SIDE CARS + OBSERVABILITY -->
+<g filter="url(#sh2)">
+  <rect x="24" y="870" width="760" height="98" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="36" y="888" class="t" font-size="10" font-weight="800" fill="#0f172a">SIDE CARS — internal only (expose 8181/50051/4000 not published)</text>
+  <g font-size="7" text-anchor="middle" class="t">
+    <rect x="36" y="896" width="140" height="42" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/><text x="106" y="912" fill="#334155" font-weight="800">Elixir Phoenix</text><text x="106" y="924" fill="#64748b">pg_notify → WS</text></rect>
+    <rect x="184" y="896" width="140" height="42" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/><text x="254" y="912" fill="#334155" font-weight="800">gRPC :50051</text><text x="254" y="924" fill="#64748b">InputGuardrail</text></rect>
+    <rect x="332" y="896" width="140" height="42" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/><text x="402" y="912" fill="#334155" font-weight="800">GraphQL</text><text x="402" y="924" fill="#64748b">/graphql</text></rect>
+    <rect x="480" y="896" width="140" height="42" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/><text x="550" y="912" fill="#334155" font-weight="800">MCP SSE</text><text x="550" y="924" fill="#64748b">/mcp • 6 tools</text></rect>
+    <rect x="628" y="896" width="140" height="42" rx="8" fill="#fef3c7" stroke="#fde68a"/><text x="698" y="912" fill="#92400e" font-weight="800">Stripe</text><text x="698" y="924" fill="#92400e" font-size="6">→ Lago/KillBill</text></rect>
+  </g>
+  <text x="36" y="952" class="mono" font-size="6" fill="#64748b">web:80 proxies → api:8000, elixir:4000 • security headers • robots.txt • security.txt • static /assets</text>
+</g>
+<g filter="url(#sh2)">
+  <rect x="796" y="870" width="780" height="98" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="808" y="888" class="t" font-size="10" font-weight="800" fill="#0f172a">OBSERVABILITY — all scrubbed (secret_redaction)</text>
+  <g font-size="7" text-anchor="middle" class="t">
+    <rect x="808" y="896" width="140" height="42" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text x="878" y="912" fill="#334155" font-weight="800">PostHog</text><text x="878" y="924" fill="#64748b">self-host 3000</text></rect>
+    <rect x="956" y="896" width="140" height="42" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text x="1026" y="912" fill="#334155" font-weight="800">Sentry</text><text x="1026" y="924" fill="#64748b">→ GlitchTip</text></rect>
+    <rect x="1104" y="896" width="140" height="42" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text x="1174" y="912" fill="#334155" font-weight="800">ProductBridge</text><text x="1174" y="924" fill="#64748b">Plausible</text></rect>
+    <rect x="1252" y="896" width="140" height="42" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text x="1322" y="912" fill="#334155" font-weight="800">Logs</text><text x="1322" y="924" fill="#64748b">JSON + scrub</text></rect>
+    <rect x="1400" y="896" width="140" height="42" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text x="1470" y="912" fill="#334155" font-weight="800">Health</text><text x="1470" y="924" fill="#64748b">/health/detailed</text></rect>
+  </g>
+  <text x="808" y="952" class="mono" font-size="6" fill="#64748b">SecretScrubFilter • before_send • SecretScrubMiddleware (egress) • request_logging scrub(path) • webhook error scrub</text>
+</g>
+
+<!-- Legend -->
+<g>
+  <rect x="24" y="984" width="1552" height="96" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="36" y="1002" class="t" font-size="10" font-weight="800" fill="#0f172a">LEGEND — zero-API OSS swaps (env only, code unchanged)</text>
+  <g font-size="7.5" class="t">
+    <rect x="36" y="1010" width="240" height="22" rx="6" fill="#ecfdf5" stroke="#a7f3d0"/><text x="156" y="1024" text-anchor="middle" fill="#065f46" font-weight="700">Groq/OpenAI → Ollama (phi3)</text></rect>
+    <rect x="284" y="1010" width="220" height="22" rx="6" fill="#ede9fe" stroke="#ddd6fe"/><text x="394" y="1024" text-anchor="middle" fill="#5b21b6" font-weight="700">Pinecone → pgvector/Qdrant</text></rect>
+    <rect x="512" y="1010" width="220" height="22" rx="6" fill="#eef2ff" stroke="#c7d2fe"/><text x="622" y="1024" text-anchor="middle" fill="#4338ca" font-weight="700">Clerk → Keycloak / local JWT</text></rect>
+    <rect x="740" y="1010" width="200" height="22" rx="6" fill="#fef3c7" stroke="#fde68a"/><text x="840" y="1024" text-anchor="middle" fill="#92400e" font-weight="700">Stripe → Lago / wallet-only</text></rect>
+    <rect x="948" y="1010" width="200" height="22" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="1048" y="1024" text-anchor="middle" fill="#0f766e" font-weight="700">PostHog self-host</text></rect>
+    <rect x="1156" y="1010" width="160" height="22" rx="6" fill="#fff1f2" stroke="#fecaca"/><text x="1236" y="1024" text-anchor="middle" fill="#991b1b" font-weight="700">Sentry → GlitchTip</text></rect>
+    <rect x="1324" y="1010" width="120" height="22" rx="6" fill="#f1f5f9" stroke="#cbd5e1"/><text x="1384" y="1024" text-anchor="middle" fill="#475569" font-weight="700">SMTP → Postal</text></rect>
+    <rect x="1452" y="1010" width="100" height="22" rx="6" fill="#f8fafc" stroke="#cbd5e1"/><text x="1502" y="1024" text-anchor="middle" fill="#475569" font-weight="700">OPA • Redis ✓</text></rect>
+  </g>
+  <text x="36" y="1048" class="mono" font-size="7" fill="#64748b">Solid = sync request path • Dashed = async (webhook, vector upsert, PostHog capture, Elixir notify). Fail-closed: OPA timeout → block. Read-only GraphQL. 7 middlewares. 267 tests.</text>
+  <text x="36" y="1062" class="mono" font-size="7" fill="#64748b">.env example → docs/OSS_REPLACEMENTS.md — copy zero-API env, `docker compose --profile oss up` (add ollama/qdrant/posthog/glitchtip/keycloak).</text>
+  <text x="1520" y="1062" class="t" font-size="7" fill="#0f766e" font-weight="700" text-anchor="end">Mem0 × Linear • Vercel • Stripe • Datadog</text>
+</g>
+
+<!-- Arrows: main flow -->
+<path d="M 800 854 L 800 870" stroke="#64748b" stroke-width="1.2" stroke-dasharray="6 6" marker-end="url(#arrow)"/>
+<text x="812" y="862" class="t" font-size="6" fill="#64748b">async</text>
+
+</svg>
