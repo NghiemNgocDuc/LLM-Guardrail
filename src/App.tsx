@@ -21,6 +21,7 @@ import AnalyticsView from "./views/AnalyticsView";
 import ProfileView from "./views/ProfileView";
 import HealthView from "./views/HealthView";
 import SettingsView from "./views/SettingsView";
+import AboutView from "./views/AboutView";
 
 type UserOut = components["schemas"]["UserOut"];
 
@@ -29,7 +30,7 @@ type NavItem = { id: string; label: string; icon: string; adminOnly?: boolean };
 const NAV: NavItem[] = [
   { id: "dashboard",  label: "Dashboard",      icon: "01" },
   { id: "chat",       label: "LLM Playground", icon: "02" },
-  { id: "memory",     label: "Memory",         icon: "" },
+  { id: "memory",     label: "Memory",         icon: "04" },
   { id: "skills",     label: "Rejected access", icon: "SG" },
   { id: "analytics",  label: "Analytics",      icon: "AN" },
   { id: "billing",    label: "Billing",        icon: "$"  },
@@ -38,6 +39,7 @@ const NAV: NavItem[] = [
   { id: "policy",     label: "Policy",         icon: "05" },
   { id: "team",       label: "Team",           icon: "06" },
   { id: "health",     label: "System Health",  icon: "H"  },
+  { id: "about",      label: "About",          icon: "AB" },
   { id: "admin",      label: "Admin",          icon: "A",  adminOnly: true },
   { id: "settings",   label: "Settings",       icon: "ST" },
 ];
@@ -198,6 +200,7 @@ export default function App() {
             {view === "policy"     && <PolicyView user={user} />}
             {view === "team"       && <TeamView user={user} />}
             {view === "health"     && <HealthView />}
+            {view === "about"      && <AboutView />}
             {view === "profile"    && <ProfileView user={user} onUserUpdate={setUser} />}
             {view === "admin"      && user.is_admin && <AdminView />}
             {view === "settings"   && (
