@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     PINECONE_STORE_CONVERSATIONS: bool = False
 
     ALLOWED_ORIGINS: str = "http://localhost:8080,http://localhost:5173"
+    COOKIES_SECURE: bool = True
 
     DATABASE_URL: str = ""
     POSTGRES_USER: str = ""
@@ -215,8 +216,17 @@ class Settings(BaseSettings):
             raise ValueError("RATE_LIMIT_REDIS_URL must be configured in production")
         if self.DEFAULT_LLM_BACKEND == "groq" and not self.GROQ_API_KEY:
             raise ValueError("GROQ_API_KEY must be configured when DEFAULT_LLM_BACKEND=groq")
-        if not self.PUBLIC_APP_URL.startswith("http"):
-            raise ValueError("PUBLIC_APP_URL must be a full URL (used in verification and reset emails)")
+        if not self.PUBLIC_APP_URL.startswith("https://"):
+            raise ValueError("PUBLIC_APP_URL must be https:// in production (HSTS + Secure cookies)")
+        # ALLOWED_ORIGINS must be explicit, not wildcard or localhost in prod
+        origins = [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+        if not origins or any(o in ("*", "http://*", "https://*") for o in origins):
+            raise ValueError("ALLOWED_ORIGINS must be explicit domains in production (no * wildcard)")
+        if any("localhost" in o or "127.0.0.1" in o for o in origins):
+            raise ValueError("ALLOWED_ORIGINS must not contain localhost in production")
+        # Ensure session cookies would be Secure if we ever use them
+        if self.COOKIES_SECURE is False:  # type: ignore[attr-defined]
+            raise ValueError("Cookies must be Secure in production")
         return self
 
 

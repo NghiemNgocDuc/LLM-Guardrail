@@ -1,0 +1,23 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule: { interval: "weekly", day: "monday", time: "03:00" }
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "security"]
+    reviewers: ["NghiemNgocDuc"]
+    # Break build on CVSS >=8 with KEV (OWASP A06)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule: { interval: "weekly", time: "03:00" }
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "frontend"]
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule: { interval: "weekly", time: "04:00" }
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "docker"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly", time: "04:00" }
+    labels: ["dependencies", "ci"]
