@@ -26,7 +26,7 @@ pyyaml==6.0.2
 # At-rest encryption for full_prompt audit logs (ENCRYPTION_KEY)
 cryptography>=42.0.0
 
-redis==5.2.1
+redis==8.1.0
 
 # Billing (optional — set STRIPE_* in .env)
 stripe==11.4.1
