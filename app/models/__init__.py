@@ -65,15 +65,44 @@ class OrgPolicy(Base):
     rate_limit_rpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rate_limit_rpd: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Risk tier: 1=internal draft (fail-open), 2=productivity, 3=customer-facing agentic (fail-closed)
+    tier: Mapped[int] = mapped_column(Integer, default=2)
+    # OPA fail mode per tier: "closed" or "open"
+    opa_fail_mode: Mapped[str] = mapped_column(String(16), default="closed")
+
     # Optional org-authored custom input rule in Rego, evaluated by the OPA
     # sidecar (docker-compose `opa` service) after the standard input checks
     # as the FINAL gate. Fail-closed: if OPA is unreachable the request is
     # blocked. See guardrails/opa.py for the policy contract.
     custom_rule_rego: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     org: Mapped["Organization"] = relationship("Organization", back_populates="policy")
+    versions: Mapped[list["OrgPolicyVersion"]] = relationship("OrgPolicyVersion", back_populates="policy", cascade="all, delete-orphan")
+
+
+class OrgPolicyVersion(Base):
+    """Versioned policy store — every PATCH creates a new row for diff/rollback."""
+    __tablename__ = "org_policy_versions"
+
+    id:     Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    policy_id: Mapped[str] = mapped_column(ForeignKey("org_policies.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_rules: Mapped[dict] = mapped_column(JSON, default=dict)
+    output_rules: Mapped[dict] = mapped_column(JSON, default=dict)
+    topic_policy: Mapped[dict] = mapped_column(JSON, default=dict)
+    compliance_rules: Mapped[dict] = mapped_column(JSON, default=dict)
+    llm_backend: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    tier: Mapped[int] = mapped_column(Integer, default=2)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+    policy: Mapped["OrgPolicy"] = relationship("OrgPolicy", back_populates="versions")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -225,6 +254,11 @@ class APIKey(Base):
     # Scopes granted to this key (e.g. ["chat", "analytics"])
     scopes: Mapped[list] = mapped_column(JSON, default=lambda: ["chat"])
 
+    # Virtual-key budget (Datadog virtual-key pattern) — per-key spend ceiling, 429 before provider
+    budget_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # None = use org default / unlimited
+    budget_used:   Mapped[int] = mapped_column(BigInteger, default=0)
+    budget_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Usage counters (updated on every request)
     total_requests:  Mapped[int] = mapped_column(BigInteger, default=0)
     total_blocked:   Mapped[int] = mapped_column(BigInteger, default=0)
@@ -250,6 +284,7 @@ class RequestLog(Base):
     __tablename__ = "request_logs"
 
     id:          Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    correlation_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)  # X-Request-ID propagated end-to-end
     api_key_id:  Mapped[str] = mapped_column(ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True, index=True)
     org_id:      Mapped[str | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
 
@@ -334,6 +369,47 @@ class Memory(Base):
 
     user: Mapped["User"] = relationship("User", backref="memories")
     org:  Mapped["Organization | None"] = relationship("Organization", backref="memories")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GuardrailEvaluation — Databricks inference-table pattern (per-guardrail trace)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class GuardrailEvaluation(Base):
+    """One row per guardrail check — joins to request_logs via correlation_id."""
+    __tablename__ = "guardrail_evaluations"
+
+    id:             Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    correlation_id: Mapped[str] = mapped_column(String(36), index=True)
+    request_log_id: Mapped[str | None] = mapped_column(ForeignKey("request_logs.id", ondelete="SET NULL"), nullable=True, index=True)
+    org_id:         Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    guardrail:      Mapped[str] = mapped_column(String(64), index=True)  # secret|pii|injection|jailbreak|semantic|opa|toxic|grounding
+    stage:          Mapped[str] = mapped_column(String(16))  # before|after
+    action:         Mapped[str] = mapped_column(String(16))  # block|warn|redact|pass|review
+    verdict:        Mapped[str] = mapped_column(String(16))  # same
+    reason_code:    Mapped[str | None] = mapped_column(String(80), nullable=True)
+    latency_ms:     Mapped[float | None] = mapped_column(nullable=True)
+    created_at:     Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ToolApproval — human gate for destructive MCP actions (InfrastructureSentinel)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ToolApproval(Base):
+    """Pre-execution approval for high-risk tool calls (write, payment, infra)."""
+    __tablename__ = "tool_approvals"
+
+    id:             Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id:         Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    user_id:        Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    tool_name:      Mapped[str] = mapped_column(String(80), index=True)
+    tool_input:     Mapped[dict] = mapped_column(JSON, default=dict)
+    risk_level:     Mapped[str] = mapped_column(String(16), default="high")  # low|medium|high|critical
+    status:         Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending|approved|rejected|expired
+    correlation_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    created_at:     Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    decided_at:     Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

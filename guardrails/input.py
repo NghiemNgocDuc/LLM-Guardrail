@@ -1,7 +1,9 @@
 """
-Input Guardrails
+Input Guardrails — 2026 control-plane: tiered, sampled, 4-way (block/redact/warn/review)
 """
+import random
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -124,6 +126,9 @@ class InputGuardrail:
         """
         from guardrails import opa
 
+        # Tier 1 (internal draft) defaults to fail-open per 2026 tiering, Tier 3 fail-closed
+        tier = self.policy.get("tier") or self.policy.get("opa_tier") or 2
+        fail_mode = self.policy.get("opa_fail_mode") or self.policy.get("fail_mode") or ("open" if tier == 1 else "closed")
         try:
             action, reason = opa.evaluate(
                 rego,
@@ -135,6 +140,11 @@ class InputGuardrail:
                 ],
             )
         except (opa.OPAUnavailableError, opa.OPAValidationError) as e:
+            if fail_mode == "open":
+                return GuardrailResult(
+                    allowed=True, warned=True, check="OPA Custom Rule",
+                    reason=f"OPA unavailable but tier {tier} fail-open: {e}", reason_code="warned_rego_rule_error", risk_score=0.5,
+                )
             return GuardrailResult(
                 allowed=False, check="OPA Custom Rule",
                 reason=str(e), reason_code="rego_rule_error", risk_score=1.0,
@@ -152,12 +162,24 @@ class InputGuardrail:
         return GuardrailResult(allowed=True, check="OPA Custom Rule")
 
     def _check_pii(self, prompt: str) -> GuardrailResult:
+        mode = self.policy.get("pii_mode") or self.policy.get("pii_redaction_mode") or "block"
+        # logs_only / reversible: allow but flag for scrubbed logging (Bifrost pattern)
+        is_logs_only = mode in ("logs_only", "reversible", "warn")
         if _engine.enabled():
             try:
                 name = _engine.module().check_pii(
                     prompt, [(p["name"], p["regex"]) for p in self.policy.get("pii_patterns", [])]
                 )
                 if name is not None:
+                    if is_logs_only:
+                        return GuardrailResult(
+                            allowed=True, warned=True,
+                            check="PII Detection",
+                            reason=_t_or("guardrail.pii_detected", "PII detected: {name}", name=name),
+                            reason_code="warned_pii_detected",
+                            risk_score=0.5,
+                            flagged_content=[name],
+                        )
                     return GuardrailResult(
                         allowed=False,
                         check="PII Detection",
@@ -171,6 +193,15 @@ class InputGuardrail:
                 pass  # fall through to the Python implementation
         for p in self.policy.get("pii_patterns", []):
             if re.search(p["regex"], prompt):
+                if is_logs_only:
+                    return GuardrailResult(
+                        allowed=True, warned=True,
+                        check="PII Detection",
+                        reason=_t_or("guardrail.pii_detected", "PII detected: {name}", name=p["name"]),
+                        reason_code="warned_pii_detected",
+                        risk_score=0.5,
+                        flagged_content=[p["name"]],
+                    )
                 return GuardrailResult(
                     allowed=False,
                     check="PII Detection",
@@ -376,6 +407,14 @@ class InputGuardrail:
         return GuardrailResult(allowed=True, check="Jailbreak Detection")
 
     def _check_semantic(self, prompt: str) -> GuardrailResult:
+        # Sampling for high-volume (Bifrost): skip expensive vector check with probability
+        sample_rate = self.policy.get("sample_rate") or self.policy.get("semantic_sample_rate")
+        if sample_rate is not None:
+            try:
+                if random.random() > float(sample_rate):
+                    return GuardrailResult(allowed=True, check="Semantic Detection", reason="sampled", reason_code="sampled", risk_score=0.0)
+            except Exception:
+                pass
         try:
             from app.services.vectorstore import find_similar_blocked
             blocked = self.policy.get("semantic_blocked_texts", [])
@@ -385,6 +424,23 @@ class InputGuardrail:
                 blocked, prompt, threshold=self.policy.get("semantic_threshold", 0.82)
             )
             if blocked_found:
+                mode = self.policy.get("semantic_mode", "block")
+                if mode == "review":
+                    return GuardrailResult(
+                        allowed=True, warned=True,
+                        check="Semantic Detection",
+                        reason=_t_or("guardrail.semantic_blocked", "Semantically similar to blocked content (score={score:.2f})", score=score),
+                        reason_code="review_semantic_blocked",
+                        risk_score=score,
+                    )
+                if mode == "warn":
+                    return GuardrailResult(
+                        allowed=True, warned=True,
+                        check="Semantic Detection",
+                        reason=_t_or("guardrail.semantic_blocked", "Semantically similar to blocked content (score={score:.2f})", score=score),
+                        reason_code="warned_semantic_blocked",
+                        risk_score=score,
+                    )
                 return GuardrailResult(
                     allowed=False,
                     check="Semantic Detection",

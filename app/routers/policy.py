@@ -79,6 +79,18 @@ async def update_policy(
         else:
             rego_value = None
 
+    # ── Versioned store: snapshot before mutating ─────────────────────────
+    from app.models import OrgPolicyVersion
+    policy.version = (policy.version or 1) + 1
+    ver = OrgPolicyVersion(
+        org_id=policy.org_id, policy_id=policy.id, version=policy.version,
+        input_rules=policy.input_rules, output_rules=policy.output_rules,
+        topic_policy=policy.topic_policy, compliance_rules=policy.compliance_rules,
+        llm_backend=policy.llm_backend, llm_model=policy.llm_model,
+        tier=policy.tier, created_by=current_user.id,
+    )
+    db.add(ver)
+
     # Only update fields that were explicitly sent
     payload = body.model_dump(exclude_none=True)
     if "custom_rule_rego" in body.model_fields_set:
@@ -125,6 +137,17 @@ async def reset_policy(current_user: CurrentUser, db: AsyncSession = Depends(get
     if not policy:
         raise HTTPException(status_code=404, detail=_t("policy.not_found"))
 
+    from app.models import OrgPolicyVersion
+    policy.version = (policy.version or 1) + 1
+    ver = OrgPolicyVersion(
+        org_id=policy.org_id, policy_id=policy.id, version=policy.version,
+        input_rules=policy.input_rules, output_rules=policy.output_rules,
+        topic_policy=policy.topic_policy, compliance_rules=policy.compliance_rules,
+        llm_backend=policy.llm_backend, llm_model=policy.llm_model,
+        tier=policy.tier, created_by=current_user.id,
+    )
+    db.add(ver)
+
     policy.input_rules      = DEFAULT_INPUT_RULES
     policy.output_rules     = DEFAULT_OUTPUT_RULES
     policy.topic_policy     = DEFAULT_TOPIC_POLICY
@@ -153,3 +176,62 @@ async def diff_policy(
         for field in _POLICY_DIFF_FIELDS
         if a.get(field) != b.get(field)
     ]
+
+
+@router.get("/versions", response_model=list[dict])
+async def list_versions(current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """List version history for current org (newest first)."""
+    _require_admin(current_user)
+    from app.models import OrgPolicyVersion
+    result = await db.execute(
+        select(OrgPolicyVersion)
+        .where(OrgPolicyVersion.org_id == current_user.org_id)
+        .order_by(OrgPolicyVersion.version.desc())
+        .limit(50)
+    )
+    return [
+        {
+            "id": v.id, "version": v.version, "tier": v.tier,
+            "created_by": v.created_by, "created_at": v.created_at,
+            "llm_backend": v.llm_backend, "llm_model": v.llm_model,
+        }
+        for v in result.scalars().all()
+    ]
+
+
+@router.post("/rollback/{version}", response_model=PolicyOut)
+async def rollback_policy(version: int, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """Rollback to a prior version (creates new version)."""
+    _require_admin(current_user)
+    from app.models import OrgPolicyVersion
+    result = await db.execute(select(OrgPolicy).where(OrgPolicy.org_id == current_user.org_id))
+    policy = result.scalar_one_or_none()
+    if not policy:
+        raise HTTPException(status_code=404, detail=_t("policy.not_found"))
+    ver = await db.execute(
+        select(OrgPolicyVersion)
+        .where(OrgPolicyVersion.org_id == current_user.org_id, OrgPolicyVersion.version == version)
+    )
+    target = ver.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="version not found")
+    # snapshot current as new version before rollback
+    policy.version = (policy.version or 1) + 1
+    snap = OrgPolicyVersion(
+        org_id=policy.org_id, policy_id=policy.id, version=policy.version,
+        input_rules=policy.input_rules, output_rules=policy.output_rules,
+        topic_policy=policy.topic_policy, compliance_rules=policy.compliance_rules,
+        llm_backend=policy.llm_backend, llm_model=policy.llm_model,
+        tier=policy.tier, created_by=current_user.id,
+    )
+    db.add(snap)
+    # restore
+    policy.input_rules = target.input_rules
+    policy.output_rules = target.output_rules
+    policy.topic_policy = target.topic_policy
+    policy.compliance_rules = target.compliance_rules
+    policy.llm_backend = target.llm_backend
+    policy.llm_model = target.llm_model
+    policy.tier = target.tier
+    await db.flush()
+    return policy

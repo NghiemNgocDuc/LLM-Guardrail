@@ -173,6 +173,19 @@ async def resolve_api_key(raw_key: str, db: AsyncSession) -> APIKey:
                 raise
             except Exception:
                 pass
+            # ── virtual-key budget (429 before provider, Datadog pattern) ───
+            if key.budget_tokens is not None:
+                # reset monthly if needed
+                if key.budget_reset_at and key.budget_reset_at < datetime.now(timezone.utc):
+                    key.budget_used = 0
+                    key.budget_reset_at = None
+                    await db.flush()
+                if key.budget_used >= key.budget_tokens:
+                    raise HTTPException(
+                        status_code=429,
+                        detail={"code": "budget_exceeded", "message": "Virtual key budget exceeded", "retry_after": 3600},
+                        headers={"Retry-After": "3600"},
+                    )
             return key
 
     raise HTTPException(

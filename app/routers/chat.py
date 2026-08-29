@@ -473,8 +473,28 @@ async def chat(
 
     used = llm_resp.input_tokens + llm_resp.output_tokens
     await deduct_tokens(db, wallet, used)
+    # virtual-key budget increment (429 before provider on next call)
+    if api_key.budget_tokens is not None:
+        api_key.budget_used = (api_key.budget_used or 0) + used
+        await db.flush()
     record_daily_spend(api_key.owner_id, used)
     await db.commit()
+    # ── inference tables (Databricks) — per-guardrail trace ─────────────
+    try:
+        from app.models import GuardrailEvaluation
+        cid = getattr(request.state, "correlation_id", request_id)
+        for gname, res in [("input", in_result), ("output", out_result)]:
+            db.add(GuardrailEvaluation(
+                correlation_id=cid, request_log_id=None, org_id=api_key.org_id,
+                guardrail=gname, stage="before" if gname=="input" else "after",
+                action="block" if not res.allowed else ("warn" if res.warned else "pass"),
+                verdict="block" if not res.allowed else ("warn" if res.warned else "pass"),
+                reason_code=res.reason_code, latency_ms=float(latency_ms),
+            ))
+        await db.flush()
+        await db.commit()
+    except Exception:
+        pass
     # ── exploit auto-ban signal (token burn / IP / blocked ratio) ─────
     try:
         banned, reason, secs = await maybe_auto_ban(

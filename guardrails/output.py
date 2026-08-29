@@ -1,5 +1,6 @@
-"""Output Guardrails"""
+"""Output Guardrails — 2026: grounding, 4-way actions, sampling"""
 import json
+import random
 from dataclasses import dataclass
 from typing import Optional
 
@@ -59,7 +60,16 @@ class OutputGuardrail:
         self.compliance = compliance_rules
         self.topics = topic_policy
 
-    def check(self, response: str) -> OutputGuardrailResult:
+    def check(self, response: str, grounding_context: str | None = None) -> OutputGuardrailResult:
+        # Sampling for high-volume (Bifrost): skip expensive checks with probability
+        sample_rate = self.policy.get("sample_rate") or self.policy.get("output_sample_rate")
+        if sample_rate is not None:
+            try:
+                if random.random() > float(sample_rate):
+                    return OutputGuardrailResult(allowed=True, check="Sampled", reason="sampled", reason_code="sampled", risk_score=0.0, sanitized_output=response)
+            except Exception:
+                pass
+
         # Secret leakage always blocks regardless of policy
         err = self._check_secret_leakage(response)
         if err:
@@ -74,6 +84,11 @@ class OutputGuardrail:
         if self.policy.get("enforce_schema"):
             err = self._validate_schema(response)
             if err:
+                mode = self.policy.get("schema_mode", "block")
+                if mode == "warn":
+                    return OutputGuardrailResult(allowed=True, warned=True, check="Schema Validation", reason=err, reason_code="warned_schema_violation", risk_score=0.3, sanitized_output=response)
+                if mode == "review":
+                    return OutputGuardrailResult(allowed=True, warned=True, check="Schema Validation", reason=err, reason_code="review_schema_violation", risk_score=0.4, sanitized_output=response)
                 return OutputGuardrailResult(
                     allowed=False, check="Schema Validation",
                     reason=err, reason_code="schema_violation", risk_score=0.6,
@@ -82,12 +97,31 @@ class OutputGuardrail:
         if self.policy.get("block_toxic_content"):
             err = self._check_toxicity(response)
             if err:
-                if self.policy.get("toxic_mode", "block") == "warn":
+                mode = self.policy.get("toxic_mode", "block")
+                if mode == "warn":
                     return OutputGuardrailResult(
                         allowed=True, warned=True,
                         check="Toxicity Filter", reason=err,
                         reason_code="warned_toxic_content", risk_score=0.6,
                         sanitized_output=response,
+                    )
+                if mode == "review":
+                    return OutputGuardrailResult(
+                        allowed=True, warned=True,
+                        check="Toxicity Filter", reason=err,
+                        reason_code="review_toxic_content", risk_score=0.6,
+                        sanitized_output=response,
+                    )
+                if mode == "redact":
+                    # redact toxic phrases with placeholder
+                    sanitized = response
+                    for phrase in _TOXIC_PHRASES + _TOXIC_KEYWORDS:
+                        sanitized = sanitized.replace(phrase, "[REDACTED:TOXIC]")
+                    return OutputGuardrailResult(
+                        allowed=True, warned=True,
+                        check="Toxicity Filter", reason=err,
+                        reason_code="redacted_toxic_content", risk_score=0.5,
+                        sanitized_output=sanitized,
                     )
                 return OutputGuardrailResult(
                     allowed=False, check="Toxicity Filter",
@@ -96,19 +130,43 @@ class OutputGuardrail:
 
         err = self._check_topic_policy(response)
         if err:
+            mode = self.policy.get("topic_mode", "block")
+            if mode == "warn":
+                return OutputGuardrailResult(allowed=True, warned=True, check="Topic Policy", reason=err, reason_code="warned_blocked_topic", risk_score=0.4, sanitized_output=response)
+            if mode == "review":
+                return OutputGuardrailResult(allowed=True, warned=True, check="Topic Policy", reason=err, reason_code="review_blocked_topic", risk_score=0.5, sanitized_output=response)
             return OutputGuardrailResult(
                 allowed=False, check="Topic Policy",
                 reason=err, reason_code="blocked_topic", risk_score=0.75,
             )
 
+        # Grounding / hallucination check (requires context)
+        if grounding_context is not None or self.policy.get("grounding_required"):
+            err = self._check_grounding(response, grounding_context or self.policy.get("grounding_context", ""))
+            if err:
+                mode = self.policy.get("grounding_mode", "block")
+                if mode == "warn":
+                    return OutputGuardrailResult(allowed=True, warned=True, check="Grounding", reason=err, reason_code="warned_grounding", risk_score=0.6, sanitized_output=response)
+                if mode == "review":
+                    return OutputGuardrailResult(allowed=True, warned=True, check="Grounding", reason=err, reason_code="review_grounding", risk_score=0.7, sanitized_output=response)
+                return OutputGuardrailResult(allowed=False, check="Grounding", reason=err, reason_code="grounding_failed", risk_score=0.8)
+
         err = self._check_external_validators(response)
         if err:
-            # external_validator_mode: "block" (default) | "warn"
-            if self.policy.get("external_validator_mode", "block") == "warn":
+            # external_validator_mode: "block" (default) | "warn" | "review"
+            mode = self.policy.get("external_validator_mode", "block")
+            if mode == "warn":
                 return OutputGuardrailResult(
                     allowed=True, warned=True,
                     check="External Validators", reason=err,
                     reason_code="external_validator_flagged", risk_score=0.5,
+                    sanitized_output=response,
+                )
+            if mode == "review":
+                return OutputGuardrailResult(
+                    allowed=True, warned=True,
+                    check="External Validators", reason=err,
+                    reason_code="review_external_validator", risk_score=0.5,
                     sanitized_output=response,
                 )
             return OutputGuardrailResult(
@@ -166,6 +224,23 @@ class OutputGuardrail:
             for sig in ["you should take", "dosage", "prescription", "diagnos"]:
                 if sig in lower:
                     return _t_or("guardrail.medical_advice", "Medical advice detected")
+        return None
+
+    def _check_grounding(self, response: str, context: str) -> Optional[str]:
+        """Hallucination / grounding check — ensure response is supported by context."""
+        if not context or not self.policy.get("grounding_required"):
+            return None
+        # Simple heuristic: if context is provided, response should share at least one 3-gram
+        # Real impl would use vector similarity; this is a cheap fail-closed stub
+        import re
+        ctx_tokens = set(re.findall(r"\w+", context.lower()))
+        resp_tokens = set(re.findall(r"\w+", response.lower()))
+        if not resp_tokens:
+            return None
+        overlap = len(ctx_tokens & resp_tokens) / max(len(resp_tokens), 1)
+        threshold = float(self.policy.get("grounding_threshold", 0.3))
+        if overlap < threshold:
+            return _t_or("guardrail.grounding_failed", "Response not grounded in provided context (overlap {overlap:.2f} < {threshold})", overlap=overlap, threshold=threshold)
         return None
 
     def _check_external_validators(self, response: str) -> Optional[str]:

@@ -26,6 +26,7 @@ from app.middleware.i18n import I18nMiddleware
 from app.middleware.abuse_protection import AbuseProtectionMiddleware, close_abuse_protection
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.middleware.secret_scrub import SecretScrubMiddleware
+from app.middleware.correlation import CorrelationMiddleware
 from app.routers import admin, auth, api_keys, billing, chat, analytics, health, org, policy, skills, vector, memories
 from app.mcp_server import get_mcp_app
 from strawberry.fastapi import GraphQLRouter
@@ -153,9 +154,10 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.middleware("http")
 async def add_security_headers(request, call_next):
-    req_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    req_id = getattr(request.state, "correlation_id", None) or request.headers.get("X-Request-ID") or str(uuid.uuid4())
     response = await call_next(request)
     response.headers["X-Request-ID"] = req_id
+    response.headers["X-Correlation-ID"] = req_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "0"
@@ -179,6 +181,7 @@ app.add_middleware(BodySizeMiddleware)
 app.add_middleware(ContentTypeMiddleware)
 app.add_middleware(SecretScrubMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(CorrelationMiddleware)
 
 app.include_router(auth.router)
 app.include_router(api_keys.router)

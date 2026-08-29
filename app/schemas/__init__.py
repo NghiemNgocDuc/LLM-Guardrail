@@ -118,6 +118,8 @@ class PolicyUpdate(BaseModel):
     llm_model:        str | None = None
     rate_limit_rpm:   int | None = None
     rate_limit_rpd:   int | None = None
+    tier: int | None = Field(default=None, ge=1, le=3, description="1=draft fail-open, 2=productivity, 3=customer-facing fail-closed")
+    opa_fail_mode: str | None = Field(default=None, pattern="^(open|closed)$")
     # Optional org-authored Rego custom input rule (evaluated by the OPA
     # sidecar). Send null to clear it. Validated to compile before saving.
     custom_rule_rego: str | None = None
@@ -126,6 +128,19 @@ class PolicyUpdate(BaseModel):
 class PolicyOut(PolicyUpdate):
     org_id: str
     updated_at: datetime
+    version: int = 1
+
+    model_config = {"from_attributes": True}
+
+
+class PolicyVersionOut(BaseModel):
+    id: str
+    version: int
+    tier: int
+    created_by: str | None
+    created_at: datetime
+    input_rules: dict[str, Any]
+    output_rules: dict[str, Any]
 
     model_config = {"from_attributes": True}
 
