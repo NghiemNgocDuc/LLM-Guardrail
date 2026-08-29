@@ -10,7 +10,7 @@ alembic==1.14.0
 # Auth
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-bcrypt<4                     # passlib compat, not 4.x
+bcrypt<6                     # passlib compat, not 4.x
 
 # Config
 pydantic==2.10.3
