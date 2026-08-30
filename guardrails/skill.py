@@ -63,6 +63,9 @@ _SECRET_LINE_PATTERNS = {
     "github_token": r"\b(?:" "ghp" r"_|" "github" r"_pat_)[A-Za-z0-9_]{20,}\b",
     "aws_access_key": r"\b" "AKIA" r"[0-9A-Z]{16}\b",
     "private_key": r"-----BEGIN (?:RSA|OPENSSH|EC|DSA|PRIVATE) KEY-----",
+    # JSON generic api_key / password (wl2 dataset uses random high-entropy values)
+    "json_api_key": r'(?i)["\']?api[_-]?key["\']?\s*[:=]\s*["\']?[A-Za-z0-9_\-\.\/\+=]{16,}["\']?',
+    "json_password": r'(?i)["\']?password["\']?\s*[:=]\s*["\'][^"\']{8,}["\']',
 }
 
 _SNIPPET_MAX = 72

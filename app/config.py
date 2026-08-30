@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     SMTP_FROM: str = ""
     SMTP_USE_TLS: bool = True
 
+    FEEDBACK_RECIPIENT: str = ""  # set to dnghiem@umass.edu via env on server; never exposed to client
+
     RESEND_API_KEY: str = ""
     RESEND_FROM: str = ""
 

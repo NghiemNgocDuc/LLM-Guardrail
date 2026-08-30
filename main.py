@@ -28,6 +28,8 @@ from app.middleware.request_logging import RequestLoggingMiddleware
 from app.middleware.secret_scrub import SecretScrubMiddleware
 from app.middleware.correlation import CorrelationMiddleware
 from app.routers import admin, auth, api_keys, billing, chat, analytics, health, org, policy, skills, vector, memories
+from app.routers.managed_skills import router as managed_skills_router, live_router as managed_live_router
+from app.routers.feedback import router as feedback_router
 from app.mcp_server import get_mcp_app
 from strawberry.fastapi import GraphQLRouter
 from app.graphql import schema, get_graphql_context
@@ -190,6 +192,9 @@ app.include_router(chat.router)
 app.include_router(analytics.router)
 app.include_router(policy.router)
 app.include_router(skills.router)
+app.include_router(managed_skills_router)
+app.include_router(managed_live_router)
+app.include_router(feedback_router)
 app.include_router(billing.router)
 app.include_router(org.router)
 app.include_router(health.router)

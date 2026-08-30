@@ -413,6 +413,72 @@ class ToolApproval(Base):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# OrgMembership — leader can join multiple teams / projects
+# ─────────────────────────────────────────────────────────────────────────────
+
+class OrgMembership(Base):
+    """Many-to-many: user can belong to multiple orgs/teams. Leader can work across Team 1, Team 2, etc."""
+    __tablename__ = "org_memberships"
+
+    id:         Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id:   Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    org_id:    Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    role:      Mapped[str] = mapped_column(String(16), default="member")  # admin | member
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+    user: Mapped["User"] = relationship("User", backref="org_memberships")
+    org:  Mapped["Organization"] = relationship("Organization", backref="memberships")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Managed Skills — synced SKILL.md files with versioning + conflict detection
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ManagedSkill(Base):
+    """Team-managed SKILL.md file that agents auto-fetch via live URL.
+
+    One row per agent skill slug per organization.  Updates bump version so
+    agents that re-download SKILL.md can detect whether to overwrite or keep
+    the old file (update_mode).  Content is scanned by SkillGuardrail on
+    every write and conflicts are flagged against existing skills + org policy.
+    """
+    __tablename__ = "managed_skills"
+
+    id:         Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id:    Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    slug:      Mapped[str] = mapped_column(String(80), nullable=False)  # e.g. agent_b
+    name:      Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), default="")
+    content:   Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # sha256 hex
+    version:   Mapped[int] = mapped_column(Integer, default=1)
+    update_mode: Mapped[str] = mapped_column(String(16), default="overwrite")  # overwrite | versioned
+    live_url_token: Mapped[str | None] = mapped_column(String(36), nullable=True)  # optional short token for live fetch
+
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    org: Mapped["Organization"] = relationship("Organization", backref="managed_skills")
+
+
+class ManagedSkillVersion(Base):
+    """Version history for ManagedSkill — every PUT creates a new row."""
+    __tablename__ = "managed_skill_versions"
+
+    id:         Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    skill_id:  Mapped[str] = mapped_column(ForeignKey("managed_skills.id", ondelete="CASCADE"), index=True)
+    org_id:    Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    slug:      Mapped[str] = mapped_column(String(80), nullable=False)
+    version:   Mapped[int] = mapped_column(Integer, nullable=False)
+    content:   Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    update_mode: Mapped[str] = mapped_column(String(16), default="overwrite")
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Analytics materialized views (alembic/versions/...0011_analytics_views.py)
 #
 # Read-model tables refreshed on a schedule by

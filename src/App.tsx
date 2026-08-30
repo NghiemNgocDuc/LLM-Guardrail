@@ -17,6 +17,7 @@ import ApiKeysView from "./views/ApiKeysView";
 import PolicyView from "./views/PolicyView";
 import AdminView from "./views/AdminView";
 import TeamView from "./views/TeamView";
+import TeamsHubView from "./views/TeamsHubView";
 import AnalyticsView from "./views/AnalyticsView";
 import ProfileView from "./views/ProfileView";
 import HealthView from "./views/HealthView";
@@ -37,6 +38,7 @@ const NAV: NavItem[] = [
   { id: "logs",       label: "Logs",           icon: "03" },
   { id: "keys",       label: "API Keys",       icon: "04" },
   { id: "policy",     label: "Policy",         icon: "05" },
+  { id: "teams",      label: "Teams",          icon: "TM" },
   { id: "team",       label: "Team",           icon: "06" },
   { id: "health",     label: "System Health",  icon: "H"  },
   { id: "about",      label: "About",          icon: "AB" },
@@ -198,7 +200,16 @@ export default function App() {
             {view === "logs"       && <LogsView />}
             {view === "keys"       && <ApiKeysView />}
             {view === "policy"     && <PolicyView user={user} />}
-            {view === "team"       && <TeamView user={user} />}
+            {view === "teams"      && <TeamsHubView user={user} onSwitch={async (org) => { try { const u = await api<UserOut>("/auth/me"); setUser(u); } catch {} navigate("team"); }} onBack={() => navigate("team")} />}
+            {view === "team"       && (
+              <div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                  <button onClick={() => navigate("teams")} style={{ ...s.btn("secondary"), padding: "6px 12px", borderRadius: 10 }}>← Teams</button>
+                  <span style={{ fontSize: 11, color: "#7b8a9d", alignSelf: "center" }}>Team selector — you can work with multiple projects (Team 1, Team 2…)</span>
+                </div>
+                <TeamView user={user} />
+              </div>
+            )}
             {view === "health"     && <HealthView />}
             {view === "about"      && <AboutView />}
             {view === "profile"    && <ProfileView user={user} onUserUpdate={setUser} />}

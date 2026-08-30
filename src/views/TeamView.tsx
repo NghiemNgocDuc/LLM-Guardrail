@@ -9,17 +9,24 @@ export default function TeamView({ user }: { user: UserOut | null }) {
   const [q,setQ]=useState(""); const [roleFilter,setRoleFilter]=useState<string>("");
   const [error,setError]=useState(""); const [success,setSuccess]=useState("");
   const [inviteEmail,setInviteEmail]=useState(""); const [inviteName,setInviteName]=useState(""); const [inviteAdmin,setInviteAdmin]=useState(false); const [inviting,setInviting]=useState(false); const [showInvite,setShowInvite]=useState(false);
+  // Email lookup to add existing user (find by email, not name)
+  const [lookupEmail,setLookupEmail]=useState(""); const [lookupResult,setLookupResult]=useState<UserOut|null>(null); const [lookupError,setLookupError]=useState(""); const [lookupLoading,setLookupLoading]=useState(false); const [addingExisting,setAddingExisting]=useState(false);
   const fetchMembers=useCallback(async()=>{ try{ const d=await api<AdminUserStats[]>("/admin/users/stats"); setMembers(d);}catch(e){ setError(e instanceof Error?e.message:String(e));} },[]);
   useEffect(()=>{ if(user?.is_admin) fetchMembers(); },[user,fetchMembers]);
-  async function handleInvite(e:React.FormEvent){ e.preventDefault(); if(!inviteEmail.trim()||!inviteName.trim())return; setInviting(true); setError(""); setSuccess(""); try{ await api("/admin/users/invite",{method:"POST", body:{email:inviteEmail.trim(), full_name:inviteName.trim(), is_admin:inviteAdmin}}); setSuccess(`Invitation sent to ${inviteEmail}.`); setInviteEmail(""); setInviteName(""); setInviteAdmin(false); setShowInvite(false); fetchMembers();}catch(e){ setError(e instanceof Error?e.message:String(e));} finally{setInviting(false);} }
-  async function updateMember(id:string, upd:Record<string,unknown>){ try{ await api(`/admin/users/${id}`,{method:"PATCH", body:upd}); setSuccess("Updated."); setTimeout(()=>setSuccess(""),2500); fetchMembers(); }catch(e){ setError(e instanceof Error?e.message:String(e)); } }
-  async function removeMember(m:AdminUserStats){ if(!confirm(`Remove ${m.email}?`))return; try{ await api(`/admin/users/${m.id}`,{method:"DELETE"}); setSuccess(`${m.email} removed.`); fetchMembers(); }catch(e){ setError(e instanceof Error?e.message:String(e)); } }
+  async function handleInvite(e:React.FormEvent){ e.preventDefault(); if(!inviteEmail.trim()||!inviteName.trim())return; setInviting(true); setError(""); setSuccess(""); try{ await api("/admin/users/invite",{method:"POST", body:{email:inviteEmail.trim(), full_name:inviteName.trim(), is_admin:inviteAdmin}}); setSuccess(`Invitation sent to ${inviteEmail} as ${inviteAdmin?"leader":"member"} — team can have multiple leaders.`); setInviteEmail(""); setInviteName(""); setInviteAdmin(false); setShowInvite(false); fetchMembers();}catch(e){ setError(e instanceof Error?e.message:String(e));} finally{setInviting(false);} }
+  async function handleLookupByEmail(e:React.FormEvent){ e.preventDefault(); if(!lookupEmail.trim())return; setLookupLoading(true); setLookupError(""); setLookupResult(null); try{ const u=await api<UserOut>(`/admin/users/lookup?email=${encodeURIComponent(lookupEmail.trim())}`); setLookupResult(u);}catch(err){ setLookupError(err instanceof Error?err.message:String(err));} finally{ setLookupLoading(false);} }
+  async function handleAddExisting(){ if(!lookupResult) return; setAddingExisting(true); setError(""); setSuccess(""); try{ await api("/admin/users/add-existing",{method:"POST", body:{email:lookupResult.email}}); setSuccess(`${lookupResult.email} added to team.`); setLookupEmail(""); setLookupResult(null); fetchMembers();}catch(err){ setError(err instanceof Error?err.message:String(err));} finally{ setAddingExisting(false);} }
+  async function updateMember(id:string, upd:Record<string,unknown>){ try{ await api(`/admin/users/${id}`,{method:"PATCH", body:upd}); setSuccess("Updated — team can have multiple leaders."); setTimeout(()=>setSuccess(""),2500); fetchMembers(); }catch(e){ setError(e instanceof Error?e.message:String(e)); } }
+  async function removeMember(m:AdminUserStats){ if(!confirm(`Remove ${m.email}? If they are the only leader, another member will be auto-promoted.`))return; try{ await api(`/admin/users/${m.id}`,{method:"DELETE"}); setSuccess(`${m.email} removed. If they were leader, a previous leader or random member was promoted.`); fetchMembers(); }catch(e){ setError(e instanceof Error?e.message:String(e)); } }
+  async function declineLeader(){ if(!confirm("Decline your leader role? You will become a member — requires at least 1 other leader.")) return; try{ await api(`/admin/users/${user?.id}`,{method:"PATCH", body:{is_admin:false}}); setSuccess("You are now a member. Another leader remains."); fetchMembers(); }catch(e){ setError(e instanceof Error?e.message:String(e)); } }
+  async function leaveTeam(){ if(!confirm("Leave this team? If you are the only leader, another member will be auto-promoted (previous leader or random).")) return; try{ await api("/org/leave",{method:"POST"}); setSuccess("Left team — switched to another project or none."); setTimeout(()=>window.location.reload(), 800); }catch(e){ setError(e instanceof Error?e.message:String(e)); } }
   const fmt=(n:number)=>Number(n).toLocaleString();
   const filtered=members.filter(m=>{
     if(roleFilter==="admin" && !m.is_admin) return false;
     if(roleFilter==="member" && m.is_admin) return false;
     if(roleFilter==="active" && !m.is_active) return false;
-    if(q && !(`${m.full_name} ${m.email}`.toLowerCase().includes(q.toLowerCase()))) return false;
+    // Find by email only (not name) as requested
+    if(q && !m.email.toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   });
   if(!user?.is_admin) return <div><div style={s.heroPanel}><div style={s.pageTitle}>Team & Access</div></div><div style={s.alert("error")}>Organisation Administrator required.</div></div>;
@@ -32,12 +39,22 @@ export default function TeamView({ user }: { user: UserOut | null }) {
             <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
               <div style={{ ...s.pageTitle, marginBottom:0 }}>Team</div>
               <span style={{ background:"#0f766e", color:"#fff", fontSize:10, fontWeight:800, letterSpacing:"0.06em", textTransform:"uppercase", padding:"3px 8px", borderRadius:999 }}>Linear • Slack</span>
-              <span style={{ background:"#fff", border:"1px solid #e2e8f0", color:"#475569", fontSize:11, fontWeight:700, padding:"4px 10px", borderRadius:999 }}>{members.length} members</span>
+              <span style={{ background:"#fff", border:"1px solid #e2e8f0", color:"#475569", fontSize:11, fontWeight:700, padding:"4px 10px", borderRadius:999 }}>{members.length} / 500 members</span>
             </div>
-            <div style={{ color:"#405166", fontSize:14, lineHeight:1.6 }}>Invite, approve, and track usage. Presence • roles • token balance — Linear-grade density.</div>
+            <div style={{ color:"#405166", fontSize:14, lineHeight:1.6 }}>Invite, approve, and track usage. Presence • roles • token balance — Linear-grade density. Cap: 500 members & 500 terms per team.</div>
           </div>
-          <button style={{ ...s.btn("primary"), borderRadius:10, padding:"10px 18px", boxShadow:"0 8px 20px rgba(15,118,110,0.18)" }} onClick={()=>setShowInvite(v=>!v)}>+ Invite member</button>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            <button style={{ ...s.btn("primary"), borderRadius:10, padding:"10px 18px", boxShadow:"0 8px 20px rgba(15,118,110,0.18)" }} onClick={()=>setShowInvite(v=>!v)}>+ Invite member</button>
+            {user?.is_admin && members.filter(m=>m.is_admin).length > 1 && (
+              <button style={{ ...s.btn("secondary"), borderRadius:10, padding:"10px 14px" }} onClick={declineLeader} title="Decline your leader role — requires at least 1 other leader">Decline leader</button>
+            )}
+            <button style={{ ...s.btn("secondary"), borderRadius:10, padding:"10px 14px", color:"#dc2626", border:"1px solid #fecdd3" }} onClick={leaveTeam}>Leave team</button>
+          </div>
         </div>
+      </div>
+      <div style={{ fontSize:11, color:"#64748b", marginTop:8, display:"flex", gap:12, flexWrap:"wrap" }}>
+        <span>Team can have multiple leaders — {members.filter(m=>m.is_admin).length} leader{members.filter(m=>m.is_admin).length!==1?"s":""} • {members.length} total</span>
+        <span>Leader can promote any member via Role select → Admin — no transfer, both stay leaders</span>
       </div>
       {error && <div style={{ ...s.alert("error"), marginBottom:12 }}>{error}</div>}
       {success && <div style={{ ...s.alert("success"), marginBottom:12 }}>{success}</div>}
@@ -46,7 +63,7 @@ export default function TeamView({ user }: { user: UserOut | null }) {
       <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
         <div style={{ position:"relative", flex:"1 1 260px", minWidth:240 }}>
           <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", color:"#8a9bb0", fontSize:12 }}></span>
-          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Filter by name or email… (F)" style={{ ...s.input, paddingLeft:34, marginBottom:0, borderRadius:10, background:"#fff" }}/>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Filter by email… (F)" style={{ ...s.input, paddingLeft:34, marginBottom:0, borderRadius:10, background:"#fff" }}/>
         </div>
         <div style={{ display:"flex", background:"#eef3f8", borderRadius:999, padding:3, gap:2 }}>
           {[
@@ -80,6 +97,27 @@ export default function TeamView({ user }: { user: UserOut | null }) {
           <div style={{ fontSize:11, color:"#64748b", marginTop:10 }}>Secure link to set password • Expires in 24h • SCIM-ready</div>
         </div>
       )}
+
+      {/* Find & add existing user by email */}
+      <div style={{ ...s.card, marginBottom:14, borderColor:"#cbd5e1", background:"#fff" }}>
+        <div style={s.sectionTitle}>Add existing user by email</div>
+        <div style={{ fontSize:12, color:"#64748b", marginBottom:10 }}>Find is by email only — enter exact work email, lookup, then add to this team.</div>
+        <form onSubmit={handleLookupByEmail} style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"end" }}>
+          <div style={{ flex:"1 1 260px" }}><label style={s.label}>Work email</label><input type="email" style={s.input} placeholder="jane@company.com" value={lookupEmail} onChange={e=>setLookupEmail(e.target.value)} required/></div>
+          <button type="submit" style={{ ...s.btn("secondary"), height:42, padding:"0 16px" }} disabled={lookupLoading}>{lookupLoading?"Searching…":"Find by email"}</button>
+        </form>
+        {lookupError && <div style={{ ...s.alert("error"), marginTop:10, fontSize:12 }}>{lookupError}</div>}
+        {lookupResult && (
+          <div style={{ marginTop:12, padding:12, border:"1px solid #e2e8f0", borderRadius:10, background:"#f8fafc", display:"flex", justifyContent:"space-between", gap:12, flexWrap:"wrap", alignItems:"center" }}>
+            <div>
+              <div style={{ fontWeight:800, color:"#102033", fontSize:13 }}>{lookupResult.full_name}</div>
+              <div style={{ fontSize:12, color:"#64748b" }}>{lookupResult.email} {lookupResult.is_admin ? "• Admin" : "• Member"}</div>
+              <div style={{ fontSize:11, color:"#7b8a9d" }}>ID: {lookupResult.id.slice(0,8)}… {lookupResult.email_verified ? "• verified" : ""}</div>
+            </div>
+            <button onClick={handleAddExisting} disabled={addingExisting} style={{ ...s.btn("primary"), padding:"8px 16px", borderRadius:8 }}>{addingExisting?"Adding…":"Add to team"}</button>
+          </div>
+        )}
+      </div>
 
       {/* Members — Linear table */}
       <div style={{ ...s.card, padding:0, overflow:"hidden" }}>

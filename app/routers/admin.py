@@ -22,9 +22,35 @@ settings = get_settings()
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
+TEAM_MEMBER_CAP = 500
+TEAM_TERMS_CAP = 500  # terms = managed skills + org terms per team
+
 def require_org_admin(user: User) -> None:
     if not user.is_admin or not user.org_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_t("admin.access_required"))
+
+async def _check_team_member_cap(db: AsyncSession, org_id: str) -> None:
+    from app.models import OrgMembership
+    # Count via primary org_id + membership
+    cnt_res = await db.execute(select(func.count()).select_from(User).where(User.org_id == org_id))
+    primary_cnt = cnt_res.scalar() or 0
+    mem_cnt_res = await db.execute(select(func.count()).select_from(OrgMembership).where(OrgMembership.org_id == org_id))
+    mem_cnt = mem_cnt_res.scalar() or 0
+    # Deduplicate: users counted in both primary and membership
+    # For cap, use max of sum with dedup estimate via distinct user_ids
+    distinct_res = await db.execute(select(func.count(func.distinct(User.id))).select_from(User).outerjoin(OrgMembership, (OrgMembership.user_id == User.id) & (OrgMembership.org_id == org_id)).where((User.org_id == org_id) | (OrgMembership.org_id == org_id)))
+    distinct_cnt = distinct_res.scalar() or 0
+    # Fallback to max if distinct fails
+    total = distinct_cnt if distinct_cnt else max(primary_cnt, mem_cnt)
+    if total >= TEAM_MEMBER_CAP:
+        raise HTTPException(status_code=400, detail=f"Team member cap reached — max {TEAM_MEMBER_CAP} members per team.")
+
+async def _check_team_terms_cap(db: AsyncSession, org_id: str) -> None:
+    from app.models import ManagedSkill
+    cnt_res = await db.execute(select(func.count()).select_from(ManagedSkill).where(ManagedSkill.org_id == org_id))
+    cnt = cnt_res.scalar() or 0
+    if cnt >= TEAM_TERMS_CAP:
+        raise HTTPException(status_code=400, detail=f"Team terms cap reached — max {TEAM_TERMS_CAP} terms per team.")
 
 
 @router.post("/users/invite", response_model=UserOut)
@@ -34,6 +60,7 @@ async def invite_user(
     db: AsyncSession = Depends(get_db),
 ):
     require_org_admin(current_user)
+    await _check_team_member_cap(db, current_user.org_id)
 
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
@@ -50,11 +77,18 @@ async def invite_user(
     )
     db.add(user)
     await db.flush()
+    # Also add to membership table for multi-team support
+    try:
+        from app.models import OrgMembership
+        db.add(OrgMembership(user_id=user.id, org_id=current_user.org_id, role="admin" if body.is_admin else "member"))
+        # Ensure inviter has membership entry for current org
+        mem_check = await db.execute(select(OrgMembership).where(OrgMembership.user_id == current_user.id, OrgMembership.org_id == current_user.org_id))
+        if not mem_check.scalar_one_or_none():
+            db.add(OrgMembership(user_id=current_user.id, org_id=current_user.org_id, role="admin" if current_user.is_admin else "member"))
+    except Exception:
+        pass
 
-    # Admin transfer: inviting someone as admin hands over the role
-    if body.is_admin:
-        current_user.is_admin = False
-
+    # Multi-leader: inviting as admin does NOT demote inviter — team can have multiple leaders
     await ensure_wallet(db, user.id)
 
     raw = await create_auth_token(
@@ -68,15 +102,83 @@ async def invite_user(
 
     return user
 
+@router.get("/users/lookup", response_model=UserOut)
+async def lookup_user_by_email(
+    current_user: CurrentUser,
+    email: str = Query(..., description="Exact email to find"),
+    db: AsyncSession = Depends(get_db),
+):
+    require_org_admin(current_user)
+    clean = email.strip().lower()
+    result = await db.execute(select(User).where(User.email == clean))
+    user = result.scalar_one_or_none()
+    if not user:
+        result2 = await db.execute(select(User).where(User.email.ilike(clean)))
+        user = result2.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found by email")
+    return user
+
+
+@router.post("/users/add-existing", response_model=UserOut)
+async def add_existing_to_team(
+    body: dict,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Add an existing user (found by email) to current org team — multi-team: keeps primary org, adds membership."""
+    require_org_admin(current_user)
+    await _check_team_member_cap(db, current_user.org_id)
+    email = (body.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Valid email required")
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if not user:
+        result2 = await db.execute(select(User).where(User.email.ilike(email)))
+        user = result2.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found by email")
+    from app.models import OrgMembership
+    # Check if already member via membership or primary org_id
+    mem_check = await db.execute(select(OrgMembership).where(OrgMembership.user_id == user.id, OrgMembership.org_id == current_user.org_id))
+    already_member = mem_check.scalar_one_or_none() is not None or user.org_id == current_user.org_id
+    if already_member:
+        raise HTTPException(status_code=409, detail="User already in team")
+    # Add membership only — keep primary org_id as is for multi-team (do not overwrite)
+    # If user has no org, set primary
+    if not user.org_id:
+        user.org_id = current_user.org_id
+    user.is_active = True
+    try:
+        # Add membership as member (leader can promote via update)
+        db.add(OrgMembership(user_id=user.id, org_id=current_user.org_id, role="member"))
+        # Ensure inviter also has membership
+        inviter_mem = await db.execute(select(OrgMembership).where(OrgMembership.user_id == current_user.id, OrgMembership.org_id == current_user.org_id))
+        if not inviter_mem.scalar_one_or_none():
+            db.add(OrgMembership(user_id=current_user.id, org_id=current_user.org_id, role="admin" if current_user.is_admin else "member"))
+    except Exception:
+        pass
+    await db.flush()
+    return user
+
+
 @router.get("/users", response_model=list[UserOut])
 async def list_org_users(current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
     require_org_admin(current_user)
+    from app.models import OrgMembership
+    # Users in team via primary org_id OR membership (multi-team)
     result = await db.execute(
         select(User)
-        .where(User.org_id == current_user.org_id)
+        .where(
+            (User.org_id == current_user.org_id) |
+            (User.id.in_(select(OrgMembership.user_id).where(OrgMembership.org_id == current_user.org_id)))
+        )
         .order_by(User.created_at.desc())
     )
-    return result.scalars().all()
+    # Deduplicate by id (in case both)
+    users = {u.id: u for u in result.scalars().all()}
+    return list(users.values())
 
 
 @router.patch("/users/{user_id}", response_model=UserOut)
@@ -87,21 +189,55 @@ async def update_org_user(
     db: AsyncSession = Depends(get_db),
 ):
     require_org_admin(current_user)
+    from app.models import OrgMembership
     user = await db.get(User, user_id)
-    if not user or user.org_id != current_user.org_id:
+    # Check membership via primary or join table (multi-team)
+    is_member = False
+    if user:
+        if user.org_id == current_user.org_id:
+            is_member = True
+        else:
+            mem_check = await db.execute(select(OrgMembership).where(OrgMembership.user_id == user_id, OrgMembership.org_id == current_user.org_id))
+            if mem_check.scalar_one_or_none():
+                is_member = True
+    if not user or not is_member:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_t("admin.user_not_found"))
 
-    if user.id == current_user.id and body.is_admin is False:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_t("admin.cannot_remove_own_admin"))
     if user.id == current_user.id and body.is_active is False:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_t("admin.cannot_disable_self"))
 
-    for field, value in body.model_dump(exclude_none=True).items():
-        setattr(user, field, value)
+    # Per-team role: update membership role if is_admin changed — allow multiple leaders
+    if body.is_admin is not None:
+        # If demoting (is_admin False), ensure at least 1 other leader remains
+        if body.is_admin is False:
+            # Count admins in this team
+            admin_cnt_res = await db.execute(select(OrgMembership).where(OrgMembership.org_id == current_user.org_id, OrgMembership.role == "admin"))
+            admins = admin_cnt_res.scalars().all()
+            # Also count primary org admins without membership entry
+            primary_admins = await db.execute(select(User).where(User.org_id == current_user.org_id, User.is_admin == True))
+            primary_admin_ids = {u.id for u in primary_admins.scalars().all()}
+            # Combine
+            all_admin_ids = {m.user_id for m in admins} | primary_admin_ids
+            # If demoting this user and they are the only admin, block
+            if user_id in all_admin_ids and len(all_admin_ids) == 1:
+                raise HTTPException(status_code=400, detail="Cannot demote: team must have at least 1 leader. Assign another leader first.")
+            if user.id == current_user.id and len(all_admin_ids) == 1 and user_id in all_admin_ids:
+                raise HTTPException(status_code=400, detail="Cannot decline leader role: you are the only leader. Assign another first.")
+        mem = await db.execute(select(OrgMembership).where(OrgMembership.user_id == user_id, OrgMembership.org_id == current_user.org_id))
+        membership = mem.scalar_one_or_none()
+        if membership:
+            membership.role = "admin" if body.is_admin else "member"
+        elif body.is_admin:
+            db.add(OrgMembership(user_id=user_id, org_id=current_user.org_id, role="admin"))
+        elif body.is_admin is False and not membership:
+            # Demoting a user with no membership entry but primary org — just update User.is_admin
+            pass
+        if user.org_id == current_user.org_id:
+            user.is_admin = body.is_admin
+        # Multi-leader: do NOT demote current user when promoting another — team can have multiple leaders
 
-    # Admin transfer: promoting another user to admin hands over the role
-    if body.is_admin and user.id != current_user.id:
-        current_user.is_admin = False
+    if body.is_active is not None:
+        user.is_active = body.is_active
 
     await db.flush()
     return user
@@ -112,17 +248,74 @@ async def remove_org_user(user_id: str, current_user: CurrentUser, db: AsyncSess
     require_org_admin(current_user)
     if user_id == current_user.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_t("admin.cannot_remove_self"))
+    from app.models import OrgMembership
     user = await db.get(User, user_id)
-    if not user or user.org_id != current_user.org_id:
+    # Check membership
+    is_member = False
+    if user:
+        if user.org_id == current_user.org_id:
+            is_member = True
+        else:
+            mem_check = await db.execute(select(OrgMembership).where(OrgMembership.user_id == user_id, OrgMembership.org_id == current_user.org_id))
+            if mem_check.scalar_one_or_none():
+                is_member = True
+    if not user or not is_member:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_t("admin.user_not_found"))
-    user.org_id = None
-    user.is_admin = False
+    # Remove membership
+    mem = await db.execute(select(OrgMembership).where(OrgMembership.user_id == user_id, OrgMembership.org_id == current_user.org_id))
+    membership = mem.scalar_one_or_none()
+    was_admin = False
+    if membership:
+        was_admin = (membership.role == "admin")
+        await db.delete(membership)
+    elif user.org_id == current_user.org_id and user.is_admin:
+        was_admin = True
+    # If primary org is this team, switch primary to another membership or clear
+    if user.org_id == current_user.org_id:
+        other_mem = await db.execute(select(OrgMembership).where(OrgMembership.user_id == user_id).limit(1))
+        other = other_mem.scalar_one_or_none()
+        if other:
+            user.org_id = other.org_id
+            user.is_admin = (other.role == "admin")
+        else:
+            user.org_id = None
+            user.is_admin = False
     await db.flush()
+    # If removed user was a leader, ensure team still has at least 1 leader — auto-promote if needed
+    if was_admin:
+        # Count remaining admins in this team
+        admin_mems = await db.execute(select(OrgMembership).where(OrgMembership.org_id == current_user.org_id, OrgMembership.role == "admin"))
+        remaining_admins = admin_mems.scalars().all()
+        # Also count primary org admins (users with org_id == team and is_admin True but no membership)
+        primary_admins_res = await db.execute(select(User).where(User.org_id == current_user.org_id, User.is_admin == True))
+        primary_admins = primary_admins_res.scalars().all()
+        total_admins = len(remaining_admins) + len(primary_admins)
+        # If no admin left, promote someone: prefer previous leader (oldest membership) else random member
+        if total_admins == 0:
+            # Find a member to promote — oldest membership
+            cand_mem = await db.execute(select(OrgMembership).where(OrgMembership.org_id == current_user.org_id).order_by(OrgMembership.created_at).limit(1))
+            candidate = cand_mem.scalar_one_or_none()
+            if candidate:
+                candidate.role = "admin"
+                # If their primary org is this team, also set is_admin
+                cand_user = await db.get(User, candidate.user_id)
+                if cand_user and cand_user.org_id == current_user.org_id:
+                    cand_user.is_admin = True
+            else:
+                # No membership — pick a primary user in this team (oldest)
+                cand_user_res = await db.execute(select(User).where(User.org_id == current_user.org_id).order_by(User.created_at).limit(1))
+                cand_user = cand_user_res.scalar_one_or_none()
+                if cand_user:
+                    cand_user.is_admin = True
+                    # Also create membership for them as admin for consistency
+                    db.add(OrgMembership(user_id=cand_user.id, org_id=current_user.org_id, role="admin"))
+            await db.flush()
 
 
 @router.get("/users/stats", response_model=list[AdminUserStats])
 async def user_stats(current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
     require_org_admin(current_user)
+    from app.models import OrgMembership
     result = await db.execute(
         select(
             User,
@@ -133,20 +326,34 @@ async def user_stats(current_user: CurrentUser, db: AsyncSession = Depends(get_d
         )
         .outerjoin(TokenWallet, TokenWallet.user_id == User.id)
         .outerjoin(APIKey, APIKey.owner_id == User.id)
-        .where(User.org_id == current_user.org_id)
+        .where(
+            (User.org_id == current_user.org_id) |
+            (User.id.in_(select(OrgMembership.user_id).where(OrgMembership.org_id == current_user.org_id)))
+        )
         .group_by(User.id, TokenWallet.balance_tokens, TokenWallet.tokens_used_lifetime)
         .order_by(User.created_at.desc())
     )
-    return [
-        AdminUserStats(
+    # For multi-team, is_admin is per-team via membership; override global is_admin for display
+    # Fetch membership roles for this org
+    mem_result = await db.execute(select(OrgMembership.user_id, OrgMembership.role).where(OrgMembership.org_id == current_user.org_id))
+    role_map = {uid: role for uid, role in mem_result.all()}
+    rows = result.all()
+    out = []
+    for u, bal, used, reqs, blocked in rows:
+        per_team_admin = role_map.get(u.id)
+        if per_team_admin is not None:
+            is_admin = (per_team_admin == "admin")
+        else:
+            # No membership entry — fallback to primary org's global flag
+            is_admin = bool(u.is_admin and u.org_id == current_user.org_id)
+        out.append(AdminUserStats(
             id=u.id, email=u.email, full_name=u.full_name,
-            is_admin=u.is_admin, is_active=u.is_active,
+            is_admin=is_admin, is_active=u.is_active,
             last_login=u.last_login,
             tokens_balance=bal or 0, tokens_used=used or 0,
             total_requests=int(reqs), total_blocked=int(blocked),
-        )
-        for u, bal, used, reqs, blocked in result.all()
-    ]
+        ))
+    return out
 
 
 @router.get("/api-keys", response_model=list[APIKeyOut])

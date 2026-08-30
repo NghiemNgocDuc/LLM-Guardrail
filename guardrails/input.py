@@ -210,6 +210,16 @@ class InputGuardrail:
                     risk_score=0.85,
                     flagged_content=[p["name"]],
                 )
+        # Phase 2 fallback: heuristic NER for person names (wl1) if regex found nothing
+        try:
+            from guardrails.pii_redactor import PIIRedactor
+            rr = PIIRedactor().redact(prompt)
+            if rr.pii_found:
+                if is_logs_only:
+                    return GuardrailResult(allowed=True, warned=True, check="PII Detection", reason=_t_or("guardrail.pii_detected", "PII detected: {name}", name=",".join(rr.pii_types)), reason_code="warned_pii_detected", risk_score=0.5, flagged_content=rr.pii_types)
+                return GuardrailResult(allowed=False, check="PII Detection", reason=_t_or("guardrail.pii_detected", "PII detected: {name}", name=",".join(rr.pii_types)), reason_code="pii_detected", risk_score=0.85, flagged_content=rr.pii_types)
+        except Exception:
+            pass
         return GuardrailResult(allowed=True, check="PII Detection")
 
     def _check_secrets(self, prompt: str) -> GuardrailResult:

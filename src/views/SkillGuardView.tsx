@@ -13,14 +13,17 @@ interface AgentDef {
   updatedAt?: string;
 }
 
-const LIVE_SKILLS_KEY = "ag_live_skills";
-
-function loadLiveSkills(): Record<string, AgentDef> {
-  try { return JSON.parse(localStorage.getItem(LIVE_SKILLS_KEY) || "null") || {}; }
-  catch { return {}; }
+interface ManagedSkillOut {
+  slug: string; name: string; description: string;
+  version: number; hash: string; full_hash: string;
+  update_mode: string; updated_at?: string; created_at?: string;
+  content_preview?: string;
 }
-function saveLiveSkills(obj: Record<string, AgentDef>) {
-  localStorage.setItem(LIVE_SKILLS_KEY, JSON.stringify(obj));
+
+interface Conflict {
+  type: string; severity: string; reason: string; reason_code: string;
+  evidence: string; conflicting_skill_slug?: string | null;
+  remediation?: string; line_number?: number | null;
 }
 
 const DEFAULT_AGENTS: Record<string, AgentDef> = {
@@ -63,116 +66,192 @@ Transform structured data between formats (JSON, CSV, YAML).
   },
 };
 
-/** Serve the current live skills for an agent slug (simulated endpoint) */
-function buildLiveContent(slug: string, agentDef: AgentDef, liveUrl: string) {
-  const now = new Date().toISOString().slice(0, 10);
-  return `---
-# AI Guardrails — Live Skill File
-# This file is a permanent pointer. Skills auto-update from your dashboard.
-# You NEVER need to re-download this file.
-name: ${slug}
-description: ${agentDef.description || ""}
-live_url: ${liveUrl}
-fetched_at: always-fresh
----
-
->  **Auto-updating skill file** — Do not edit the content below manually.
-> This agent always fetches the latest skills from your AI Guardrails dashboard.
-> Update skills in the dashboard and they take effect immediately — no re-download needed.
-
-## How this works
-
-1. Your agent reads this file on startup.
-2. It fetches the live skills from the URL above.
-3. You edit skills in the Skill Guard dashboard.
-4. Next time your agent starts, it automatically gets the new skills.
-
-## Live Skills Endpoint
-
-\`\`\`
-${liveUrl}
-\`\`\`
-
-<!-- For Cursor / AI agents that support @url auto-fetch: ---
-@url ${liveUrl}
-
----
-<!-- === CACHED SNAPSHOT (as of ${now}) ===
-     The content below is a fallback used if the live URL is unreachable.
-     The live endpoint always takes priority. ---
-
-${agentDef.content}
-`;
-}
-
-
 export default function SkillGuardView() {
-  // Live skills state
-  const [liveSkills, setLiveSkillsState] = useState<Record<string, AgentDef>>(() => ({
-    ...DEFAULT_AGENTS,
-    ...loadLiveSkills(),
-  }));
+  // Managed skills (backend) — replaces localStorage
+  const [managed, setManaged] = useState<ManagedSkillOut[]>([]);
+  const [managedLoading, setManagedLoading] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState("agent_b");
   const [editingContent, setEditingContent] = useState("");
   const [editingName, setEditingName] = useState("");
   const [editingDesc, setEditingDesc] = useState("");
+  const [editingUpdateMode, setEditingUpdateMode] = useState<"overwrite"|"versioned">("overwrite");
   const [livePanel, setLivePanel] = useState(false);
   const [newAgentSlug, setNewAgentSlug] = useState("");
   const [copiedUrl, setCopiedUrl] = useState<string | false>(false);
+  const [saving, setSaving] = useState(false);
+  // download mode chooser — before download user picks overwrite vs versioned
+  const [downloadMode, setDownloadMode] = useState<"overwrite"|"versioned">("overwrite");
+  // conflict state
+  const [conflictResult, setConflictResult] = useState<null | { has_conflict: boolean; blocked_by_policy: boolean; summary: string; conflicts: Conflict[] }>(null);
+  const [conflictChecking, setConflictChecking] = useState(false);
+  const [conflictError, setConflictError] = useState("");
 
-  // Load editor when agent changes
+  const loadManaged = useCallback(async () => {
+    setManagedLoading(true);
+    try {
+      const data = await api<ManagedSkillOut[]>("/skills/managed");
+      setManaged(data);
+      // seed default if empty — show DEFAULT_AGENTS as fallback but also allow creating
+      if (data.length === 0) {
+        // keep selectedAgent as agent_b but editor will show default content
+        if (DEFAULT_AGENTS[selectedAgent]) {
+          setEditingContent(DEFAULT_AGENTS[selectedAgent].content);
+          setEditingName(DEFAULT_AGENTS[selectedAgent].name);
+          setEditingDesc(DEFAULT_AGENTS[selectedAgent].description);
+        }
+      } else if (!data.find(m => m.slug === selectedAgent)) {
+        setSelectedAgent(data[0].slug);
+      }
+    } catch (e) {
+      // fallback to local default view if backend not yet migrated
+      setManaged([]);
+    } finally { setManagedLoading(false); }
+  }, [selectedAgent]);
+
+  useEffect(() => { loadManaged(); }, [loadManaged]);
+
+  // Load editor when agent changes (from backend or default)
   useEffect(() => {
-    const ag = liveSkills[selectedAgent];
-    if (ag) {
-      setEditingContent(ag.content || "");
-      setEditingName(ag.name || selectedAgent);
-      setEditingDesc(ag.description || "");
+    const m = managed.find(x => x.slug === selectedAgent);
+    if (m) {
+      // fetch full content
+      api<any>(`/skills/managed/${selectedAgent}`).then(full => {
+        setEditingContent(full.content || "");
+        setEditingName(full.name || selectedAgent);
+        setEditingDesc(full.description || "");
+        setEditingUpdateMode((full.update_mode === "versioned" ? "versioned" : "overwrite"));
+        setDownloadMode((full.update_mode === "versioned" ? "versioned" : "overwrite"));
+        setConflictResult(null);
+      }).catch(() => {
+        // fallback
+        setEditingContent(m.content_preview || "");
+      });
+    } else if (DEFAULT_AGENTS[selectedAgent]) {
+      setEditingContent(DEFAULT_AGENTS[selectedAgent].content);
+      setEditingName(DEFAULT_AGENTS[selectedAgent].name);
+      setEditingDesc(DEFAULT_AGENTS[selectedAgent].description);
+      setEditingUpdateMode("overwrite");
+      setDownloadMode("overwrite");
     }
-  }, [selectedAgent, liveSkills]);
+  }, [selectedAgent, managed]);
 
-  function persistSkills(updated: Record<string, AgentDef>) {
-    setLiveSkillsState(updated);
-    // Save only user-defined entries (exclude defaults that haven't changed)
-    saveLiveSkills(updated);
+  async function checkConflicts() {
+    if (!editingContent.trim()) { setConflictError("Content is empty"); return; }
+    setConflictChecking(true); setConflictError(""); setConflictResult(null);
+    try {
+      const res = await api<any>(`/skills/managed/check-conflict`, {
+        method: "POST",
+        body: { content: editingContent, exclude_slug: managed.find(m=>m.slug===selectedAgent) ? selectedAgent : "" }
+      });
+      setConflictResult(res);
+    } catch (e) { setConflictError(e instanceof Error ? e.message : String(e)); }
+    finally { setConflictChecking(false); }
   }
 
-  function saveCurrentAgent() {
-    const updated: Record<string, AgentDef> = {
-      ...liveSkills,
-      [selectedAgent]: {
-        ...liveSkills[selectedAgent],
-        name: editingName || selectedAgent,
-        description: editingDesc,
-        content: editingContent,
-        updatedAt: new Date().toISOString(),
-      },
-    };
-    persistSkills(updated);
-    setInfo("Skills saved. The live URL now serves the updated version.");
+  // Identical-block scan — leader checks if same block already exists (e.g. ChatGPT sk- key already blocked)
+  const [identicalResult, setIdenticalResult] = useState<any>(null);
+  const [identicalChecking, setIdenticalChecking] = useState(false);
+  const [identicalError, setIdenticalError] = useState("");
+  async function checkIdenticalBlock() {
+    if (!editingContent.trim()) { setIdenticalError("Content is empty"); return; }
+    setIdenticalChecking(true); setIdenticalError(""); setIdenticalResult(null);
+    try {
+      const res = await api<any>(`/skills/managed/check-identical-block`, {
+        method: "POST",
+        body: { content: editingContent }
+      });
+      setIdenticalResult(res);
+    } catch (e) { setIdenticalError(e instanceof Error ? e.message : String(e)); }
+    finally { setIdenticalChecking(false); }
+  }
+
+  // Test new block — auto-generates cases and runs them, proves block actually fires
+  const [testResult, setTestResult] = useState<any>(null);
+  const [testRunning, setTestRunning] = useState(false);
+  const [testError, setTestError] = useState("");
+  async function testNewBlock() {
+    if (!editingContent.trim()) { setTestError("Content is empty"); return; }
+    setTestRunning(true); setTestError(""); setTestResult(null);
+    try {
+      const res = await api<any>(`/skills/managed/test-new-block`, {
+        method: "POST",
+        body: { content: editingContent }
+      });
+      setTestResult(res);
+    } catch (e) { setTestError(e instanceof Error ? e.message : String(e)); }
+    finally { setTestRunning(false); }
+  }
+  async function testExistingBlock() {
+    if (!managed.find(m=>m.slug===selectedAgent)) { setTestError("Save first, then test stored block"); return; }
+    setTestRunning(true); setTestError(""); setTestResult(null);
+    try {
+      const res = await api<any>(`/skills/managed/${selectedAgent}/test-block`, { method: "POST" });
+      setTestResult(res);
+    } catch (e) { setTestError(e instanceof Error ? e.message : String(e)); }
+    finally { setTestRunning(false); }
+  }
+
+  const [askForNewSkill, setAskForNewSkill] = useState<any>(null);
+  async function saveCurrentAgent() {
+    if (!editingContent.trim()) { setError("Content cannot be empty"); return; }
+    setSaving(true); setError(""); setInfo("");
+    // Instead of auto-block, ask them — check conflict first
+    try {
+      const res = await api<any>(`/skills/managed/check-conflict`, {
+        method: "POST",
+        body: { content: editingContent, exclude_slug: managed.find(m=>m.slug===selectedAgent) ? selectedAgent : "" }
+      });
+      setConflictResult(res);
+      if (res.has_conflict) {
+        // Ask instead of auto-block
+        setAskForNewSkill(res);
+        setSaving(false);
+        return;
+      }
+    } catch { /* ignore conflict check failure — still try save */ }
+
+    const exists = managed.find(m => m.slug === selectedAgent);
+    try {
+      if (exists) {
+        await api(`/skills/managed/${selectedAgent}`, {
+          method: "PUT",
+          body: { name: editingName, description: editingDesc, content: editingContent, update_mode: editingUpdateMode }
+        });
+        setInfo(`Skills saved. ${selectedAgent} is now v${exists.version + 1}. Download will ${editingUpdateMode === "overwrite" ? "overwrite" : "create a versioned file"}.`);
+      } else {
+        await api(`/skills/managed`, {
+          method: "POST",
+          body: { slug: selectedAgent, name: editingName, description: editingDesc, content: editingContent, update_mode: editingUpdateMode }
+        });
+        setInfo(`Skill ${selectedAgent} created. Download mode: ${editingUpdateMode}.`);
+      }
+      await loadManaged();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setSaving(false); }
   }
 
   function addNewAgent() {
-    const slug = newAgentSlug.trim().toLowerCase().replace(/\s+/g, "_");
-    if (!slug || liveSkills[slug]) return;
-    const updated: Record<string, AgentDef> = {
-      ...liveSkills,
-      [slug]: {
-        name: slug,
-        description: "New agent",
-        content: `# ${slug} — Skill Definitions\n\n## Approved Skills\n\n### task_name\nDescribe what this skill does.\n- Rule 1\n- Rule 2\n`,
-      },
-    };
-    persistSkills(updated);
+    const slug = newAgentSlug.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_-]/g, "");
+    if (!slug || managed.find(m=>m.slug===slug) || DEFAULT_AGENTS[slug]) { setError("Invalid or duplicate slug"); return; }
     setSelectedAgent(slug);
+    setEditingName(slug);
+    setEditingDesc("New agent");
+    setEditingContent(`# ${slug} — Skill Definitions\n\n## Approved Skills\n\n### task_name\nDescribe what this skill does.\n- Rule 1\n- Rule 2\n`);
+    setEditingUpdateMode("overwrite");
     setNewAgentSlug("");
+    setLivePanel(true);
+    setConflictResult(null);
   }
 
-  function deleteAgent(slug: string) {
+  async function deleteAgent(slug: string) {
     if (!confirm(`Delete agent "${slug}"?`)) return;
-    const updated = { ...liveSkills };
-    delete updated[slug];
-    persistSkills(updated);
-    setSelectedAgent(Object.keys(updated)[0] || "");
+    try {
+      await api(`/skills/managed/${slug}`, { method: "DELETE" });
+      setInfo(`Deleted ${slug}`);
+      await loadManaged();
+      const remaining = managed.filter(m=>m.slug!==slug);
+      setSelectedAgent(remaining[0]?.slug || "agent_b");
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
 
   function getLiveUrl(slug: string) {
@@ -181,24 +260,50 @@ export default function SkillGuardView() {
     return `${base}/skills/live/${slug}${key ? `?key=${key.slice(0, 8)}…` : ""}`;
   }
 
-  function downloadLiveMd(slug: string) {
-    const ag = liveSkills[slug];
-    if (!ag) return;
-    const liveUrl = getLiveUrl(slug).replace(/…$/, "").replace(/\?key=.*/, (m) => m.slice(0, m.indexOf("…") + 1));
-    const realKey = getGatewayKey();
+  async function downloadLiveMd(slug: string) {
     const base = BASE_URL || window.location.origin;
-    const fullUrl = `${base}/skills/live/${slug}${realKey ? `?key=${realKey}` : ""}`;
-    const content = buildLiveContent(slug, ag, fullUrl);
-    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${slug}.md`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    setInfo(`Downloaded ${slug}.md — this file never needs updating. Edit skills here and the agent auto-refreshes.`);
+    const url = `${base}/skills/managed/${slug}/download?mode=${downloadMode}`;
+    try {
+      // Try authenticated download via api helper (adds Bearer); fallback to public live URL
+      let text: string;
+      try {
+        const res = await fetch(url, { credentials: "include" } as any);
+        if (res.ok) {
+          text = await res.text();
+        } else {
+          // fallback to public live endpoint if auth fails (demo mode)
+          const liveText = await fetch(`${base}/skills/live/${slug}?mode=${downloadMode}`).then(r=>r.text());
+          text = liveText;
+        }
+      } catch {
+        const liveText = await fetch(`${base}/skills/live/${slug}?mode=${downloadMode}`).then(r=>r.text());
+        text = liveText;
+      }
+      if (!text || !text.includes("managed_by")) {
+        // try via api() wrapper which injects Authorization header
+        try {
+          const resp = await fetch(`${base}/skills/managed/${slug}/download?mode=${downloadMode}`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem("clerk_token") || ""}` },
+          });
+          if (resp.ok) text = await resp.text();
+        } catch { /* ignore */ }
+      }
+      const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      // filename respects mode: overwrite -> slug.md, versioned -> slug.vN.md
+      const m = managed.find(x=>x.slug===slug);
+      const ver = m?.version || 1;
+      a.download = downloadMode === "overwrite" ? `${slug}.md` : `${slug}.v${ver}.md`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+      setInfo(`Downloaded ${a.download} (${downloadMode} mode) — ${downloadMode==="overwrite" ? "place at .cursor/skills/"+slug+"/SKILL.md and overwrite" : "keep old file; new file is versioned"}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   function copyLiveUrl(slug: string) {
@@ -297,6 +402,9 @@ export default function SkillGuardView() {
     kept_rejected: "rate_limited",
   };
 
+  // derived list of slugs for tabs: managed slugs + default if not yet created
+  const allSlugs = Array.from(new Set([...managed.map(m=>m.slug), ...Object.keys(DEFAULT_AGENTS)]));
+
   return (
     <div>
       <div style={s.heroPanel}>
@@ -308,7 +416,6 @@ export default function SkillGuardView() {
               Unblock when you are satisfied — overrides are saved for git push and Cursor agents.
             </div>
           </div>
-          {/* Block all access toggle */}
           <div style={{
             display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6,
             background: blockAllAccess ? "rgba(254,205,211,0.35)" : "rgba(232,248,243,0.35)",
@@ -356,10 +463,8 @@ export default function SkillGuardView() {
       </div>
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap", marginTop: 8 }}>
         
-        {/* LEFT COLUMN: Tools (Live Skills & Add Manual Case) */}
         <div style={{ flex: "1 1 360px", display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
           
-          {/* -- LIVE SKILLS PANEL -- */}
           <div style={{ ...s.card, background: "linear-gradient(135deg,#f8fbff 0%,#f0fdf9 100%)", border: "1px solid #99f6e4" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <div>
@@ -374,9 +479,10 @@ export default function SkillGuardView() {
               >{livePanel ? " Collapse" : " Open editor"}</button>
             </div>
 
-            {/* Agent selector tabs */}
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: livePanel ? 16 : 0 }}>
-              {Object.keys(liveSkills).map((slug) => (
+              {allSlugs.map((slug) => {
+                const m = managed.find(x=>x.slug===slug);
+                return (
                 <button
                   key={slug}
                   onClick={() => { setSelectedAgent(slug); setLivePanel(true); }}
@@ -384,8 +490,9 @@ export default function SkillGuardView() {
                     ...s.btn(selectedAgent === slug && livePanel ? "primary" : "secondary"),
                     fontSize: 12, padding: "6px 12px",
                   }}
-                >{slug}</button>
-              ))}
+                >{slug}{m ? ` v${m.version}` : ""}</button>
+                );
+              })}
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <input
                   style={{ ...s.input, width: 130, padding: "6px 10px", fontSize: 12 }}
@@ -398,27 +505,35 @@ export default function SkillGuardView() {
               </div>
             </div>
 
-            {livePanel && liveSkills[selectedAgent] && (
+            {livePanel && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 4 }}>
 
-                {/* Live URL banner */}
                 <div style={{
                   background: "#fff", border: "1px solid #6ee7b7", borderRadius: 8, padding: "12px 16px",
                   display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
                 }}>
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 800, color: "#0f766e", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 3 }}>
-                      Live URL
+                      Live URL {managed.find(m=>m.slug===selectedAgent) ? `(v${managed.find(m=>m.slug===selectedAgent)?.version})` : "(not yet saved)"}
                     </div>
                     <code style={{ fontSize: 11, color: "#1e293b", wordBreak: "break-all", fontFamily: "ui-monospace, monospace" }}>
                       {getLiveUrl(selectedAgent)}
                     </code>
                   </div>
-                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
                     <button
                       style={{ ...s.btn("secondary"), fontSize: 11, padding: "6px 12px" }}
                       onClick={() => copyLiveUrl(selectedAgent)}
                     >{copiedUrl === selectedAgent ? "Copied" : "Copy URL"}</button>
+                    <select
+                      value={downloadMode}
+                      onChange={e=>setDownloadMode(e.target.value as any)}
+                      style={{ ...s.input, fontSize: 11, padding: "6px 8px", width: 130 }}
+                      title="Choose download behavior: overwrite replaces existing file, versioned keeps old file"
+                    >
+                      <option value="overwrite">Overwrite</option>
+                      <option value="versioned">Versioned (keep old)</option>
+                    </select>
                     <button
                       id={`download-live-md-${selectedAgent}`}
                       style={{ ...s.btn("primary"), fontSize: 11, padding: "6px 12px" }}
@@ -426,9 +541,13 @@ export default function SkillGuardView() {
                     >Download</button>
                   </div>
                 </div>
+                <div style={{ fontSize: 11, color: "#607086", background: downloadMode==="overwrite" ? "#f0fdf4" : "#fffbeb", border: `1px solid ${downloadMode==="overwrite" ? "#86efac" : "#fde68a"}`, borderRadius: 6, padding: "8px 10px" }}>
+                  {downloadMode==="overwrite"
+                    ? `Overwrite mode: re-downloading will replace .cursor/skills/${selectedAgent}/SKILL.md (hash + version in frontmatter ensures safe overwrite).`
+                    : `Versioned mode: re-downloading will create .cursor/skills/${selectedAgent}/SKILL.v${managed.find(m=>m.slug===selectedAgent)?.version || 1}.md — old file is kept.`}
+                </div>
 
-                {/* Editor fields */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10 }}>
                   <div>
                     <label style={s.label}>Agent name</label>
                     <input style={s.input} value={editingName} onChange={(e) => setEditingName(e.target.value)} />
@@ -436,6 +555,13 @@ export default function SkillGuardView() {
                   <div>
                     <label style={s.label}>Description</label>
                     <input style={s.input} value={editingDesc} onChange={(e) => setEditingDesc(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={s.label}>Update mode</label>
+                    <select style={s.input} value={editingUpdateMode} onChange={e=>setEditingUpdateMode(e.target.value as any)}>
+                      <option value="overwrite">Overwrite (recommended)</option>
+                      <option value="versioned">Versioned (keep old)</option>
+                    </select>
                   </div>
                 </div>
 
@@ -449,23 +575,139 @@ export default function SkillGuardView() {
                   />
                 </div>
 
+                {/* Conflict checker + Identical-block scan */}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <button
+                    style={{ ...s.btn("secondary"), fontSize: 12 }}
+                    onClick={checkConflicts}
+                    disabled={conflictChecking}
+                  >{conflictChecking ? "Checking..." : "Check conflicts (API-key leak)"}</button>
+                  <button
+                    style={{ ...s.btn("secondary"), fontSize: 12, border: "1px solid #0ea5e9", color: "#0369a1" }}
+                    onClick={checkIdenticalBlock}
+                    disabled={identicalChecking}
+                    title="Leader: check if this block already exists (e.g. ChatGPT API key already blocked)"
+                  >{identicalChecking ? "Checking..." : "Check identical block"}</button>
+                  <button
+                    style={{ ...s.btn(testResult?.all_passed ? "secondary" : "secondary"), fontSize: 12, border: "1px solid #10b981", color: "#065f46", background: testResult?.all_passed ? "#ecfdf5" : "#fff" }}
+                    onClick={testNewBlock}
+                    disabled={testRunning}
+                    title="Auto-generates test cases from this skill and proves the new block actually fires"
+                  >{testRunning ? "Testing..." : "Test new block"}</button>
+                  <span style={{ fontSize: 11, color: "#64748b" }}>Generates + runs block verification tests.</span>
+                </div>
+                {conflictError && <div style={{ ...s.alert("error"), fontSize: 12 }}>{conflictError}</div>}
+                {conflictResult && (
+                  <div style={{
+                    border: `1px solid ${conflictResult.has_conflict ? (conflictResult.blocked_by_policy ? "#fecdd3" : "#fde68a") : "#86efac"}`,
+                    background: conflictResult.has_conflict ? (conflictResult.blocked_by_policy ? "#fff1f2" : "#fffbeb") : "#f0fdf4",
+                    borderRadius: 8, padding: 12
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: conflictResult.has_conflict ? (conflictResult.blocked_by_policy ? "#be123c" : "#92400e") : "#065f46" }}>
+                      {conflictResult.has_conflict ? (conflictResult.blocked_by_policy ? "Blocked — conflicts with API-key leak protection" : "Conflicts found") : "No conflicts"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#334155", marginTop: 4 }}>{conflictResult.summary}</div>
+                    {conflictResult.conflicts.map((c,i)=>(
+                      <div key={i} style={{ marginTop: 8, fontSize: 12, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, padding: "8px 10px" }}>
+                        <div style={{ fontWeight: 700, color: c.severity==="critical" ? "#be123c" : c.severity==="high" ? "#c2410c" : "#92400e" }}>
+                          [{c.severity}] {c.type} — {c.reason_code}
+                        </div>
+                        <div style={{ color: "#475569", marginTop: 2 }}>{c.reason}</div>
+                        {c.evidence && <code style={{ display:"block", marginTop: 4, fontSize: 11, color: "#334155", background: "#f8fafc", padding: "4px 6px", borderRadius: 4, wordBreak: "break-all" }}>{c.evidence}</code>}
+                        {c.conflicting_skill_slug && <div style={{ fontSize: 11, color: "#64748b" }}>Conflicts with: {c.conflicting_skill_slug}</div>}
+                        {c.remediation && <div style={{ fontSize: 11, color: "#0f766e", marginTop: 2 }}>Fix: {c.remediation}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {identicalError && <div style={{ ...s.alert("error"), fontSize: 12 }}>{identicalError}</div>}
+                {identicalResult && (
+                  <div style={{
+                    border: `1px solid ${identicalResult.has_identical ? "#7dd3fc" : "#86efac"}`,
+                    background: identicalResult.has_identical ? "#f0f9ff" : "#f0fdf4",
+                    borderRadius: 8, padding: 12
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: identicalResult.has_identical ? "#0369a1" : "#065f46" }}>
+                      {identicalResult.has_identical ? "Identical block already exists" : "No identical block — new rule"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#334155", marginTop: 4 }}>{identicalResult.summary}</div>
+                    {identicalResult.new_findings?.length > 0 && <div style={{ fontSize: 11, color: "#475569", marginTop: 6 }}>New findings: <code style={{ background: "#fff", padding: "2px 6px", borderRadius: 4 }}>{identicalResult.new_findings.join(", ")}</code></div>}
+                    {identicalResult.provider_hint && <div style={{ fontSize: 12, color: "#0f766e", marginTop: 6, background: "#ecfdf5", padding: "6px 8px", borderRadius: 6, border: "1px solid #a7f3d0" }}>{identicalResult.provider_hint}</div>}
+                    {identicalResult.policy_blocks?.map((b:any,i:number)=>(
+                      <div key={"p"+i} style={{ marginTop: 8, fontSize: 12, background: "#fff", border: "1px solid #e0f2fe", borderRadius: 6, padding: "8px 10px" }}>
+                        <div style={{ fontWeight: 700, color: "#0369a1" }}>Policy: {b.where}</div>
+                        <div style={{ color: "#475569" }}>{b.reason}</div>
+                        <code style={{ display:"block", marginTop: 4, fontSize: 11, background: "#f8fafc", padding: "4px 6px", borderRadius: 4 }}>{b.covers?.join(", ")}</code>
+                      </div>
+                    ))}
+                    {identicalResult.managed_blocks?.map((b:any,i:number)=>(
+                      <div key={"m"+i} style={{ marginTop: 8, fontSize: 12, background: "#fff", border: "1px solid #e0f2fe", borderRadius: 6, padding: "8px 10px" }}>
+                        <div style={{ fontWeight: 700, color: "#0369a1" }}>Managed skills: {b.where}</div>
+                        <div style={{ color: "#475569" }}>{b.reason}</div>
+                        <code style={{ display:"block", marginTop: 4, fontSize: 11, background: "#f8fafc", padding: "4px 6px", borderRadius: 4 }}>{b.covers?.join(", ")}</code>
+                      </div>
+                    ))}
+                    {identicalResult.rejection_blocks?.map((b:any,i:number)=>(
+                      <div key={"r"+i} style={{ marginTop: 8, fontSize: 12, background: "#fff", border: "1px solid #e0f2fe", borderRadius: 6, padding: "8px 10px" }}>
+                        <div style={{ fontWeight: 700, color: "#0369a1" }}>Rejection history: {b.where}</div>
+                        <div style={{ color: "#475569" }}>{b.reason}</div>
+                        <code style={{ display:"block", marginTop: 4, fontSize: 11, background: "#f8fafc", padding: "4px 6px", borderRadius: 4 }}>{b.covers?.join(", ")}</code>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {testError && <div style={{ ...s.alert("error"), fontSize: 12 }}>{testError}</div>}
+                {testResult && (
+                  <div style={{
+                    border: `1px solid ${testResult.all_passed ? "#86efac" : "#fecdd3"}`,
+                    background: testResult.all_passed ? "#f0fdf4" : "#fff1f2",
+                    borderRadius: 8, padding: 12
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: testResult.all_passed ? "#065f46" : "#be123c" }}>
+                      {testResult.all_passed ? `All ${testResult.total} tests passed — block fires` : `${testResult.passed}/${testResult.total} passed — block needs fix`}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#334155", marginTop: 4 }}>{testResult.summary}</div>
+                    {testResult.results?.map((r:any)=>(
+                      <div key={r.id} style={{
+                        marginTop: 8, fontSize: 12, background: "#fff", border: `1px solid ${r.passed ? "#86efac" : "#fecdd3"}`, borderRadius: 6, padding: "8px 10px",
+                        display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start"
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, color: r.passed ? "#065f46" : "#be123c" }}>
+                            {r.passed ? "PASS" : "FAIL"} [{r.category}] {r.expected_blocked ? "should block" : "should pass"}
+                          </div>
+                          <code style={{ display:"block", marginTop: 4, fontSize: 11, background: "#f8fafc", padding: "4px 6px", borderRadius: 4, wordBreak: "break-all" }}>{r.prompt}</code>
+                          <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>Expected: {r.expected_reason} → Actual: {r.actual_reason} ({r.actual_check}) {r.actually_blocked ? "BLOCKED" : "PASSED"}</div>
+                        </div>
+                        <span style={{ ...s.badge(r.passed ? "delivered" : "input_blocked"), flexShrink: 0 }}>{r.status}</span>
+                      </div>
+                    ))}
+                    <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                      <button style={{ ...s.btn("secondary"), fontSize: 11 }} onClick={testExistingBlock} disabled={testRunning}>Re-test stored block</button>
+                      <span style={{ fontSize: 11, color: "#64748b", alignSelf: "center" }}>Runs the same tests against the saved skill version v{testResult.version || managed.find(m=>m.slug===selectedAgent)?.version || "?"}</span>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <button
                     style={{ ...s.btn("primary"), padding: "10px 20px" }}
                     onClick={saveCurrentAgent}
-                  >Save skills</button>
-                  {liveSkills[selectedAgent]?.updatedAt && (
+                    disabled={saving}
+                  >{saving ? "Saving..." : "Save skills"}</button>
+                  {managed.find(m=>m.slug===selectedAgent)?.updated_at && (
                     <span style={{ fontSize: 11, color: "#607086" }}>
-                      Saved: {new Date(liveSkills[selectedAgent].updatedAt).toLocaleString()}
+                      Saved: {new Date(managed.find(m=>m.slug===selectedAgent)!.updated_at!).toLocaleString()} · v{managed.find(m=>m.slug===selectedAgent)!.version} · {managed.find(m=>m.slug===selectedAgent)!.hash}
                     </span>
                   )}
-                  {Object.keys(liveSkills).length > 1 && (
+                  {managed.find(m=>m.slug===selectedAgent) && (
                     <button
                       style={{ ...s.btn("danger"), marginLeft: "auto", fontSize: 11 }}
                       onClick={() => deleteAgent(selectedAgent)}
                     >Delete</button>
                   )}
                 </div>
+                {managedLoading && <div style={s.muted}>Loading managed skills…</div>}
               </div>
             )}
           </div>
@@ -515,7 +757,6 @@ export default function SkillGuardView() {
 
         </div>
 
-        {/* RIGHT COLUMN: Queue & Feed */}
         <div style={{ flex: "2 1 440px", display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
           
           {blockAllAccess && (

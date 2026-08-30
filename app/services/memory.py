@@ -90,6 +90,32 @@ async def llm_extract_memories(prompt: str, response: str | None, user_id: str) 
     return heuristics
 
 # ── CRUD ─────────────────────────────────────────────────────────────────
+MEMORY_CAP_PER_TEAM = 500
+
+async def _prune_if_needed(db: AsyncSession, org_id: str | None, user_id: str) -> None:
+    """Save space: dedup + cap 500/team + archive low-value old memories."""
+    if not org_id:
+        return
+    # Cap check — if over, archive oldest low-importance first
+    cnt_res = await db.execute(select(func.count()).select_from(Memory).where(Memory.org_id == org_id, Memory.archived == False))
+    cnt = cnt_res.scalar() or 0
+    if cnt <= MEMORY_CAP_PER_TEAM:
+        return
+    # Archive oldest, lowest importance, not pinned, low confidence
+    to_archive = await db.execute(
+        select(Memory).where(Memory.org_id == org_id, Memory.archived == False, Memory.pinned == False)
+        .order_by(Memory.importance.asc(), Memory.confidence.asc(), Memory.updated_at.asc())
+        .limit(cnt - MEMORY_CAP_PER_TEAM + 10)  # keep buffer
+    )
+    for m in to_archive.scalars().all():
+        m.archived = True
+        # delete vector (save Pinecone space)
+        try:
+            from app.services.vectorstore import delete_memory  # type: ignore
+            await delete_memory(m.id)
+        except: pass
+    await db.flush()
+
 async def create_memory(
     db: AsyncSession,
     user_id: str,
@@ -104,6 +130,32 @@ async def create_memory(
     source_type: str | None = "manual",
     source_id: str | None = None,
 ) -> Memory:
+    # Dedup via hash of title+content (per user+org) — save space
+    import hashlib
+    content_hash = hashlib.sha256((content[:200] + (title or "")).encode()).hexdigest()[:12]
+    existing = await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.org_id == org_id, Memory.archived == False))
+    for m in existing.scalars().all():
+        if hashlib.sha256((m.content[:200] + m.title).encode()).hexdigest()[:12] == content_hash:
+            # Touch existing instead of duplicate
+            m.updated_at = datetime.now(timezone.utc)
+            await db.flush()
+            return m
+    # TTL: auto-archive low-value old memories before create (90d, importance<3, confidence<0.7, not pinned)
+    try:
+        from datetime import timedelta
+        cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+        old_low = await db.execute(select(Memory).where(Memory.org_id == org_id, Memory.archived == False, Memory.pinned == False, Memory.importance < 3, Memory.confidence < 0.7, Memory.updated_at < cutoff).limit(20))
+        for m in old_low.scalars().all():
+            m.archived = True
+            try:
+                from app.services.vectorstore import delete_memory
+                await delete_memory(m.id)
+            except: pass
+        await db.flush()
+    except: pass
+    # Cap 500/team
+    await _prune_if_needed(db, org_id, user_id)
+    # Compress: store content gzipped length check — keep as Text but ensure float16 for vector (vectorstore handles)
     title = (title or content[:60]).strip()
     mem = Memory(
         id=str(uuid.uuid4()),
@@ -121,11 +173,10 @@ async def create_memory(
     )
     db.add(mem)
     await db.flush()
-    # best-effort vector upsert (non-blocking)
     try:
         from app.services.vectorstore import upsert_memory  # type: ignore
         await upsert_memory(mem.id, mem.content, {"user_id": user_id, "org_id": org_id or "", "category": category})
-    except Exception:
+    except:
         pass
     return mem
 

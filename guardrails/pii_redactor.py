@@ -81,6 +81,7 @@ class PIIRedactor:
         Replace all PII occurrences in *text* with placeholders.
         Returns a RedactionResult containing the cleaned text and a
         mapping that can be used to restore the originals later.
+        Credit cards are Luhn-validated to kill FP on 20-digit order refs.
         """
         if _engine.enabled():
             try:
@@ -98,6 +99,11 @@ class PIIRedactor:
                 )
             except Exception:
                 pass  # fall through to the Python implementation
+        # Luhn filter for credit cards
+        try:
+            from guardrails.luhn import luhn_valid
+        except Exception:
+            def luhn_valid(x): return True
         mapping: dict[str, str] = {}
         pii_types: list[str] = []
         counter = 0
@@ -105,15 +111,40 @@ class PIIRedactor:
 
         for pat in self.patterns:
             compiled = re.compile(pat["regex"])
-            for match in compiled.finditer(redacted):
+            # collect matches on original text snapshot to handle shifting
+            matches = list(compiled.finditer(text))
+            for match in matches:
                 original_value = match.group()
+                if pat["name"] == "credit_card" and not luhn_valid(original_value):
+                    continue
+                if original_value not in redacted:
+                    continue
                 counter += 1
                 placeholder = pat["placeholder"].format(n=counter)
                 mapping[placeholder] = original_value
                 if pat["name"] not in pii_types:
                     pii_types.append(pat["name"])
-                # Replace only the first occurrence each time (they shift)
                 redacted = redacted.replace(original_value, placeholder, 1)
+
+        # ── Phase 2: optional NER for person names (wl1) if regex found nothing ─
+        if counter == 0:
+            try:
+                from guardrails.ner import detect_persons
+                for ent in detect_persons(text):
+                    val = ent["text"]
+                    if val not in redacted or val in mapping.values():
+                        continue
+                    # avoid FP on very short or common
+                    if len(val) < 5:
+                        continue
+                    counter += 1
+                    placeholder = "[PERSON_REDACTED_{n}]".format(n=counter)
+                    mapping[placeholder] = val
+                    if "person" not in pii_types:
+                        pii_types.append("person")
+                    redacted = redacted.replace(val, placeholder, 1)
+            except Exception:
+                pass
 
         return RedactionResult(
             redacted_text=redacted,

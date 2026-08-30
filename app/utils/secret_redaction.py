@@ -30,14 +30,19 @@ _SECRET_PATTERNS: dict[str, re.Pattern] = {
     "aws_access_key": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     # Generic Authorization: Bearer <20+ chars>
     "bearer_token": re.compile(r"(?i)\bAuthorization:\s*Bearer\s+[A-Za-z0-9_\-\.]{20,}\b"),
-    # Generic api_key = value assignment (best-effort)
-    "generic_api_key": re.compile(r"(?i)\b(?:api[_-]?key|groq[_-]?api[_-]?key|openai[_-]?api[_-]?key)\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{16,}['\"]?"),
+    # Generic api_key = value assignment (best-effort) — expanded for Phase 1:
+    # Covers DATABASE_PASSWORD, SECRET, TOKEN, etc. Handles quoted and unquoted values, high-entropy strings including /+ and $.
+    "generic_api_key": re.compile(
+        r"(?i)\b(?:api[_-]?key|groq[_-]?api[_-]?key|openai[_-]?api[_-]?key|secret|password|passwd|pwd|token|auth|smtp[_-]?password|database[_-]?password|db[_-]?password)\s*[:=]\s*['\"]?[A-Za-z0-9_\-\.\/\+=\$%]{8,}['\"]?"
+    ),
+    # AWS secret access key (40 base64 chars)
+    "aws_secret_key": re.compile(r"(?i)aws.{0,20}secret.{0,20}['\"][A-Za-z0-9/\+]{40}['\"]"),
     # Explicit env-name mention — often exfiltration attempts include the literal
     # env var name even without a value (e.g. "what is GROQ_API_KEY?").
     # We do NOT redact every occurrence globally (too noisy), but the input
     # guardrail blocks it. For scrubbing we only redact when a value-like suffix
     # follows.
-    "env_assignment": re.compile(r"(?i)\b(?:GROQ_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|GEMINI_API_KEY)\s*[:=]\s*[^\s\"']{8,}"),
+    "env_assignment": re.compile(r"(?i)\b(?:GROQ_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|GEMINI_API_KEY|DATABASE_PASSWORD|AWS_SECRET_ACCESS_KEY|DATABASE_URL)\s*[:=]\s*[^\s\"']{8,}"),
 }
 
 # Attempts to make the model reveal env / secrets.
@@ -84,6 +89,20 @@ def _configured_secrets() -> list[str]:
     return vals
 
 
+_JSON_API_KEY_RE = re.compile(r'(?i)["\']?api[_-]?key["\']?\s*[:=]\s*["\']?[A-Za-z0-9_\-\.\/\+=]{16,}["\']?')
+_JSON_PASSWORD_RE = re.compile(r'(?i)["\']?password["\']?\s*[:=]\s*["\']?[^"\'\s]{8,}["\']?')
+
+def _contains_json_secret(text: str) -> bool:
+    # High-entropy JSON api_key/password without prefix requirement (wl2 dataset uses random 32-char values)
+    if _JSON_API_KEY_RE.search(text):
+        return True
+    if _JSON_PASSWORD_RE.search(text) and len(re.search(r'password["\']?\s*[:=]\s*["\']?([^"\'\s]+)', text, re.I).group(1)) >= 8:
+        # also check entropy: password should look random (not "password")
+        val = re.search(r'password["\']?\s*[:=]\s*["\']?([^"\'\s]+)', text, re.I).group(1)
+        if any(c in val for c in ["$", "%", "!", "@"]) or len([c for c in val if c.isalnum()]) >= 8:
+            return True
+    return False
+
 def contains_secret(text: str) -> tuple[bool, str | None]:
     """Return (True, kind) if *text* matches any secret pattern."""
     if not text:
@@ -91,10 +110,15 @@ def contains_secret(text: str) -> tuple[bool, str | None]:
     for kind, pat in _SECRET_PATTERNS.items():
         if pat.search(text):
             return True, kind
+    if _contains_json_secret(text):
+        return True, "generic_api_key"
     # literal configured key
     for sec in _configured_secrets():
         if sec and sec in text:
             return True, "configured_provider_key"
+    # PEM private key with optional comment prefix "# -----BEGIN"
+    if "-----BEGIN" in text and "PRIVATE KEY-----" in text:
+        return True, "private_key"
     return False, None
 
 
