@@ -16,12 +16,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("api_keys", sa.Column("budget_tokens", sa.BigInteger(), nullable=True))
-    op.add_column("api_keys", sa.Column("budget_used", sa.BigInteger(), nullable=False, server_default="0"))
-    op.add_column("api_keys", sa.Column("budget_reset_at", sa.DateTime(timezone=True), nullable=True))
+    # Idempotent: the public demo seed (scripts/create_public_demo.sql) also
+    # creates these columns via top-level ALTER TABLE ... IF NOT EXISTS for
+    # users who paste the seed directly in Supabase SQL Editor before running
+    # migrations. If the seed ran first, op.add_column would raise
+    # DuplicateColumnError and crash the Render deploy (startup preflight).
+    # Use IF NOT EXISTS so the migration is safe to re-run in either order.
+    op.execute(sa.text("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS budget_tokens BIGINT"))
+    op.execute(sa.text("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS budget_used BIGINT NOT NULL DEFAULT 0"))
+    op.execute(sa.text("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS budget_reset_at TIMESTAMPTZ"))
 
 
 def downgrade() -> None:
-    op.drop_column("api_keys", "budget_reset_at")
-    op.drop_column("api_keys", "budget_used")
-    op.drop_column("api_keys", "budget_tokens")
+    op.execute(sa.text("ALTER TABLE api_keys DROP COLUMN IF EXISTS budget_reset_at"))
+    op.execute(sa.text("ALTER TABLE api_keys DROP COLUMN IF EXISTS budget_used"))
+    op.execute(sa.text("ALTER TABLE api_keys DROP COLUMN IF EXISTS budget_tokens"))
