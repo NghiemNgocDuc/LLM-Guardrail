@@ -10,7 +10,7 @@
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
-    "@sentry/react": "^9.0.0",
+    "@sentry/react": "^10.72.0",
     "@vitejs/plugin-react": "^5.1.1",
     "posthog-js": "^1.200.0",
     "react": "^19.2.1",
