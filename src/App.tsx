@@ -46,6 +46,8 @@ const NAV: NavItem[] = [
   { id: "settings",   label: "Settings",       icon: "ST" },
 ];
 
+const CLERK_ENABLED = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
+
 type GateContext = {
   user: UserOut;
   setUser: React.Dispatch<React.SetStateAction<UserOut | null>>;
@@ -120,6 +122,21 @@ function ClerkAuthGate({ children }: { children: (ctx: GateContext) => ReactNode
   return children({ user: appUser, setUser: setAppUser, signOut });
 }
 
+function DemoAuthGate({ children }: { children: (ctx: GateContext) => ReactNode }) {
+  const [user, setUser] = useState<UserOut | null>({
+    id: "demo-user",
+    email: "demo@localhost",
+    full_name: "Local Demo User",
+    is_admin: true,
+    is_active: true,
+    email_verified: true,
+    org_id: null,
+    created_at: new Date().toISOString(),
+  });
+
+  return user ? children({ user, setUser, signOut: async () => undefined }) : null;
+}
+
 export default function App() {
   const [view, setView] = useState<string>(() => {
     const q = new URLSearchParams(window.location.search);
@@ -135,8 +152,10 @@ export default function App() {
 
   function navigate(id: string) { setView(id); setSidebarOpen(false); }
 
+  const AuthGate = CLERK_ENABLED ? ClerkAuthGate : DemoAuthGate;
+
   return (
-    <ClerkAuthGate>
+    <AuthGate>
       {({ user, setUser, signOut }) => (
         <div className="app-shell" style={s.app} data-dark={darkMode ? "1" : "0"}>
           <GlobalStyles darkMode={darkMode} />
@@ -226,6 +245,6 @@ export default function App() {
           </div>
         </div>
       )}
-    </ClerkAuthGate>
+    </AuthGate>
   );
 }

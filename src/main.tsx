@@ -24,8 +24,12 @@ const CLERK_PK = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ClerkProvider publishableKey={CLERK_PK}>
+    {CLERK_PK ? (
+      <ClerkProvider publishableKey={CLERK_PK}>
+        <App />
+      </ClerkProvider>
+    ) : (
       <App />
-    </ClerkProvider>
+    )}
   </React.StrictMode>
 );
