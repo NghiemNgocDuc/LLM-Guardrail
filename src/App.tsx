@@ -47,6 +47,7 @@ const NAV: NavItem[] = [
 ];
 
 const CLERK_ENABLED = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
+const LOCAL_DEMO_ENABLED = import.meta.env.DEV && !CLERK_ENABLED;
 
 type GateContext = {
   user: UserOut;
@@ -137,6 +138,17 @@ function DemoAuthGate({ children }: { children: (ctx: GateContext) => ReactNode 
   return user ? children({ user, setUser, signOut: async () => undefined }) : null;
 }
 
+function MissingClerkConfig() {
+  return (
+    <>
+      <GlobalStyles />
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, color: "#405166", textAlign: "center" }}>
+        Clerk authentication is not configured for this deployment.
+      </div>
+    </>
+  );
+}
+
 export default function App() {
   const [view, setView] = useState<string>(() => {
     const q = new URLSearchParams(window.location.search);
@@ -152,7 +164,7 @@ export default function App() {
 
   function navigate(id: string) { setView(id); setSidebarOpen(false); }
 
-  const AuthGate = CLERK_ENABLED ? ClerkAuthGate : DemoAuthGate;
+  const AuthGate = CLERK_ENABLED ? ClerkAuthGate : LOCAL_DEMO_ENABLED ? DemoAuthGate : MissingClerkConfig;
 
   return (
     <AuthGate>
