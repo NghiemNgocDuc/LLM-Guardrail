@@ -51,6 +51,10 @@ begin
     values (demo_user_id, 10000, 0, 0, now())
     on conflict (user_id) do nothing;
 
+    alter table api_keys add column if not exists budget_tokens bigint;
+    alter table api_keys add column if not exists budget_used bigint not null default 0;
+    alter table api_keys add column if not exists budget_reset_at timestamptz;
+
     select id into demo_key_id from api_keys where name = 'Public demo key' and owner_id = demo_user_id;
     if demo_key_id is null then
         insert into api_keys (
