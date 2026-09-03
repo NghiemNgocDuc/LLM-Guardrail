@@ -98,8 +98,16 @@ export default function AuthView({ onAuth }: { onAuth: (user: UserOut) => void }
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState("");
 
   const set = (k: keyof AuthForm) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  function copyDemoValue(value: string, label: string) {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(label);
+      window.setTimeout(() => setCopied(""), 1500);
+    });
+  }
 
   function goHome() {
     window.history.replaceState({}, "", "/");
@@ -227,6 +235,25 @@ export default function AuthView({ onAuth }: { onAuth: (user: UserOut) => void }
                tab === "forgot" ? "Reset Password" :
                tab === "signup" ? "Create an Account" : "Welcome Back"}
             </div>
+
+            {screen === "auth" && tab === "login" && (
+              <div style={{ marginTop: 14, padding: "10px 12px", border: "1px solid rgba(15, 118, 110, 0.2)", borderRadius: 10, background: "rgba(15, 118, 110, 0.06)", fontSize: 12, color: "#405166" }}>
+                <strong style={{ color: "#0f766e" }}>Public demo admin</strong>
+                {[{ label: "Email", value: "demo@example.com" }, { label: "Password", value: "Demo-Guardrails-2026!" }].map((item) => (
+                  <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                    <span>{item.label}: {item.value}</span>
+                    <button type="button" title={`Copy demo ${item.label.toLowerCase()}`} aria-label={`Copy demo ${item.label.toLowerCase()}`} onClick={() => copyDemoValue(item.value, `${item.label} copied`)} style={{ border: "none", background: "transparent", color: "#0f766e", cursor: "pointer", padding: 2, display: "inline-flex" }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <rect x="9" y="9" width="13" height="13" rx="2" />
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                {copied && <div style={{ marginTop: 4, fontSize: 11, color: "#0f766e" }}>{copied}</div>}
+                <div style={{ marginTop: 4, fontSize: 11 }}>Demo data only. Do not use for private information.</div>
+              </div>
+            )}
 
             {screen === "auth" && (
               <div className="auth-form-tabs">
