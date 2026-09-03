@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import type { ReactNode } from "react";
-import { useAuth, useUser, SignIn, SignUp } from "@clerk/clerk-react";
-import { api, setClerkTokenProvider } from "./utils/api";
+import { api, clearTokens, getToken } from "./utils/api";
 import { identifyUser } from "./utils/analytics";
 import type { components } from "./api-types";
 import { s } from "./styles/theme";
@@ -23,6 +22,7 @@ import ProfileView from "./views/ProfileView";
 import HealthView from "./views/HealthView";
 import SettingsView from "./views/SettingsView";
 import AboutView from "./views/AboutView";
+import AuthView from "./views/AuthView";
 
 type UserOut = components["schemas"]["UserOut"];
 
@@ -46,107 +46,30 @@ const NAV: NavItem[] = [
   { id: "settings",   label: "Settings",       icon: "ST" },
 ];
 
-const CLERK_ENABLED = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
-const LOCAL_DEMO_ENABLED = import.meta.env.DEV && !CLERK_ENABLED;
-
 type GateContext = {
   user: UserOut;
   setUser: React.Dispatch<React.SetStateAction<UserOut | null>>;
   signOut: () => Promise<void>;
 };
 
-function ClerkAuthGate({ children }: { children: (ctx: GateContext) => ReactNode }) {
-  const { isSignedIn, getToken, signOut } = useAuth();
-  const { user: clerkUser } = useUser();
+function LocalAuthGate({ children }: { children: (ctx: GateContext) => ReactNode }) {
   const [appUser, setAppUser] = useState<UserOut | null>(null);
-  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  const [checking, setChecking] = useState(Boolean(getToken()));
 
   useEffect(() => {
-    if (!isSignedIn || !clerkUser) return;
-    setClerkTokenProvider(getToken);
-    api<UserOut>("/auth/me").then(u => { identifyUser(u); setAppUser(u); }).catch(() => { identifyUser(null); setAppUser(null); });
-  }, [isSignedIn, clerkUser, getToken]);
+    if (!getToken()) return;
+    api<UserOut>("/auth/me").then(u => { identifyUser(u); setAppUser(u); }).catch(() => { clearTokens(); identifyUser(null); }).finally(() => setChecking(false));
+  }, []);
 
-  if (!isSignedIn || !clerkUser) {
-    return (
-      <>
-        <GlobalStyles />
-        <div className="auth-page" style={{
-          position: "relative", minHeight: "100vh", background: "#f0fdf4",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "40px 24px", overflow: "hidden",
-        }}>
-          <AuthFlowBackground />
-          <div style={{ position: "relative", zIndex: 1, width: "min(420px, 100%)" }}>
-            <div style={{ textAlign: "center", marginBottom: 32 }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: "#0f766e" }}>AI Guardrails</div>
-              <div style={{ fontSize: 13, color: "#6b7f94", marginTop: 4 }}>
-                LLM gateway, agent skills, and policy — one workspace
-              </div>
-            </div>
-            {authMode === "signin" ? (
-              <SignIn
-                appearance={{ elements: { card: { boxShadow: "none" } } }}
-                signUpUrl="#"
-                afterSignInUrl="/"
-              />
-            ) : (
-              <SignUp
-                appearance={{ elements: { card: { boxShadow: "none" } } }}
-                signInUrl="#"
-                afterSignUpUrl="/"
-              />
-            )}
-            <div style={{ textAlign: "center", marginTop: 16 }}>
-              <button
-                onClick={() => setAuthMode(m => m === "signin" ? "signup" : "signin")}
-                style={{ background: "none", border: "none", color: "#0f766e", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
-              >
-                {authMode === "signin" ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </>
-    );
+  if (checking) {
+    return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", color: "#0f766e", fontSize: 14 }}>Loading workspace...</div>;
   }
 
   if (!appUser) {
-    return (
-      <>
-        <GlobalStyles />
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", color: "#0f766e", fontSize: 14 }}>Loading workspace...</div>
-      </>
-    );
+    return <AuthView onAuth={(user) => { setAppUser(user); identifyUser(user); }} />;
   }
 
-  return children({ user: appUser, setUser: setAppUser, signOut });
-}
-
-function DemoAuthGate({ children }: { children: (ctx: GateContext) => ReactNode }) {
-  const [user, setUser] = useState<UserOut | null>({
-    id: "demo-user",
-    email: "demo@localhost",
-    full_name: "Local Demo User",
-    is_admin: true,
-    is_active: true,
-    email_verified: true,
-    org_id: null,
-    created_at: new Date().toISOString(),
-  });
-
-  return user ? children({ user, setUser, signOut: async () => undefined }) : null;
-}
-
-function MissingClerkConfig() {
-  return (
-    <>
-      <GlobalStyles />
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, color: "#405166", textAlign: "center" }}>
-        Clerk authentication is not configured for this deployment.
-      </div>
-    </>
-  );
+  return children({ user: appUser, setUser: setAppUser, signOut: async () => { clearTokens(); setAppUser(null); } });
 }
 
 export default function App() {
@@ -164,10 +87,8 @@ export default function App() {
 
   function navigate(id: string) { setView(id); setSidebarOpen(false); }
 
-  const AuthGate = CLERK_ENABLED ? ClerkAuthGate : LOCAL_DEMO_ENABLED ? DemoAuthGate : MissingClerkConfig;
-
   return (
-    <AuthGate>
+    <LocalAuthGate>
       {({ user, setUser, signOut }) => (
         <div className="app-shell" style={s.app} data-dark={darkMode ? "1" : "0"}>
           <GlobalStyles darkMode={darkMode} />
@@ -257,6 +178,6 @@ export default function App() {
           </div>
         </div>
       )}
-    </AuthGate>
+    </LocalAuthGate>
   );
 }

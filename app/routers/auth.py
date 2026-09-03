@@ -10,23 +10,141 @@ import json
 import logging
 import time
 from collections import OrderedDict
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import CurrentUser
+from app.deps import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from app.i18n import _t
 from app.models import Organization, OrgPolicy, User
 from app.schemas import MessageResponse, UpdateProfileRequest, UserOut
 from app.config import get_settings
 from app.defaults import DEFAULT_COMPLIANCE, DEFAULT_INPUT_RULES, DEFAULT_OUTPUT_RULES, DEFAULT_TOPIC_POLICY
 from app.services.token_wallet import ensure_wallet
+from app.services.auth_tokens import TOKEN_PURPOSE_RESET, TOKEN_PURPOSE_VERIFY, build_action_url, consume_auth_token, create_auth_token
+from app.services.email import send_email, send_password_reset_email
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=256)
+
+
+class SignupRequest(LoginRequest):
+    full_name: str = Field(min_length=1, max_length=120)
+    org_name: str | None = Field(default=None, max_length=120)
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class TokenRequest(BaseModel):
+    token: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=256)
+
+
+def _auth_response(user: User) -> dict:
+    return {
+        "access_token": create_access_token(user.id),
+        "refresh_token": create_refresh_token(user.id),
+        "token_type": "bearer",
+    }
+
+
+@router.post("/login")
+async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.email == str(body.email).lower()))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active or not verify_password(body.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail=_t("auth.invalid_credentials"))
+    user.last_login = datetime.now(timezone.utc)
+    await db.flush()
+    return _auth_response(user)
+
+
+@router.post("/signup", response_model=MessageResponse)
+async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
+    email = str(body.email).lower()
+    existing = await db.execute(select(User).where(User.email == email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="An account with this email already exists")
+    org = Organization(name=body.org_name or f"{body.full_name}'s workspace", slug=f"{email.split('@')[0]}-{time.time_ns()}")
+    db.add(org)
+    await db.flush()
+    user = User(email=email, hashed_password=hash_password(body.password), full_name=body.full_name, org_id=org.id, email_verified=not settings.email_configured)
+    db.add(user)
+    await db.flush()
+    db.add(OrgPolicy(org_id=org.id, input_rules=DEFAULT_INPUT_RULES, output_rules=DEFAULT_OUTPUT_RULES, topic_policy=DEFAULT_TOPIC_POLICY, compliance_rules=DEFAULT_COMPLIANCE))
+    await ensure_wallet(db, user.id)
+    if settings.email_configured and not user.email_verified:
+        raw = await create_auth_token(db, user_id=user.id, purpose=TOKEN_PURPOSE_VERIFY, expire_hours=settings.EMAIL_VERIFICATION_EXPIRE_HOURS)
+        await send_email(email, f"Verify your {settings.APP_NAME} account", f"Verify your account: {build_action_url(settings.PUBLIC_APP_URL, '/verify-email', raw)}", "")
+    return {"message": "Account created. You can sign in." if user.email_verified else "Account created. Check your email to verify your account."}
+
+
+@router.post("/refresh")
+async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
+    payload = decode_token(body.refresh_token)
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    user = await db.get(User, payload.get("sub"))
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found")
+    return _auth_response(user)
+
+
+@router.post("/verify-email", response_model=MessageResponse)
+async def verify_email(body: TokenRequest, db: AsyncSession = Depends(get_db)):
+    user = await consume_auth_token(db, raw_token=body.token, purpose=TOKEN_PURPOSE_VERIFY)
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification link")
+    user.email_verified = True
+    return {"message": "Email verified. You can sign in."}
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+async def forgot_password(body: dict, db: AsyncSession = Depends(get_db)):
+    email = str(body.get("email", "")).lower()
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if user and settings.email_configured:
+        raw = await create_auth_token(db, user_id=user.id, purpose=TOKEN_PURPOSE_RESET, expire_hours=settings.PASSWORD_RESET_EXPIRE_HOURS)
+        await send_password_reset_email(email, build_action_url(settings.PUBLIC_APP_URL, "/reset-password", raw))
+    return {"message": "If that email exists, a reset link has been sent."}
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    user = await consume_auth_token(db, raw_token=body.token, purpose=TOKEN_PURPOSE_RESET)
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link")
+    user.hashed_password = hash_password(body.new_password)
+    return {"message": "Password reset. You can sign in."}
+
+
+@router.post("/resend-verification", response_model=MessageResponse)
+async def resend_verification(body: dict, db: AsyncSession = Depends(get_db)):
+    email = str(body.get("email", "")).lower()
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if user and not user.email_verified and settings.email_configured:
+        raw = await create_auth_token(db, user_id=user.id, purpose=TOKEN_PURPOSE_VERIFY, expire_hours=settings.EMAIL_VERIFICATION_EXPIRE_HOURS)
+        await send_email(email, f"Verify your {settings.APP_NAME} account", f"Verify your account: {build_action_url(settings.PUBLIC_APP_URL, '/verify-email', raw)}", "")
+    return {"message": "If that email exists, a verification link has been sent."}
 
 # Webhook idempotency — deduplicate Clerk retries within a 1-hour window
 _processed_webhooks: OrderedDict[str, float] = OrderedDict()

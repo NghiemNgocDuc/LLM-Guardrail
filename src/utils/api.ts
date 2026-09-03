@@ -46,25 +46,23 @@ export type ApiOptions = {
   body?: unknown;
 };
 
-let _getClerkToken: (() => Promise<string | null>) | null = null;
-export function setClerkTokenProvider(fn: () => Promise<string | null>): void {
-  _getClerkToken = fn;
-}
-
 export async function getAuthToken(): Promise<string | null> {
-  if (!_getClerkToken) return null;
-  try { return await _getClerkToken(); } catch { return null; }
+  return localStorage.getItem("access_token");
 }
 
-export function getToken(): null { return null; }
-export function setTokens(): void {}
-export function clearTokens(): void {}
+export function getToken(): string | null { return localStorage.getItem("access_token"); }
+export function setTokens(accessToken?: string, refreshToken?: string): void {
+  if (accessToken) localStorage.setItem("access_token", accessToken);
+  if (refreshToken) localStorage.setItem("refresh_token", refreshToken);
+}
+export function clearTokens(): void {
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
+}
 
 export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
   let token: string | null = null;
-  if (_getClerkToken) {
-    try { token = await _getClerkToken(); } catch { token = null; }
-  }
+  token = getToken();
 
   const res = await fetch(BASE_URL + path, {
     ...opts,

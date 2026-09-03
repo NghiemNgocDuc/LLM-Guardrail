@@ -283,7 +283,7 @@ export default function SkillGuardView() {
         // try via api() wrapper which injects Authorization header
         try {
           const resp = await fetch(`${base}/skills/managed/${slug}/download?mode=${downloadMode}`, {
-            headers: { Authorization: `Bearer ${localStorage.getItem("clerk_token") || ""}` },
+            headers: { Authorization: `Bearer ${localStorage.getItem("access_token") || ""}` },
           });
           if (resp.ok) text = await resp.text();
         } catch { /* ignore */ }

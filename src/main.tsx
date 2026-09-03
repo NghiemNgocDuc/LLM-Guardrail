@@ -1,6 +1,5 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { ClerkProvider } from "@clerk/clerk-react";
 import * as Sentry from "@sentry/react";
 import posthog from "posthog-js";
 import App from "./App";
@@ -20,16 +19,8 @@ if (POSTHOG_KEY) {
   posthog.init(POSTHOG_KEY, { api_host: POSTHOG_HOST, capture_pageview: true });
 }
 
-const CLERK_PK = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "";
-
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    {CLERK_PK ? (
-      <ClerkProvider publishableKey={CLERK_PK}>
-        <App />
-      </ClerkProvider>
-    ) : (
-      <App />
-    )}
+    <App />
   </React.StrictMode>
 );
