@@ -4,6 +4,14 @@
 
 create extension if not exists pgcrypto;
 
+-- Ensure budget columns exist even if alembic migration 0016_api_key_budgets
+-- hasn't been applied (e.g. pasting this seed directly in Supabase SQL Editor).
+-- Must be top-level DDL — if placed inside DO $$, later INSERTs in the same
+-- block are planned before the ALTER runs and fail with 42703.
+alter table api_keys add column if not exists budget_tokens bigint;
+alter table api_keys add column if not exists budget_used bigint not null default 0;
+alter table api_keys add column if not exists budget_reset_at timestamptz;
+
 do $$
 declare
     demo_org_id uuid;
@@ -51,20 +59,18 @@ begin
     values (demo_user_id, 10000, 0, 0, now())
     on conflict (user_id) do nothing;
 
-    alter table api_keys add column if not exists budget_tokens bigint;
-    alter table api_keys add column if not exists budget_used bigint not null default 0;
-    alter table api_keys add column if not exists budget_reset_at timestamptz;
-
     select id into demo_key_id from api_keys where name = 'Public demo key' and owner_id = demo_user_id;
     if demo_key_id is null then
-        insert into api_keys (
-            id, name, key_prefix, key_hash, is_active, owner_id, org_id,
-            scopes, budget_tokens, budget_used, total_requests, total_blocked, total_tokens, created_at
-        ) values (
-            gen_random_uuid(), 'Public demo key', 'grg_demo_pub',
-            crypt('grg_demo_public_key_2026_replace_me', gen_salt('bf', 12)),
-            true, demo_user_id, demo_org_id,
-            '["chat"]'::jsonb, 10000, 0, 0, 0, 0, now()
+        -- Use dynamic SQL so this statement is parsed at runtime, after the
+        -- top-level ALTER TABLEs have created the budget_* columns if needed.
+        -- Without EXECUTE, PL/pgSQL would plan this INSERT at block entry
+        -- and fail with 42703 when migration 0016_api_key_budgets hasn't run.
+        execute format(
+            'insert into api_keys (id, name, key_prefix, key_hash, is_active, owner_id, org_id, '
+            'scopes, budget_tokens, budget_used, total_requests, total_blocked, total_tokens, created_at) '
+            'values (gen_random_uuid(), %L, %L, crypt(%L, gen_salt(%L, 12)), true, %L, %L, %L::jsonb, 10000, 0, 0, 0, 0, now())',
+            'Public demo key', 'grg_demo_pub', 'grg_demo_public_key_2026_replace_me', 'bf',
+            demo_user_id, demo_org_id, '["chat"]'
         );
     end if;
 end $$;
