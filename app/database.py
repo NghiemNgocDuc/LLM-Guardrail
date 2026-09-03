@@ -2,6 +2,8 @@
 Async SQLAlchemy 2.0 database setup.
 All models inherit from Base; session is injected via FastAPI dependency.
 """
+import uuid
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -13,11 +15,13 @@ engine = None
 AsyncSessionLocal = None
 
 # Supabase transaction pooler (PgBouncer) cannot reuse prepared statements across
-# pooled backend connections. Disable both asyncpg and SQLAlchemy statement caches.
+# pooled backend connections. Disable both statement caches and use unique names
+# so a statement left on a different backend connection cannot collide.
 # See: https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#asyncpg-prepared-statement-cache
 ASYNCPG_CONNECT_ARGS = {
     "statement_cache_size": 0,
     "prepared_statement_cache_size": 0,
+    "prepared_statement_name_func": lambda: f"__asyncpg_{uuid.uuid4()}__",
     "server_settings": {"statement_timeout": "30000"},
 }
 
