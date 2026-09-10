@@ -104,6 +104,10 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     GROQ_API_KEY: str = ""
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
+    XAI_API_KEY: str = ""  # Grok (xAI, SpaceX) — https://console.x.ai
+    XAI_BASE_URL: str = "https://api.x.ai/v1"
+    GROK_API_KEY: str = ""  # alias for XAI_API_KEY
+    GROK_BASE_URL: str = "https://api.x.ai/v1"
     OPENAI_COMPATIBLE_API_KEY: str = ""
     OPENAI_COMPATIBLE_BASE_URL: str = ""
 

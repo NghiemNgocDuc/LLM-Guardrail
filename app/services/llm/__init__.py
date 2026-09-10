@@ -14,6 +14,7 @@ from app.services.llm.circuit_breaker import (
 )
 from app.services.llm.gemini import GeminiAdapter
 from app.services.llm.groq import GroqAdapter
+from app.services.llm.xai import XAIAdapter
 from app.services.llm.litellm import LitellmAdapter
 from app.services.llm.openai import OpenAIAdapter
 from app.services.llm.openai_compatible import OpenAICompatibleAdapter
@@ -28,6 +29,8 @@ _ADAPTERS: dict[str, BaseLLMAdapter] = {
     "openai": OpenAIAdapter(),
     "gemini": GeminiAdapter(),
     "groq": GroqAdapter(),
+    "xai": XAIAdapter(),
+    "grok": XAIAdapter(),  # alias — Grok is xAI (SpaceX)
     "ollama": OllamaAdapter(),
     "openai_compatible": OpenAICompatibleAdapter(),
     "litellm": LitellmAdapter(),
@@ -39,6 +42,8 @@ _DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-4o",
     "gemini": "gemini-2.0-flash",
     "groq": "openai/gpt-oss-20b",
+    "xai": "grok-3",
+    "grok": "grok-3",
     "ollama": "llama3",
     "openai_compatible": "gpt-4o",
     # litellm models carry a provider prefix, e.g. "openai/gpt-4o"
