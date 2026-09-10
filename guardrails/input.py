@@ -66,6 +66,10 @@ class InputGuardrail:
         if self.policy.get("block_prompt_injection"):
             r = self._check_injection(prompt)
             record(r)
+            # ML 2nd stage can allow-with-warning (ml_injection=warn) — the
+            # outer gate must forward it instead of falling through to clean.
+            if r.warned and not script:
+                return r
             if not r.allowed and not script:
                 if self.policy.get("injection_mode", "block") == "warn":
                     return GuardrailResult(
@@ -87,6 +91,14 @@ class InputGuardrail:
                         reason_code=f"warned_{r.reason_code}",
                         risk_score=r.risk_score,
                     )
+                return r
+
+        # ML 2nd stage runs after regex injection + jailbreak so specific
+        # reason_codes win; it only fires on what regex missed.
+        if self.policy.get("ml_injection", "off") != "off":
+            r = self._check_ml_injection(prompt)
+            record(r)
+            if (not r.allowed or r.warned) and not script:
                 return r
 
         if self.policy.get("semantic_mode") in ("block", "warn"):
@@ -347,6 +359,45 @@ class InputGuardrail:
                     risk_score=0.9,
                 )
         return GuardrailResult(allowed=True, check="Injection Detection")
+
+    def _check_ml_injection(self, prompt: str) -> GuardrailResult:
+        """Stage 2 (Veto-style): ML classifier catches paraphrased / obfuscated
+        injections regex misses. Runs AFTER the jailbreak check so specific
+        reason_codes (jailbreak_attempt) are preserved. Fail-open when the
+        model is unavailable. Opt-in via policy ml_injection=block|warn
+        (default off — gateway defaults stay byte-identical without it).
+        """
+        ml_mode = self.policy.get("ml_injection", "off")
+        if ml_mode == "off":
+            return GuardrailResult(allowed=True, check="Injection Detection (ML)")
+        try:
+            from guardrails.ml_injection import detect as ml_detect
+            ml_model = self.policy.get("ml_model", "protectai/deberta-v3-base-prompt-injection-v2")
+            ml_threshold = float(self.policy.get("ml_threshold", 0.5))
+            ml_hit = ml_detect(prompt, model=ml_model, threshold=ml_threshold)
+            if ml_hit is not None and ml_hit[0]:
+                _, score, backend = ml_hit
+                # Plain string (not _t_or): the guardrail.prompt_injection
+                # locale template takes {keyword}, which ML has no value for.
+                reason = f"Prompt injection (ML {backend} score={float(score):.2f})"
+                if ml_mode == "warn":
+                    return GuardrailResult(
+                        allowed=True, warned=True,
+                        check="Injection Detection (ML)",
+                        reason=reason,
+                        reason_code="warned_ml_prompt_injection",
+                        risk_score=max(0.6, float(score)),
+                    )
+                return GuardrailResult(
+                    allowed=False,
+                    check="Injection Detection (ML)",
+                    reason=reason,
+                    reason_code="ml_prompt_injection",
+                    risk_score=max(0.85, float(score)),
+                )
+        except Exception:
+            pass
+        return GuardrailResult(allowed=True, check="Injection Detection (ML)")
 
     def _check_jailbreak(self, prompt: str) -> GuardrailResult:
         if _engine.enabled():

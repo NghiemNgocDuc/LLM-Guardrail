@@ -50,6 +50,9 @@ pinecone==5.4.1
 #   Pinecone vectorstore degrades gracefully without it (semantic similarity checks skip).
 # litellm>=1.55.0                # OPTIONAL — provider-failover LLM backend (llm_backend="litellm").
 #   Install only if you need litellm's provider-level failover/caching.
+# transformers + torch                  # OPTIONAL — ML 2nd-stage injection detection
+#   (guardrails/ml_injection.py, policy ml_injection=block). Without them the
+#   gateway uses the built-in heuristic fallback (fail-open, zero extra deps).
 
 # GraphQL analytics layer (read-only mirror of /analytics REST routes)
 strawberry-graphql==0.324.0

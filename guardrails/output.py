@@ -128,6 +128,18 @@ class OutputGuardrail:
                     reason=err, reason_code="toxic_content", risk_score=0.8,
                 )
 
+        err = self._check_contains_rules(response)
+        if err:
+            mode = self.policy.get("contains_mode", "block")
+            if mode == "warn":
+                return OutputGuardrailResult(allowed=True, warned=True, check="Contains Guardrail", reason=err, reason_code="warned_contains_match", risk_score=0.4, sanitized_output=response)
+            if mode == "review":
+                return OutputGuardrailResult(allowed=True, warned=True, check="Contains Guardrail", reason=err, reason_code="review_contains_match", risk_score=0.5, sanitized_output=response)
+            return OutputGuardrailResult(
+                allowed=False, check="Contains Guardrail",
+                reason=err, reason_code="contains_match", risk_score=0.7,
+            )
+
         err = self._check_topic_policy(response)
         if err:
             mode = self.policy.get("topic_mode", "block")
@@ -213,6 +225,29 @@ class OutputGuardrail:
         for word in _TOXIC_KEYWORDS:
             if word in lower:
                 return _t_or("guardrail.toxic_content", "Toxic content detected: '{term}'", term=word)
+        return None
+
+    def _check_contains_rules(self, response: str) -> Optional[str]:
+        """Portkey-style output guardrails: [{words, operator, deny}].
+
+        operator none = deny when ANY word appears (default.contains none).
+        operator any = deny unless at least one word appears.
+        deny=False rules are skipped (audit-only placeholder).
+        """
+        rules = self.policy.get("contains_rules") or []
+        lower = response.lower()
+        for rule in rules:
+            if not isinstance(rule, dict) or not rule.get("deny", True):
+                continue
+            words = [w for w in (rule.get("words") or []) if w]
+            if not words:
+                continue
+            operator = str(rule.get("operator", "none")).lower()
+            hits = [w for w in words if w.lower() in lower]
+            if operator == "none" and hits:
+                return _t_or("guardrail.contains_match", "Blocked content: '{term}'", term=hits[0])
+            if operator == "any" and not hits:
+                return _t_or("guardrail.contains_match", "Required content missing: '{term}'", term=words[0])
         return None
 
     def _check_topic_policy(self, response: str) -> Optional[str]:

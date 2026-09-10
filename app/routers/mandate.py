@@ -48,6 +48,8 @@ class GatewayCallIn(BaseModel):
     inputs: dict[str, Any] | None = None
     handle: str | None = None  # provenance handle for the data
     run_id: str | None = None
+    aud: str | None = None  # audience the capability is bound to (Microsoft 2026)
+    aud_token: str | None = None  # HMAC(cap_id.aud) — replay across servers fails
 
 class RunCreateIn(BaseModel):
     mandate_id: str
@@ -103,13 +105,16 @@ async def mint_ref(body: ReferenceMintIn, user: CurrentUser, db: AsyncSession = 
 # ── runs — disposable Runtime ───────────────────────────────────────────────
 @router.post("/runs", status_code=201)
 async def create_run_ep(body: RunCreateIn, request: Request, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    from app.utils.audience import gateway_audience, sign_audience
     org_id = _require_org(user)
     run = await create_run(db, body.mandate_id, org_id, getattr(request.state, "correlation_id", None))
     cap, raw = await mint_capability(db, body.mandate_id, run.id, body.scopes)
     run.capability_id = cap.id
     await db.flush()
     await db.commit()
-    return {"run_id": run.id, "runtime_id": run.runtime_id, "capability": raw, "capability_hash": cap.capability_hash, "expires_at": cap.expires_at, "scopes": cap.scopes}
+    aud = gateway_audience()
+    return {"run_id": run.id, "runtime_id": run.runtime_id, "capability": raw, "capability_hash": cap.capability_hash, "expires_at": cap.expires_at, "scopes": cap.scopes,
+            "aud": aud, "aud_token": sign_audience(cap.id, aud)}
 
 @router.post("/runs/{run_id}/retry", status_code=201)
 async def retry_run(run_id: str, request: Request, user: CurrentUser, db: AsyncSession = Depends(get_db)):
@@ -129,7 +134,10 @@ async def retry_run(run_id: str, request: Request, user: CurrentUser, db: AsyncS
     new_run.capability_id = cap.id
     await db.flush()
     await db.commit()
-    return {"run_id": new_run.id, "runtime_id": new_run.runtime_id, "mandate_id": prev.mandate_id, "capability": raw, "expires_at": cap.expires_at}
+    from app.utils.audience import gateway_audience, sign_audience
+    aud = gateway_audience()
+    return {"run_id": new_run.id, "runtime_id": new_run.runtime_id, "mandate_id": prev.mandate_id, "capability": raw, "expires_at": cap.expires_at,
+            "aud": aud, "aud_token": sign_audience(cap.id, aud)}
 
 # ── gateway — the ONLY path to fixtures (enforcement point) ─────────────────
 # Tries Go sidecar (MANDATE_GATEWAY_URL) first for speed (WAL SQLite),
@@ -198,6 +206,16 @@ async def gateway_call(
     # ── fallback: Python (Postgres) — always available ───────────────────
     start = time.monotonic()
     cap = await _auth_cap(db, authorization)
+    # Audience binding (Microsoft 2026 confused-deputy fix): when the caller
+    # presents aud+aud_token they must verify; strict mode requires them.
+    from app.utils.audience import enforce_audience, gateway_audience, sign_receipt, verify_audience
+    if body.aud or body.aud_token:
+        if not body.aud or not body.aud_token or not verify_audience(cap.id, body.aud, body.aud_token):
+            raise HTTPException(status_code=403, detail="Invalid audience binding for capability")
+        if body.aud != gateway_audience():
+            raise HTTPException(status_code=403, detail="Capability audience mismatch")
+    elif enforce_audience():
+        raise HTTPException(status_code=403, detail="Audience binding required (aud + aud_token)")
     # resolve run from cap
     res = await db.execute(select(MandateRun).where(MandateRun.id == cap.run_id))
     run = res.scalar_one_or_none()
@@ -230,7 +248,8 @@ async def gateway_call(
 
     if decision == "DENY":
         await db.commit()
-        return {"decision": "DENY", "ruleId": rule_id, "reason": reason, "receipt_id": receipt.id, "tool": body.tool}
+        return {"decision": "DENY", "ruleId": rule_id, "reason": reason, "receipt_id": receipt.id, "tool": body.tool,
+                "receipt_sig": sign_receipt(receipt.id, "DENY")}
 
     # ALLOW → invoke fixture (the only path) — increments fixture_counters
     try:
@@ -244,7 +263,8 @@ async def gateway_call(
         raise HTTPException(status_code=500, detail=str(e))
 
     await db.commit()
-    return {"decision": "ALLOW", "receipt_id": receipt.id, "tool": body.tool, "result": result}
+    return {"decision": "ALLOW", "receipt_id": receipt.id, "tool": body.tool, "result": result,
+            "receipt_sig": sign_receipt(receipt.id, "ALLOW")}
 
 # ── evidence — the 10-call falsifiable demo ─────────────────────────────────
 @router.get("/runs/{run_id}/evidence")

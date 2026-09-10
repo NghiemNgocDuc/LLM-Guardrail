@@ -31,6 +31,7 @@ from app.routers import admin, auth, api_keys, billing, chat, analytics, health,
 from app.routers.managed_skills import router as managed_skills_router, live_router as managed_live_router
 from app.routers.feedback import router as feedback_router
 from app.routers.mandate import router as mandate_router
+from app.routers.openai_compat import router as openai_compat_router
 from app.mcp_server import get_mcp_app
 from strawberry.fastapi import GraphQLRouter
 from app.graphql import schema, get_graphql_context
@@ -197,6 +198,7 @@ app.include_router(managed_skills_router)
 app.include_router(managed_live_router)
 app.include_router(feedback_router)
 app.include_router(mandate_router)
+app.include_router(openai_compat_router)
 app.include_router(billing.router)
 app.include_router(org.router)
 app.include_router(health.router)

@@ -701,17 +701,68 @@ def explain_policy(policy_json: str) -> str:
 
 # ─── MCP Protocol handler (JSON-RPC) ─────────────────────────────────────────
 
+# Scope required per tool (Red Hat AuthPolicy-style per-user visibility).
+# Tools not listed here are visible to any authenticated key.
+TOOL_SCOPES: dict[str, str] = {
+    "chat": "chat",
+}
+
+
+def _visible_tools(auth: MCPAuthContext | None) -> list[dict[str, Any]]:
+    scopes = set(auth.scopes) if auth and auth.is_authenticated else set()
+    out = []
+    for t in TOOL_REGISTRY.values():
+        required = TOOL_SCOPES.get(t["name"])
+        if required and required not in scopes:
+            continue
+        out.append({"name": t["name"], "description": t["description"], "inputSchema": t["input_schema"]})
+    return out
+
+
 def _list_tools() -> list[dict]:
+    # Unauthenticated (stdio local mode): show everything — no scopes to filter by.
     return [
         {"name": t["name"], "description": t["description"], "inputSchema": t["input_schema"]}
         for t in TOOL_REGISTRY.values()
     ]
 
 
-async def _call_tool(name: str, arguments: dict[str, Any]) -> dict:
+def _drift_scan() -> None:
+    """Best-effort startup/drift log — poisoning fails closed at call time."""
+    try:
+        from app.services.tool_drift import check_registry
+        report = check_registry(TOOL_REGISTRY)
+        for item in report.get("poisoned", []):
+            logger.error("tool poisoning detected: %s (%s)", item["tool"], item["reason"])
+        for item in report.get("drifted", []):
+            logger.warning("tool schema drift: %s expected=%s actual=%s", item["tool"], item["expected"], item["actual"])
+    except Exception:
+        pass
+
+
+_drift_scan()
+
+
+async def _call_tool(name: str, arguments: dict[str, Any], auth: MCPAuthContext | None = None) -> dict:
     tool_def = TOOL_REGISTRY.get(name)
     if not tool_def:
         return _tool_error(f"Tool not found: {name}")
+
+    # Fail-closed tool poisoning gate (Microsoft MCP Security Gateway 4.x):
+    # a poisoned description never executes, even if listed.
+    try:
+        from app.services.tool_drift import detect_poisoning
+        hit, reason = detect_poisoning(str(tool_def.get("description", "")))
+        if hit:
+            logger.error("blocked poisoned tool call: %s (%s)", name, reason)
+            return _tool_error(f"Tool '{name}' blocked: description failed poisoning scan")
+    except Exception:
+        pass
+
+    if auth is not None:
+        required = TOOL_SCOPES.get(name)
+        if required and not _scope_allows(auth, required):
+            return _tool_error(f"API key missing '{required}' scope required for this tool")
 
     err = _validate_tool_call(name, arguments)
     if err:
@@ -733,15 +784,15 @@ def _tool_error(msg: str) -> dict:
     return {"content": [{"type": "text", "text": json.dumps({"error": msg})}], "isError": True}
 
 
-async def _handle_request(body: dict) -> dict | None:
+async def _handle_request(body: dict, auth: MCPAuthContext | None = None) -> dict | None:
     method = body.get("method", "")
     params = body.get("params", {}) or {}
     req_id = body.get("id")
 
     if method == "tools/list":
-        resp = {"tools": _list_tools()}
+        resp = {"tools": _visible_tools(auth) if auth else _list_tools()}
     elif method == "tools/call":
-        resp = await _call_tool(params.get("name", ""), params.get("arguments", {}))
+        resp = await _call_tool(params.get("name", ""), params.get("arguments", {}), auth)
     elif method == "initialize":
         resp = {
             "protocolVersion": "2024-11-05",
@@ -929,7 +980,7 @@ def get_mcp_app():
             args = body.get("params", {}).get("arguments", {})
             status = "ok"
             try:
-                result = await _handle_request(body)
+                result = await _handle_request(body, auth)
             except Exception:
                 status = "error"
                 raise
@@ -940,7 +991,7 @@ def get_mcp_app():
                 return JSONResponse(result)
             return Response(status_code=202)
 
-        result = await _handle_request(body)
+        result = await _handle_request(body, auth)
         if result is not None:
             return JSONResponse(result)
         return Response(status_code=202)

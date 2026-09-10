@@ -1,0 +1,28 @@
+# Portkey-style guardrail config — loaded by app/services/guardrail_config.py
+# Copy to guardrails.yaml and tune. Env var GUARDRAILS_CONFIG points at it.
+# Hot path stays in Rust regex (<1ms); this file only declares policy.
+
+input_rules:
+  block_secrets: true
+  block_pii: true
+  pii_redaction_mode: warn   # block | warn | off (warn = Bifrost scrubbed logging)
+  block_prompt_injection: true
+  ml_injection: block        # block | warn | off (Veto-style 2nd stage)
+  ml_threshold: 0.5
+  block_jailbreak: true
+
+output_rules:
+  block_toxic_content: true
+  # Portkey-style contains guardrails: deny any response containing the words.
+  # operator: none = block when ANY word appears; any = block unless a word appears.
+  contains_rules:
+    - words: ["Apple"]
+      operator: none
+      deny: true
+  enforce_schema: false
+
+topic_policy:
+  blocked_topics: ["competitor products", "medical advice"]
+
+compliance_rules:
+  block_medical_advice: true
