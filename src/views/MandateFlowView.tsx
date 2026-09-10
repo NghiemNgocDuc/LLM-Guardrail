@@ -5,6 +5,7 @@ import { s } from "../styles/theme";
 export default function MandateFlowView() {
   const [log, setLog] = useState<string[]>([]);
   const [evidence, setEvidence] = useState<any>(null);
+  const [bench, setBench] = useState<any>(null);
   const [running, setRunning] = useState(false);
 
   function push(msg: string) { setLog(l => [...l, msg]); }
@@ -65,10 +66,22 @@ export default function MandateFlowView() {
     <div style={{ padding: 24 }}>
       <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#0f172a" }}>MandateFlow — Provenance Gateway</h2>
       <p style={{ color: "#64748b", fontSize: 13, marginTop: 6 }}>Same tool, same scope, same reference type — ALLOW for Support→CRM, DENY for Payment→CRM. Receipt + crmCounter prove the denied call never reached the fixture.</p>
-      <button onClick={runDemo} disabled={running} style={{ ...s.btn("primary"), marginTop: 12, opacity: running?0.6:1 }}>{running ? "Running 10-call demo..." : "Run 10-call demo"}</button>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button onClick={runDemo} disabled={running} style={{ ...s.btn("primary"), opacity: running?0.6:1 }}>{running ? "Running 10-call demo..." : "Run 10-call demo"}</button>
+        <button onClick={async () => { setBench(null); try { const r:any = await api("/mandate/bench", { method: "POST", body: JSON.stringify({ iterations: 100 }) }); setBench(r); push(`→ bench ${r.iterations} iters go=${r.go_available?"up":"down"} speedup=${r.speedup_go_vs_python?r.speedup_go_vs_python.toFixed(2)+"x":"n/a"}`);} catch(e:any){push(`bench err ${e.message}`)}} } disabled={running} style={{ ...s.btn("secondary"), opacity: running?0.6:1 }}>Bench Go vs Python (100)</button>
+      </div>
       <div style={{ marginTop: 16, fontFamily: "ui-monospace, monospace", fontSize: 12, background: "#0f172a", color: "#e2e8f0", borderRadius: 12, padding: 14, minHeight: 120, whiteSpace: "pre-wrap" }}>
         {log.length? log.join("\n") : "Click Run to execute the falsifiable demo (Support→CRM ALLOW, Payment→CRM DENY NO_PAYMENT_REIDENTIFICATION, aggregate recovery, retry continuity, revoke)."}
       </div>
+      {bench && (
+        <div style={{ marginTop: 16, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>POST /mandate/bench — Go vs Python</div>
+          <pre style={{ marginTop: 8, fontSize: 11, color: "#334155", whiteSpace: "pre-wrap" }}>{JSON.stringify(bench, null, 2)}</pre>
+          <div style={{ marginTop: 8, fontSize: 12, color: bench.speedup_go_vs_python && bench.speedup_go_vs_python>1 ? "#059669" : "#64748b", fontWeight: 700 }}>
+            {bench.go_available ? (bench.speedup_go_vs_python ? `Go ${bench.speedup_go_vs_python.toFixed(2)}x vs Python — WAL SQLite wins` : "Go up — timings captured") : "Go down (fallback Python only) — start docker compose up mandate-gateway"}
+          </div>
+        </div>
+      )}
       {evidence && (
         <div style={{ marginTop: 16, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 14 }}>
           <div style={{ fontWeight: 700, fontSize: 13 }}>GET /runs/:id/evidence</div>

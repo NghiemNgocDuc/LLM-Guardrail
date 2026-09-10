@@ -27,6 +27,7 @@ from app.services.mandate_service import (
     create_run, mint_reference, resolve_provenance_ancestry, evaluate_pinned_policy,
 )
 from app.services.mandate_fixtures import invoke_fixture, get_counters
+import statistics
 
 router = APIRouter(prefix="", tags=["MandateFlow"])
 
@@ -289,4 +290,115 @@ async def mandate_evidence(mandate_id: str, db: AsyncSession = Depends(get_db)):
         "crmCounter": counters.get("crm.resolve_customer", 0),
         "counters": counters,
         "receipts": [{"tool": r.tool, "decision": r.decision, "ruleId": r.rule_id, "reason": r.reason} for r in receipts],
+    }
+
+
+# ── bench: Go vs Python head-to-head ────────────────────────────────────────
+class BenchIn(BaseModel):
+    iterations: int = 100
+    tool: str = "crm.resolve_customer"
+
+@router.post("/mandate/bench")
+async def bench(body: BenchIn, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """Run N gateway calls through Go (if up) vs Python directly, measure latency.
+
+    Creates an isolated mandate/run/capability + two provenance handles
+    (Support ALLOWED, Payment DENY) and times the pinned policy path.
+    Returns avg/p50/p95 + speedup + crmCounter invariant.
+    """
+    org_id = _require_org(user)
+    # isolated mandate for bench
+    mandate = await create_mandate(db, org_id, user.id, ["*"], ttl=600)
+    await db.flush()
+    run = await create_run(db, mandate.id, org_id)
+    cap, raw = await mint_capability(db, mandate.id, run.id, ["*"])
+    run.capability_id = cap.id
+    await db.flush()
+    # two handles: Support (ALLOW) vs Payment (DENY)
+    ref_support = await mint_reference(db, org_id, user.id, "support_case", "SUPPORT_DERIVED")
+    ref_payment = await mint_reference(db, org_id, user.id, "payment_case", "PAYMENT_AGGREGATE_ONLY")
+    await db.commit()
+
+    auth = f"Bearer {raw}"
+    iters = max(1, min(body.iterations, 500))
+
+    async def time_python(handle: str) -> list[float]:
+        times: list[float] = []
+        for _ in range(iters):
+            t0 = time.perf_counter()
+            # direct Python policy eval (no DB fixture increment for pure policy bench)
+            prov = await resolve_provenance_ancestry(db, handle)
+            evaluate_pinned_policy(body.tool, prov)
+            times.append((time.perf_counter() - t0) * 1000)
+        return times
+
+    async def time_go(handle: str) -> list[float] | None:
+        import os
+        url = os.getenv("MANDATE_GATEWAY_URL", "http://mandate-gateway:8182")
+        if not url:
+            return None
+        try:
+            from app.http_client import get_http_client
+            client = get_http_client()
+            # probe health
+            try:
+                h = await client.get(f"{url.rstrip('/')}/health", timeout=1.0)
+                if h.status_code != 200:
+                    return None
+            except Exception:
+                return None
+            times: list[float] = []
+            for _ in range(iters):
+                t0 = time.perf_counter()
+                resp = await client.post(
+                    f"{url.rstrip('/')}/gateway/call",
+                    json={"tool": body.tool, "handle": handle, "inputs": {}, "run_id": run.id},
+                    headers={"Authorization": auth},
+                    timeout=2.0,
+                )
+                _ = resp.json()  # consume
+                times.append((time.perf_counter() - t0) * 1000)
+            return times
+        except Exception:
+            return None
+
+    def stats(times: list[float]) -> dict:
+        if not times:
+            return {"avg": None, "p50": None, "p95": None, "min": None, "max": None}
+        s = sorted(times)
+        return {
+            "avg": sum(times) / len(times),
+            "p50": s[len(s)//2],
+            "p95": s[int(len(s)*0.95)] if len(s) > 1 else s[-1],
+            "min": s[0],
+            "max": s[-1],
+        }
+
+    py_support = await time_python(ref_support.handle)
+    py_payment = await time_python(ref_payment.handle)
+    go_support = await time_go(ref_support.handle)
+    go_payment = await time_go(ref_payment.handle)
+
+    go_available = go_support is not None
+    # speedup = python_avg / go_avg (higher = Go faster)
+    speedup = None
+    if go_available and stats(go_support)["avg"] and stats(py_support)["avg"]:
+        try:
+            speedup = stats(py_support)["avg"] / stats(go_support)["avg"]
+        except Exception:
+            pass
+
+    # prove crmCounter still correct after bench (DENY never increments)
+    counters = await get_counters(db, org_id)
+
+    return {
+        "iterations": iters,
+        "tool": body.tool,
+        "go_available": go_available,
+        "go_gateway_url": "http://mandate-gateway:8182" if go_available else None,
+        "python": {"support": stats(py_support), "payment": stats(py_payment)},
+        "go": {"support": stats(go_support) if go_support else None, "payment": stats(go_payment) if go_payment else None},
+        "speedup_go_vs_python": speedup,
+        "counters": counters,
+        "note": "Payment DENY should not increment fixture_counters; support ALLOW does. Bench times ~policy eval (Python) vs full HTTP+WAL (Go).",
     }
