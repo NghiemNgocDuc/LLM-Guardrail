@@ -479,6 +479,96 @@ class ManagedSkillVersion(Base):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# MandateFlow — provenance-aware authorization (alembic 0018_mandateflow)
+# Built on ToolApproval + GuardrailEvaluation + RequestLog patterns
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Mandate(Base):
+    """Top-level delegation — owns policy_context that persists across retries."""
+    __tablename__ = "mandates"
+
+    id:         Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id:    Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    owner_id:  Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    status:    Mapped[str] = mapped_column(String(16), default="active", index=True)  # active | revoked | expired
+    policy_context: Mapped[dict] = mapped_column(JSON, default=dict)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    org: Mapped["Organization"] = relationship("Organization", backref="mandates")
+
+
+class Capability(Base):
+    """Short-lived, attenuated bearer — Go sidecar uses SHA-256 hash + ConstantTimeCompare."""
+    __tablename__ = "capabilities"
+
+    id:         Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    mandate_id: Mapped[str] = mapped_column(ForeignKey("mandates.id", ondelete="CASCADE"), index=True)
+    run_id:    Mapped[str | None] = mapped_column(ForeignKey("mandate_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    capability_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    scopes:    Mapped[list] = mapped_column(JSON, default=list)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ProvenanceReference(Base):
+    """Server-minted handle — Agent never sees raw ID, ancestry tracks provenance."""
+    __tablename__ = "provenance_references"
+
+    id:         Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id:    Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    owner_id:  Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind:      Mapped[str] = mapped_column(String(64), nullable=False)
+    provenance: Mapped[str] = mapped_column(String(64), nullable=False, index=True)  # SUPPORT_DERIVED | PAYMENT_AGGREGATE_ONLY | etc
+    parent_id: Mapped[str | None] = mapped_column(ForeignKey("provenance_references.id", ondelete="SET NULL"), nullable=True)
+    handle:    Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MandateRun(Base):
+    """One disposable Runtime per attempt — retry = new Run + new Capability, same Mandate."""
+    __tablename__ = "mandate_runs"
+
+    id:         Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    mandate_id: Mapped[str] = mapped_column(ForeignKey("mandates.id", ondelete="CASCADE"), index=True)
+    org_id:    Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    capability_id: Mapped[str | None] = mapped_column(ForeignKey("capabilities.id", ondelete="SET NULL"), nullable=True)
+    status:    Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending | running | completed | failed
+    runtime_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MandateReceipt(Base):
+    """Per-tool decision receipt — persisted in same tx as decision (structural DENY proof)."""
+    __tablename__ = "mandate_receipts"
+
+    id:         Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    run_id:    Mapped[str] = mapped_column(ForeignKey("mandate_runs.id", ondelete="CASCADE"), index=True)
+    mandate_id: Mapped[str] = mapped_column(ForeignKey("mandates.id", ondelete="CASCADE"), index=True)
+    org_id:    Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    tool:      Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    decision:  Mapped[str] = mapped_column(String(16), nullable=False, index=True)  # ALLOW | DENY
+    rule_id:   Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason:    Mapped[str | None] = mapped_column(Text, nullable=True)
+    provenance_at_call: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FixtureCounter(Base):
+    """Provable deny — crmCounter unchanged on DENY means fixture never invoked."""
+    __tablename__ = "fixture_counters"
+
+    org_id:   Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
+    fixture: Mapped[str] = mapped_column(String(64), primary_key=True)
+    counter: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Analytics materialized views (alembic/versions/...0011_analytics_views.py)
 #
 # Read-model tables refreshed on a schedule by

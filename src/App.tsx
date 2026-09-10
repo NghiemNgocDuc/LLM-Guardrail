@@ -20,6 +20,7 @@ import TeamsHubView from "./views/TeamsHubView";
 import AnalyticsView from "./views/AnalyticsView";
 import ProfileView from "./views/ProfileView";
 import HealthView from "./views/HealthView";
+import MandateFlowView from "./views/MandateFlowView";
 import SettingsView from "./views/SettingsView";
 import AboutView from "./views/AboutView";
 import AuthView from "./views/AuthView";
@@ -32,6 +33,7 @@ const NAV: NavItem[] = [
   { id: "dashboard",  label: "Dashboard",      icon: "01" },
   { id: "chat",       label: "LLM Playground", icon: "02" },
   { id: "memory",     label: "Memory",         icon: "04" },
+  { id: "mandate",    label: "MandateFlow",    icon: "MF" },
   { id: "skills",     label: "Rejected access", icon: "SG" },
   { id: "analytics",  label: "Analytics",      icon: "AN" },
   { id: "billing",    label: "Billing",        icon: "$"  },
@@ -146,6 +148,7 @@ export default function App() {
             {view === "dashboard"  && <DashboardView />}
             {view === "chat"       && <ChatView />}
             {view === "memory"     && <MemoryView />}
+            {view === "mandate"    && <MandateFlowView />}
             {view === "skills"     && <SkillGuardView />}
             {view === "analytics"  && <AnalyticsView />}
             {view === "billing"    && <BillingView />}
