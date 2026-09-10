@@ -29,7 +29,7 @@ cryptography>=42.0.0
 redis==5.2.1
 
 # Billing (optional — set STRIPE_* in .env)
-stripe==11.4.1
+stripe==15.5.1
 
 # Clerk (auth replacement — verify JWTs via python-jose/JWKS in app/deps.py;
 # user lifecycle via /auth/clerk-webhook HMAC signature verification in
