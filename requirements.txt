@@ -41,7 +41,7 @@ stripe==11.4.1
 sentry-sdk[fastapi]==2.19.2
 
 # Product analytics
-posthog==3.7.0
+posthog==7.44.0
 
 # Vector store (semantic guardrail, conversation indexing)
 pinecone==5.4.1
