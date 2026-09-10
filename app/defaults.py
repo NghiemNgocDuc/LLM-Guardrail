@@ -3,6 +3,9 @@
 DEFAULT_INPUT_RULES = {
     "block_secrets": True,
     "block_pii": True,
+    # Agent tasks legitimately contain emails/names — block would kill utility (35% FP on InjecAgent).
+    # Use warn (allow + flag for scrubbed logging) per Bifrost pattern; set to "block" for strict demo.
+    "pii_redaction_mode": "warn",
     "pii_patterns": [
         {"name": "credit_card", "regex": r"\b(?:\d[ -]?){13,16}\b"},
         {"name": "ssn",         "regex": r"\b\d{3}-\d{2}-\d{4}\b"},
