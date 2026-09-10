@@ -33,12 +33,13 @@ def _constant_time_eq(a: str, b: str) -> bool:
     return hmac.compare_digest(a.encode(), b.encode())
 
 def attenuate(parent_scopes: list[str], requested: list[str]) -> list[str]:
-    """child = parent ∩ requested — delegation attenuation."""
-    p = set(parent_scopes or [])
-    r = set(requested or [])
-    if not r:
-        return list(p)
-    return sorted(p & r) if p else sorted(r)
+    """child = parent ∩ requested — delegation attenuation. Preserves parent order."""
+    if not requested:
+        return list(parent_scopes or [])
+    if not parent_scopes:
+        return sorted(requested)
+    pset = set(parent_scopes)
+    return [x for x in parent_scopes if x in set(requested)]
 
 def _provenance_for_tool(tool: str, current_ref: ProvenanceReference | None) -> str | None:
     if current_ref:

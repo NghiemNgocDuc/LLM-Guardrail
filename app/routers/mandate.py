@@ -131,6 +131,31 @@ async def retry_run(run_id: str, request: Request, user: CurrentUser, db: AsyncS
     return {"run_id": new_run.id, "runtime_id": new_run.runtime_id, "mandate_id": prev.mandate_id, "capability": raw, "expires_at": cap.expires_at}
 
 # ── gateway — the ONLY path to fixtures (enforcement point) ─────────────────
+# Tries Go sidecar (MANDATE_GATEWAY_URL) first for speed (WAL SQLite),
+# falls back to Python on timeout/error — fail-closed if Go denies.
+GO_GATEWAY_URL = None  # lazy from env
+
+async def _try_go_gateway(body: GatewayCallIn, authorization: str | None):
+    import os
+    url = os.getenv("MANDATE_GATEWAY_URL", "http://mandate-gateway:8182")
+    if not url:
+        return None
+    try:
+        from app.http_client import get_http_client
+        client = get_http_client()
+        # Go sidecar expects same Bearer + {tool, handle, inputs, run_id}
+        payload = {"tool": body.tool, "handle": body.handle, "inputs": body.inputs or {}, "run_id": body.run_id}
+        headers = {}
+        if authorization:
+            headers["Authorization"] = authorization
+        # block Origin — Go rejects Origin header, Python never sends it
+        resp = await client.post(f"{url.rstrip('/')}/gateway/call", json=payload, headers=headers, timeout=2.0)
+        if resp.status_code < 500:
+            return resp.json()
+    except Exception:
+        pass
+    return None
+
 @router.post("/gateway/call")
 async def gateway_call(
     body: GatewayCallIn,
@@ -138,6 +163,38 @@ async def gateway_call(
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    # ── fast path: Go sidecar ────────────────────────────────────────────
+    go_resp = await _try_go_gateway(body, authorization)
+    if go_resp is not None:
+        # Go already wrote its own receipt + counter (SQLite). Mirror to
+        # Postgres for evidence parity so GET /runs/:id/evidence is unified.
+        # We still need a Postgres receipt for the Python evidence endpoint;
+        # write a shadow receipt (best-effort, never fails the call).
+        try:
+            cap = await _auth_cap(db, authorization)
+            res = await db.execute(select(MandateRun).where(MandateRun.id == cap.run_id))
+            run = res.scalar_one_or_none()
+            if run:
+                mres = await db.execute(select(Mandate).where(Mandate.id == cap.mandate_id))
+                mand = mres.scalar_one_or_none()
+                if mand:
+                    shadow = MandateReceipt(
+                        run_id=run.id, mandate_id=mand.id, org_id=run.org_id,
+                        tool=body.tool, decision=go_resp.get("decision","ALLOW"),
+                        rule_id=go_resp.get("ruleId"), reason=go_resp.get("reason"),
+                        provenance_at_call=go_resp.get("provenance_at_call"),
+                        latency_ms=go_resp.get("latency_ms",0),
+                    )
+                    db.add(shadow)
+                    # mirror ALLOW to Postgres fixture counter too
+                    if go_resp.get("decision") == "ALLOW":
+                        await invoke_fixture(db, run.org_id, body.tool, body.inputs or {"handle": body.handle})
+                    await db.commit()
+        except Exception:
+            pass
+        return go_resp
+
+    # ── fallback: Python (Postgres) — always available ───────────────────
     start = time.monotonic()
     cap = await _auth_cap(db, authorization)
     # resolve run from cap
