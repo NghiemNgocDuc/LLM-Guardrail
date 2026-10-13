@@ -1,6 +1,6 @@
 """
 System health endpoints:
-  GET /health          — simple liveness (already exists in main app)
+  GET /health          — API + DB availability, HTTP 200/503 (in main app)
   GET /health/detailed — DB + Redis + LLM backend status
   GET /health/breakers — per-backend circuit breaker state
 """

@@ -1,15 +1,9 @@
 services:
   - type: web
     name: llm-guardrails
-    env: docker
+    runtime: docker
     dockerfilePath: ./Dockerfile.fullstack
-    build:
-      args:
-        VITE_API_BASE_URL: ""
-        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
-        VITE_POSTHOG_API_KEY: ${VITE_POSTHOG_API_KEY}
-        VITE_POSTHOG_HOST: ${VITE_POSTHOG_HOST}
-        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN}
+    healthCheckPath: /health
     envVars:
       # ── App ──────────────────────────────────────────────────────────────
       - key: APP_ENV
@@ -19,9 +13,9 @@ services:
       - key: LOG_LEVEL
         value: INFO
       - key: ALLOWED_ORIGINS
-        value: https://llm-guardrails.onrender.com
+        value: https://llm-guardrail.onrender.com
       - key: PUBLIC_APP_URL
-        value: https://llm-guardrails.onrender.com
+        value: https://llm-guardrail.onrender.com
       - key: PORT
         value: "8000"
       # ── Secrets (set in Render Dashboard) ────────────────────────────────
@@ -84,7 +78,9 @@ services:
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
-      # ── Frontend VITE_ vars (also needed as Docker build args above) ────
+      # Frontend vars: Render passes these to matching Dockerfile ARGs.
+      - key: VITE_API_BASE_URL
+        value: ""
       - key: VITE_CLERK_PUBLISHABLE_KEY
         sync: false
       - key: VITE_POSTHOG_API_KEY

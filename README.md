@@ -1,16 +1,23 @@
 # AI Guardrails Platform
 
-Production-ready Docker stack for a multi-tenant **LLM safety gateway** and **agent skill leak scanner** with:
+A multi-tenant **LLM safety gateway** and **agent skill leak scanner** with a
+FastAPI backend, React dashboard, and Docker deployment:
 
 - FastAPI API gateway
 - React dashboard
 - PostgreSQL audit log
 - Redis-backed rate limiting
 - Per-organization guardrail policy
-- Groq/OpenAI-compatible LLM backend support
+- Groq, OpenAI, Anthropic, Gemini, Grok (xAI), Ollama, and OpenAI-compatible backends
 - Agent skill / instruction scanner (`POST /skills/scan`) for Cursor skills, MCP rules, and system prompts
 
 **Live demo:** [https://llm-guardrail.onrender.com](https://llm-guardrail.onrender.com)
+
+**Health:** [https://llm-guardrail.onrender.com/health](https://llm-guardrail.onrender.com/health)
+
+Start with [Docker](#docker-quickstart) or [local development](#local-development).
+For hosting, see [Render deployment](DEPLOYMENT_RENDER.md); for availability
+alerts, see [UptimeRobot monitoring](#uptimerobot-monitoring).
 
 ## Architecture
 
@@ -26,13 +33,13 @@ FastAPI Guardrail Gateway
   | output guardrails
         |
         v
-Groq / OpenAI / Anthropic / Gemini / Ollama
+Groq / OpenAI / Anthropic / Gemini / Grok / Ollama
 
 PostgreSQL stores users, policies, API keys, and audit logs.
 Redis stores shared rate-limit windows.
 ```
 
-## Nix Quickstart (Linux/macOS)
+## Nix Quickstart (Linux)
 
 A reproducible dev shell is provided by [`flake.nix`](flake.nix) — versions
 pinned to match CI and `docker-compose.yml` (Python 3.12, Node 22, Go
@@ -46,8 +53,8 @@ python -m pytest -q         # backend tests
 npm ci && npm run dev       # frontend
 ```
 
-> Windows: `nix develop` requires WSL2 or a Linux machine — the manual
-> fallback below works everywhere else.
+> On Windows, use WSL2 for the Nix shell, or follow the local development
+> instructions below. The current flake defines Linux development shells.
 
 ## Docker Quickstart
 
@@ -57,18 +64,27 @@ Create `.env` from the example and fill in real secrets:
 cp .env.example .env
 ```
 
-Required production values:
+For a local Docker stack, set these values in `.env`:
 
 ```env
+APP_ENV=development
+DEBUG=false
 SECRET_KEY=<long-random-secret>
-GROQ_API_KEY=<your-groq-key>
 POSTGRES_PASSWORD=<strong-db-password>
+REDIS_PASSWORD=<strong-redis-password>
+DEFAULT_LLM_BACKEND=groq
+DEFAULT_MODEL=openai/gpt-oss-20b
+GROQ_API_KEY=<your-groq-key>
 ```
+
+The example environment selects Ollama; choosing Groq also requires changing
+`DEFAULT_LLM_BACKEND` and `DEFAULT_MODEL` as shown above. For self-hosted Ollama,
+set `OLLAMA_BASE_URL` to an address reachable from the API container.
 
 Start the stack:
 
 ```bash
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
 Open:
@@ -77,12 +93,18 @@ Open:
 - API docs: http://localhost:8080/docs
 - Health: http://localhost:8080/health
 
+The development override enables localhost URLs and API docs. For production,
+use `docker compose up -d --build` without the override, configure
+`PUBLIC_APP_URL` and `ALLOWED_ORIGINS` for your public HTTPS origin, and put TLS
+in front of `web`. Production disables `/docs`, `/redoc`, and `/openapi.json`.
+
 For hosted deployment with Supabase, Upstash, Render, or Koyeb, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Single-container cloud deploys can use `Dockerfile.fullstack`, which builds the React dashboard and serves it from FastAPI on the same port.
 
 Live demo checklist: [LIVE_DEMO.md](LIVE_DEMO.md)
 Operations and backup guide: [OPERATIONS.md](OPERATIONS.md)
+UptimeRobot monitoring setup: [OPERATIONS.md#uptimerobot-monitoring](OPERATIONS.md#uptimerobot-monitoring)
 Screenshot guide: [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)
 
 ## Services
@@ -93,6 +115,8 @@ Screenshot guide: [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)
 | `api` | FastAPI gateway; runs Alembic migrations on startup |
 | `db` | PostgreSQL 16 |
 | `redis` | Shared rate-limit store for API workers |
+| `opa` | Open Policy Agent for custom Rego policy evaluation |
+| `mandate-gateway` | Go service for MandateFlow checks |
 
 Scale API workers:
 
@@ -102,9 +126,89 @@ docker compose up -d --scale api=3
 
 The public entrypoint is `web` on port `8080`. Keep `api`, `db`, and `redis` private.
 
+## Local Development
+
+Use Python 3.12 and Node.js 22, matching the Docker images and CI. Create a
+virtual environment and install the backend dependencies:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+```
+
+On Windows, activate it with `.\.venv\Scripts\Activate.ps1`.
+Copy `.env.example` to `.env` and configure a reachable PostgreSQL database:
+
+```env
+APP_ENV=development
+DEBUG=true
+SECRET_KEY=<local-development-secret>
+DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:5432/<database>
+PUBLIC_APP_URL=http://localhost:5173
+ALLOWED_ORIGINS=http://localhost:5173
+DEFAULT_LLM_BACKEND=mock
+BILLING_ENABLED=false
+```
+
+`mock` lets you exercise the app without provider credentials. Set a real
+backend and its credentials when testing LLM calls. Set `RATE_LIMIT_REDIS_URL`
+to use Redis; leaving it empty uses in-memory limits for local development.
+Compose's database and Redis ports are private, so a host-run API needs a
+separately reachable database or an explicit local port mapping.
+
+Start the backend and frontend in separate terminals:
+
+```bash
+python -m uvicorn main:app --reload
+```
+
+```bash
+npm ci
+npm run dev
+```
+
+Open the dashboard at `http://localhost:5173`, API docs at
+`http://localhost:8000/docs`, and health at `http://localhost:8000/health`.
+Development startup creates database tables; deployed containers run Alembic
+migrations through `docker-entrypoint.sh`.
+
+## UptimeRobot Monitoring
+
+Use **`https://llm-guardrail.onrender.com/health`** for the deployed app's
+HTTP(s) monitor. `/health` accepts GET and HEAD, returns 200 when the API and
+database respond, and returns 503 on database failure or a five-second timeout.
+Checks do not call an LLM or use gateway tokens.
+
+Preview the monitor configuration without an API key or network calls:
+
+```bash
+python scripts/setup_uptimerobot.py --url https://llm-guardrail.onrender.com --dry-run
+```
+
+To create the monitor, configure `UPTIMEROBOT_API_KEY` and
+`UPTIMEROBOT_ALERT_CONTACTS` in your local `.env`, then rerun without
+`--dry-run`. The default interval is five minutes; rerunning reuses an existing
+HTTP monitor at the same URL. See [OPERATIONS.md](OPERATIONS.md#uptimerobot-monitoring)
+for dashboard setup and alert-contact formatting. Monitoring must be activated
+in your own UptimeRobot account after deployment.
+
+## Repository Layout
+
+| Path | Contents |
+| --- | --- |
+| `app/`, `main.py` | API routes, middleware, services, configuration, and data models |
+| `guardrails/`, `guardrail_core/` | Python checks and optional Rust engine |
+| `src/` | React dashboard |
+| `alembic/` | Database migrations |
+| `scripts/`, `tests/` | Operations tools and backend tests |
+| `sdk/`, `examples/` | Client libraries and usage examples |
+| `terraform/`, `deploy/` | Infrastructure configuration and deployment helpers |
+| `cli/`, `middleware/`, `elixir/`, `haskell/`, `julia/`, `zig/`, `grpc_gateway/` | Companion services, analysis tools, and language-specific components |
+
 ## API Flow
 
-Sign up and create an organization:
+Sign up and create an organization (complete email verification if configured):
 
 ```bash
 curl -X POST http://localhost:8080/auth/signup \
@@ -270,6 +374,7 @@ Set `DEFAULT_LLM_BACKEND` globally or `llm_backend` per organization policy.
 | `openai` | `OPENAI_API_KEY` |
 | `anthropic` | `ANTHROPIC_API_KEY` |
 | `gemini` | `GEMINI_API_KEY` |
+| `xai` / `grok` | `XAI_API_KEY` (or `GROK_API_KEY`) |
 | `ollama` | `OLLAMA_BASE_URL` |
 | `openai_compatible` | `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY` |
 | `litellm` | provider keys (optional backend, `pip install litellm`) |
@@ -290,7 +395,7 @@ Each backend is individually circuit-broken; `/health/breakers` reports per-back
 | --- | --- |
 | Response cache (exact-hash) | `RESPONSE_CACHE_ENABLED=true` **and** per-policy `output_rules.response_cache` |
 | External output validators | Per-policy `output_rules.external_validators` (guardrails-ai-style: `ValidLength`, `RegexMatch`, `DenyList`, `AllowList`, `RequiredFields`, `CompetitorDetector`) |
-| At-rest prompt encryption | Set `ENCRYPTION_KEY` (Fernet) — `full_prompt` audit rows are AES-GCM encrypted; admin replay decrypts on the fly |
+| At-rest prompt encryption | Set `ENCRYPTION_KEY` (Fernet) — full prompts are encrypted before storage; admin replay decrypts on the fly |
 | Webhook delivery tracking | `RATE_LIMIT_REDIS_URL` (Redis ring buffer, in-memory fallback) — see `GET /admin/webhook-deliveries` |
 | SSE keepalive | Always on — `/chat/stream` sends `{"type":"ping"}` during long generations |
 
@@ -305,7 +410,10 @@ python scripts/guardrailctl.py cost-anomaly   # flag org daily token-spend spike
 
 ```bash
 python -m pytest -q                        # full suite
+python -m pytest tests/test_uptimerobot.py -q  # health and monitor setup
 GOLDEN_UPDATE=1 python -m pytest tests/test_golden.py -q   # regenerate golden verdicts
+npm run typecheck
+npm run build
 ```
 
 Golden verdict fixtures (`tests/golden/cases.json`) pin input/output guardrail outcomes; CI runs them in a dedicated job.
@@ -319,8 +427,9 @@ could stall the Python `re` engine are safe. The extension is fail-open: any
 import or runtime error falls back to the original pure-Python implementation,
 so the app runs fine on machines without a Rust toolchain.
 
-Select the engine with `GUARDRAIL_ENGINE` (default `rust`; the Docker images
-build and install the extension automatically):
+Select the engine with `GUARDRAIL_ENGINE` (default `rust`). The current Docker
+images do not build the extension; they use the Python fallback unless you add
+the compiled extension to the image:
 
 ```env
 GUARDRAIL_ENGINE=rust      # compiled extension when importable, else Python

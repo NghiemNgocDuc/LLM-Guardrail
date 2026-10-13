@@ -11,8 +11,9 @@ __pycache__/
 .ruff_cache/
 .venv/
 .venv*/
-venv/
-venv312/
+venv*/
+wheels/
+*.egg-info/
 
 # Node / frontend
 node_modules/
@@ -80,5 +81,3 @@ julia/analytics/charts/
 
 # Zig build done (keep fixtures, ignore outputs)
 zig/**/zig-out*
-
-# Frontend: keep dist ignored (already)

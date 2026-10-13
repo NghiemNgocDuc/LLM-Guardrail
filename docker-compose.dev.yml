@@ -1,0 +1,9 @@
+# Local override: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+services:
+  api:
+    environment:
+      APP_ENV: development
+      DEBUG: "true"
+      PUBLIC_APP_URL: http://localhost:8080
+      ALLOWED_ORIGINS: http://localhost:8080
+      COOKIES_SECURE: "false"

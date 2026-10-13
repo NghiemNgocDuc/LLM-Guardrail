@@ -2,6 +2,11 @@ import React, { useState } from "react";
 import { api } from "../utils/api";
 import { s } from "../styles/theme";
 
+interface GatewayDecisionResponse {
+  decision: "ALLOW" | "DENY";
+  ruleId?: string;
+}
+
 export default function MandateFlowView() {
   const [log, setLog] = useState<string[]>([]);
   const [evidence, setEvidence] = useState<any>(null);
@@ -14,20 +19,20 @@ export default function MandateFlowView() {
     setRunning(true); setLog([]); setEvidence(null);
     try {
       push("→ POST /mandate scopes=[*]");
-      const mandate: any = await api("/mandate", { method: "POST", body: JSON.stringify({ scopes: ["support.list_tickets","payments.list_failures","cases.lookup_subject","crm.resolve_customer","payments.aggregate_failures"] }) });
+      const mandate: any = await api("/mandate", { method: "POST", body: { scopes: ["support.list_tickets","payments.list_failures","cases.lookup_subject","crm.resolve_customer","payments.aggregate_failures"] } });
       push(`✓ mandate ${mandate.id.slice(0,8)} policy=${mandate.policy_context.pinned_rule}`);
-      const run: any = await api("/runs", { method: "POST", body: JSON.stringify({ mandate_id: mandate.id }) });
+      const run: any = await api("/runs", { method: "POST", body: { mandate_id: mandate.id } });
       push(`→ Run ${run.run_id.slice(0,8)} runtime=${run.runtime_id} cap=${run.capability.slice(0,16)}...`);
       const cap = run.capability;
       const hdr = { Authorization: `Bearer ${cap}` } as any;
 
       async function call(tool: string, handle?: string, inputs?: any) {
-        const r: any = await api("/gateway/call", { method: "POST", headers: hdr, body: JSON.stringify({ tool, handle, inputs, run_id: run.run_id }) });
+        const r = await api<GatewayDecisionResponse>("/gateway/call", { method: "POST", headers: hdr, body: { tool, handle, inputs, run_id: run.run_id } });
         push(`${r.decision === "ALLOW" ? "✓" : "✗"} ${tool} → ${r.decision}${r.ruleId ? ` ${r.ruleId}` : ""}`);
         return r;
       }
       async function mint(kind: string, provenance?: string, parent?: string) {
-        const r: any = await api("/references/mint", { method: "POST", body: JSON.stringify({ kind, provenance, parent_handle: parent }) });
+        const r: any = await api("/references/mint", { method: "POST", body: { kind, provenance, parent_handle: parent } });
         push(`  mint ${kind} provenance=${r.provenance} handle=${r.handle.slice(0,12)}`);
         return r.handle as string;
       }
@@ -52,12 +57,12 @@ export default function MandateFlowView() {
       // retry continuity
       const retry: any = await api(`/runs/${run.run_id}/retry`, { method: "POST" });
       push(`→ retry new Run ${retry.run_id.slice(0,8)} same mandate ${retry.mandate_id.slice(0,8)}`);
-      const r2 = await api("/gateway/call", { method: "POST", headers: { Authorization: `Bearer ${retry.capability}` }, body: JSON.stringify({ tool: "crm.resolve_customer", handle: h2, run_id: retry.run_id }) });
+      const r2 = await api<GatewayDecisionResponse>("/gateway/call", { method: "POST", headers: { Authorization: `Bearer ${retry.capability}` }, body: { tool: "crm.resolve_customer", handle: h2, run_id: retry.run_id } });
       push(`  retry Payment→CRM → ${r2.decision} ${r2.ruleId||""} (provenance persists)`);
       // revoke
       await api(`/mandate/${mandate.id}/revoke`, { method: "POST" });
       push(`→ revoke mandate ${mandate.id.slice(0,8)}`);
-      try { await api("/gateway/call", { method: "POST", headers: hdr, body: JSON.stringify({ tool: "support.list_tickets" }) }); push("✗ revoked call unexpectedly ALLOW"); } catch (e:any) { push(`✓ revoked call DENY 401`); }
+      try { await api("/gateway/call", { method: "POST", headers: hdr, body: { tool: "support.list_tickets" } }); push("✗ revoked call unexpectedly ALLOW"); } catch (e:any) { push(`✓ revoked call DENY 401`); }
     } catch (e:any) { push(`✗ ${e.message||e}`); }
     finally { setRunning(false); }
   }
@@ -68,7 +73,7 @@ export default function MandateFlowView() {
       <p style={{ color: "#64748b", fontSize: 13, marginTop: 6 }}>Same tool, same scope, same reference type — ALLOW for Support→CRM, DENY for Payment→CRM. Receipt + crmCounter prove the denied call never reached the fixture.</p>
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <button onClick={runDemo} disabled={running} style={{ ...s.btn("primary"), opacity: running?0.6:1 }}>{running ? "Running 10-call demo..." : "Run 10-call demo"}</button>
-        <button onClick={async () => { setBench(null); try { const r:any = await api("/mandate/bench", { method: "POST", body: JSON.stringify({ iterations: 100 }) }); setBench(r); push(`→ bench ${r.iterations} iters go=${r.go_available?"up":"down"} speedup=${r.speedup_go_vs_python?r.speedup_go_vs_python.toFixed(2)+"x":"n/a"}`);} catch(e:any){push(`bench err ${e.message}`)}} } disabled={running} style={{ ...s.btn("secondary"), opacity: running?0.6:1 }}>Bench Go vs Python (100)</button>
+        <button onClick={async () => { setBench(null); try { const r:any = await api("/mandate/bench", { method: "POST", body: { iterations: 100 } }); setBench(r); push(`→ bench ${r.iterations} iters go=${r.go_available?"up":"down"} speedup=${r.speedup_go_vs_python?r.speedup_go_vs_python.toFixed(2)+"x":"n/a"}`);} catch(e:any){push(`bench err ${e.message}`)}} } disabled={running} style={{ ...s.btn("secondary"), opacity: running?0.6:1 }}>Bench Go vs Python (100)</button>
       </div>
       <div style={{ marginTop: 16, fontFamily: "ui-monospace, monospace", fontSize: 12, background: "#0f172a", color: "#e2e8f0", borderRadius: 12, padding: 14, minHeight: 120, whiteSpace: "pre-wrap" }}>
         {log.length? log.join("\n") : "Click Run to execute the falsifiable demo (Support→CRM ALLOW, Payment→CRM DENY NO_PAYMENT_REIDENTIFICATION, aggregate recovery, retry continuity, revoke)."}

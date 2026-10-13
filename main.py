@@ -3,6 +3,7 @@ LLM Guardrails Gateway — production entrypoint.
 Run: uvicorn main:app --reload
 """
 from contextlib import asynccontextmanager
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -214,18 +215,27 @@ graphql_app = GraphQLRouter(schema, context_getter=get_graphql_context)
 app.include_router(graphql_app, prefix="/graphql")
 
 
+HEALTH_CHECK_TIMEOUT_SECONDS = 5.0
+
+
 @app.get("/health", tags=["Meta"])
+@app.head("/health", include_in_schema=False)
 async def health():
     checks = {"status": "ok", "env": settings.APP_ENV, "backend": settings.DEFAULT_LLM_BACKEND}
     try:
-        engine = get_engine()
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
+        async with asyncio.timeout(HEALTH_CHECK_TIMEOUT_SECONDS):
+            engine = get_engine()
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
         checks["database"] = "ok"
     except Exception:
         checks["database"] = "error"
         checks["status"] = "degraded"
-    return checks
+    return JSONResponse(
+        status_code=200 if checks["status"] == "ok" else 503,
+        content=checks,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/.well-known/security.txt", include_in_schema=False)

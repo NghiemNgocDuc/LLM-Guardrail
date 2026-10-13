@@ -1,7 +1,7 @@
 # Render web service — the fullstack entrypoint (render.yaml + fly.toml +
 # DEPLOYMENT.md "Recommended shape").
 #
-# Dockerfile.fullstack builds the frontend (nginx-served static bundle) and the
+# Dockerfile.fullstack builds the frontend (FastAPI-served static bundle) and the
 # FastAPI backend into one image, so this single service plays the role of both
 # the compose `api` and compose `web` services. See terraform/README.md for the
 # mapping table.
@@ -38,7 +38,7 @@ resource "render_web_service" "this" {
 
 # Render assigns the public subdomain https://<name>.onrender.com. The root
 # module uses this for ALLOWED_ORIGINS/PUBLIC_APP_URL, mirroring render.yaml's
-# hardcoded https://llm-guardrails.onrender.com without assuming the URL.
+# configured production hostname without assuming the URL.
 # The URL is deterministic (same convention render.yaml relies on) so the
 # service environment does not depend on the service resource — if Render ever
 # assigns a suffixed URL (name collision), set public_url_override.

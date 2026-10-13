@@ -16,9 +16,10 @@ the apply-from-scratch steps.
 
 Terraform replaces the *mechanical* parts of the manual steps below (creating
 the Render service, Upstash Redis, and wiring environment variables). Two
-things stay manual because no official providers exist or the dashboard
-requires it: creating the Supabase project and setting the `VITE_*` Docker
-build args. The manual steps below remain a valid alternative (Render/Koyeb
+things may still need manual configuration: creating the Supabase project
+and providing frontend `VITE_*` values as service environment variables.
+Render passes those values to matching Docker build arguments; rebuild after
+changing them. The manual steps below remain a valid alternative (Render/Koyeb
 dashboards, or Docker Compose on a VPS) and are also what Terraform does
 under the hood.
 
@@ -138,7 +139,9 @@ Recommended shape:
 4. Set the public port to `8000` for the API container.
 5. Deploy.
 
-As with Render, the current repo has a separate frontend image. For a single public demo, either deploy the frontend separately with `VITE_API_BASE_URL` pointing at the API, or add a single-container deployment target later.
+`Dockerfile.fullstack` serves the dashboard and API together. To split them,
+deploy the frontend separately and set `VITE_API_BASE_URL` to the API origin
+when building the frontend.
 
 ## Public Demo Rate Limits
 
@@ -207,9 +210,12 @@ Gateway API keys:
 Run these checks after every deploy:
 
 ```bash
-curl https://<your-domain>/health
-curl https://<your-domain>/docs
+curl -f https://<your-domain>/health
 ```
+
+Expect HTTP 200 with `status: "ok"` and `database: "ok"`. Production disables
+`/docs`, `/redoc`, and `/openapi.json`; use development mode for interactive
+API documentation.
 
 Then sign in, create a gateway API key, and call:
 

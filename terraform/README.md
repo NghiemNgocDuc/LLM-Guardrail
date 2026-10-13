@@ -107,11 +107,11 @@ What you get:
 Then run the DEPLOYMENT.md **Post-Deploy Checks**:
 
 ```bash
-curl https://<service_name>.onrender.com/health
-curl https://<service_name>.onrender.com/docs
+curl -f https://<service_name>.onrender.com/health
 ```
 
-Verify migrations ran (the container's entrypoint applies them), then sign in,
+Production disables interactive API docs at `/docs`. Verify migrations ran
+(the container's entrypoint applies them), then sign in,
 create a gateway API key, and call `/chat` per DEPLOYMENT.md.
 
 ## What this does NOT cover (yet)
@@ -119,9 +119,9 @@ create a gateway API key, and call `/chat` per DEPLOYMENT.md.
 Deliberately manual, matching what DEPLOYMENT.md leaves manual:
 
 - **Supabase project creation** — no official provider; pooler URL is an input variable. Rotate its password per DEPLOYMENT.md §Key Rotation.
-- **VITE_* Docker build args** (`VITE_API_BASE_URL`, `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_POSTHOG_API_KEY`, `VITE_POSTHOG_HOST`, `VITE_SENTRY_DSN`) — the official Render provider cannot pass Docker build args (verified against v1.9.1 schema: `runtime_source.docker` exposes `dockerfile_path`/`context` only). Set them in the Render dashboard under the service's build settings.
+- **Frontend VITE_* values** (`VITE_API_BASE_URL`, `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_POSTHOG_API_KEY`, `VITE_POSTHOG_HOST`, `VITE_SENTRY_DSN`) — set these as service environment variables in the Render dashboard. [Render passes environment values to Docker build arguments](https://render.com/docs/docker#environment-variable-translation), so no separate provider build-argument field is needed. Rebuild and deploy after changing values to update the frontend bundle.
 - **Custom domains / TLS** — the default `*.onrender.com` domain is used; attaching a custom domain stays a Render dashboard step (the provider supports `custom_domains` if you want to add it later).
-- **Stripe webhook endpoints** — the webhook URL is `https://<service>/stripe/webhook`; registering it in the Stripe dashboard is manual.
+- **Stripe webhook endpoints** — the webhook URL is `https://<service>/billing/webhook`; registering it in the Stripe dashboard is manual.
 - **Koyeb / Fly.io / VPS+Compose** — the alternative DEPLOYMENT.md targets stay manual; this configuration targets Render (the documented recommended shape). `fly.toml` and `docker-compose.yml` remain untouched.
 - **Frontend split deploy** (DEPLOYMENT.md "separate frontend/backend" shape) — not provisioned; `render_static_site` exists in the provider if you want to add it.
 
