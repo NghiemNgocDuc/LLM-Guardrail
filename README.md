@@ -416,6 +416,19 @@ npm run typecheck
 npm run build
 ```
 
+Frontend browser checks use mocked API data to verify authentication, dashboard
+navigation, prompt submission, mobile layouts, and accessibility:
+
+```bash
+npx playwright install chromium
+npm run test:frontend
+```
+
+They run at desktop and 375px mobile widths. On Windows with Edge already
+installed, set `$env:PW_CHANNEL="msedge"` in PowerShell to use it instead of
+downloading Chromium. Preview screenshots and failure traces are written to
+the ignored `test-results/` directory.
+
 Golden verdict fixtures (`tests/golden/cases.json`) pin input/output guardrail outcomes; CI runs them in a dedicated job.
 
 ### Guardrail engine (Rust)

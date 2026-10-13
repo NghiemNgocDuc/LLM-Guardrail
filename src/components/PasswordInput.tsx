@@ -1,49 +1,50 @@
 import React, { useState } from "react";
-import { api, getToken, setTokens, clearTokens, getGatewayKey, setGatewayKey, maskGatewayKey, gatewayKeyInputProps, formatApiError } from "../utils/api";
+import AppIcon from "./AppIcon";
 import { s } from "../styles/theme";
-import type { CSSProperties } from "react";
+import type { CSSProperties, InputHTMLAttributes } from "react";
 
 const passwordStyles: Record<string, CSSProperties> = {
   wrap: { position: "relative", width: "100%" },
   codeInput: {
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-    fontSize: 13,
+    fontFamily: "inherit",
+    fontSize: 16,
   },
   toggle: {
     position: "absolute",
-    right: 8,
+    right: 3,
     top: "50%",
     transform: "translateY(-50%)",
     border: "none",
     background: "transparent",
-    color: "#64748b",
+    color: "var(--gr-muted)",
     fontSize: 11,
     fontWeight: 700,
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     cursor: "pointer",
-    padding: "6px 8px",
+    padding: 10,
+    width: 44,
+    height: 44,
+    display: "grid",
+    placeItems: "center",
     borderRadius: 6,
     lineHeight: 1,
   },
 };
 
-export default function PasswordInput({ value, onChange, placeholder, autoComplete }: {
+export default function PasswordInput({ value, onChange, style, ...inputProps }: {
   value: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  placeholder?: string;
-  autoComplete?: string;
-}) {
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "onChange">) {
   const [visible, setVisible] = useState(false);
 
   return (
     <div style={passwordStyles.wrap}>
       <input
-        style={{ ...s.input, ...passwordStyles.codeInput, paddingRight: 72 }}
+        {...inputProps}
+        style={{ ...s.input, ...passwordStyles.codeInput, ...style, paddingRight: 50 }}
         type={visible ? "text" : "password"}
-        placeholder={placeholder}
         value={value}
         onChange={onChange}
-        autoComplete={autoComplete}
       />
       <button
         type="button"
@@ -51,9 +52,10 @@ export default function PasswordInput({ value, onChange, placeholder, autoComple
         style={passwordStyles.toggle}
         onClick={() => setVisible((v) => !v)}
         aria-label={visible ? "Hide password" : "Show password"}
+        aria-pressed={visible}
         title={visible ? "Hide password" : "Show password"}
       >
-        {visible ? "hide()" : "show()"}
+        <AppIcon name={visible ? "eye-off" : "eye"} size={18} />
       </button>
     </div>
   );

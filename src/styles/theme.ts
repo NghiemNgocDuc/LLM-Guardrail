@@ -1,179 +1,67 @@
 import type { CSSProperties } from "react";
 
-const navItem = (active: boolean): CSSProperties => ({
-    display: "flex", alignItems: "center", gap: 10,
-    padding: "11px 12px",
-    cursor: "pointer",
-    fontSize: 14,
-    fontWeight: active ? 750 : 650,
-    letterSpacing: 0,
-    color: active ? "#0f766e" : "#607086",
-    background: active ? "rgba(45, 212, 191, 0.1)" : "transparent",
-    border: active ? "1px solid rgba(15, 118, 110, 0.15)" : "1px solid transparent",
-    borderRadius: 8,
-    transition: "all 0.18s ease",
-    userSelect: "none",
-    marginBottom: 6,
-  });
-
 const badge = (status: string): CSSProperties => {
-    const map: Record<string, { bg: string; color: string; border: string }> = {
-      delivered:      { bg: "#e8f8ef", color: "#067647", border: "#abe7c6" },
-      input_blocked:  { bg: "#fff3e8", color: "#b45309", border: "#fed7aa" },
-      output_blocked: { bg: "#fff7df", color: "#99620f", border: "#fde68a" },
-      rate_limited:   { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" },
-      error:          { bg: "#fff1f2", color: "#be123c", border: "#fecdd3" },
-    };
-    const c = map[status] || { bg: "#eef3f8", color: "#405166", border: "#dce7f0" };
-    return {
-      display: "inline-flex", alignItems: "center", padding: "4px 9px", borderRadius: 999,
-      fontSize: 11, fontWeight: 800, letterSpacing: 0,
-      background: c.bg, color: c.color, border: `1px solid ${c.border}`,
-    };
+  const colors: Record<string, [string, string]> = {
+    delivered: ["var(--gr-accent-soft)", "var(--gr-accent)"],
+    input_blocked: ["var(--gr-warning-soft)", "var(--gr-warning)"],
+    output_blocked: ["var(--gr-warning-soft)", "var(--gr-warning)"],
+    rate_limited: ["var(--gr-info-soft)", "var(--gr-info)"],
+    error: ["var(--gr-danger-soft)", "var(--gr-danger)"],
   };
+  const [background, color] = colors[status] || ["var(--gr-subtle)", "var(--gr-muted)"];
+  return { display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 9px", borderRadius: 6,
+    fontSize: 11, fontWeight: 600, lineHeight: 1.4, background, color, border: "1px solid transparent" };
+};
 
 const btn = (variant = "primary"): CSSProperties => ({
-    padding: "10px 16px", borderRadius: 8, border: "1px solid transparent", cursor: "pointer",
-    fontSize: 13, fontWeight: 800, letterSpacing: 0,
-    fontFamily: "inherit",
-    ...(variant === "primary"
-      ? { background: "linear-gradient(135deg, #0f766e, #047857)", color: "#fff", boxShadow: "0 10px 22px rgba(15, 118, 110, 0.18)" }
-      : variant === "danger"
-      ? { background: "#fff1f2", color: "#be123c", border: "1px solid #fecdd3" }
-      : { background: "#ffffff", color: "#405166", border: "1px solid #ccd9e6" }),
-  });
+  display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+  minHeight: 40, padding: "10px 16px", borderRadius: 8, cursor: "pointer",
+  fontSize: 13, fontWeight: 600, fontFamily: "inherit", lineHeight: 1.35,
+  border: "1px solid var(--gr-border)",
+  ...(variant === "primary" ? { background: "var(--gr-accent)", color: "var(--gr-on-accent)", borderColor: "var(--gr-accent)" }
+    : variant === "danger" ? { background: "var(--gr-danger-soft)", color: "var(--gr-danger)", borderColor: "var(--gr-danger-border)" }
+    : { background: "var(--gr-surface)", color: "var(--gr-ink)" }),
+});
 
-const toggle = (on: boolean): CSSProperties => ({
-    width: 42, height: 24, borderRadius: 999, position: "relative",
-    background: on ? "#0f766e" : "#cad6e2", border: "none", cursor: "pointer",
-    transition: "background 0.2s", flexShrink: 0,
-  });
-
-const toggleDot = (on: boolean): CSSProperties => ({
-    position: "absolute", top: 3, left: on ? 21 : 3,
-    width: 18, height: 18, borderRadius: "50%", background: "#fff",
-    transition: "left 0.2s",
-    boxShadow: "0 2px 8px rgba(16,32,51,0.18)",
-  });
-
-const chip = (on: boolean): CSSProperties => ({
-    padding: "7px 12px", borderRadius: 999, fontSize: 12, cursor: "pointer",
-    border: on ? "1px solid #8ddfcf" : "1px solid #dce7f0",
-    background: on ? "#e8f8f3" : "#ffffff",
-    color: on ? "#0f766e" : "#607086",
-    fontWeight: 750,
-    userSelect: "none",
-  });
-
-const alert = (type: string): CSSProperties => ({
-    padding: "13px 15px", borderRadius: 8, fontSize: 13, marginBottom: 16,
-    background: type === "error" ? "#fff1f2" : type === "success" ? "#e8f8ef" : "#eff6ff",
-    border: `1px solid ${type === "error" ? "#fecdd3" : type === "success" ? "#abe7c6" : "#bfdbfe"}`,
-    color: type === "error" ? "#be123c" : type === "success" ? "#067647" : "#1d4ed8",
-    lineHeight: 1.5,
-  });
-
-const inputStyle: CSSProperties = {
-    width: "100%", background: "#ffffff", border: "1px solid #ccd9e6",
-    borderRadius: 8, padding: "11px 12px", color: "#102033",
-    fontFamily: "inherit", fontSize: 14, outline: "none",
-    boxSizing: "border-box",
-    boxShadow: "0 1px 0 rgba(15,118,110,0.03)",
-  };
-
-const tableStyle: CSSProperties = { width: "100%", borderCollapse: "collapse" };
-const thStyle: CSSProperties = { textAlign: "left", padding: "10px 12px", fontSize: 11, color: "#7b8a9d",
-    letterSpacing: "0.04em", textTransform: "uppercase", borderBottom: "1px solid #e7eef6", whiteSpace: "nowrap" };
-const tdStyle: CSSProperties = { padding: "12px", fontSize: 13, borderBottom: "1px solid #eef3f8", color: "#405166" };
-
-const appStyle: CSSProperties = {
-  height: "100vh",
-  width: "100vw",
-  position: "relative",
-  overflow: "hidden",
-  background: "transparent",
-  color: "#102033",
-  fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-  display: "flex",
-};
-const sidebarStyle: CSSProperties = {
-  width: 260,
-  position: "relative",
-  zIndex: 1,
-  background: "rgba(255, 255, 255, 0.9)",
-  borderRight: "1px solid rgba(15, 118, 110, 0.15)",
-  padding: "22px 14px",
-  display: "flex",
-  flexDirection: "column",
-  flexShrink: 0,
-  overflowY: "auto",
-  boxShadow: "12px 0 64px rgba(15, 118, 110, 0.12), inset 0 1px 0 rgba(255,255,255,0.5)",
-  backdropFilter: "blur(20px)",
-};
-const mainStyle: CSSProperties = { flex: 1, minWidth: 0, overflow: "auto", padding: 32, maxWidth: 1520, margin: "0 auto", position: "relative", zIndex: 1 };
+const card: CSSProperties = { background: "var(--gr-surface)", border: "1px solid var(--gr-border)", borderRadius: 12, padding: 24 };
+const input: CSSProperties = { width: "100%", minHeight: 44, background: "var(--gr-surface)", border: "1px solid var(--gr-input-border)",
+  borderRadius: 8, padding: "11px 13px", color: "var(--gr-ink)", fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" };
 
 export const s = {
-  app: appStyle,
-  sidebar: sidebarStyle,
-  logo: {
-    padding: "0 10px 20px",
-    borderBottom: "1px solid #e7eef6",
-    marginBottom: 18,
-  },
-  logoText: {
-    fontSize: 18,
-    fontWeight: 800,
-    letterSpacing: 0,
-    color: "#102033",
-  },
-  logoSub: { fontSize: 12, color: "#607086", marginTop: 6, overflow: "hidden", textOverflow: "ellipsis" },
-  navItem,
-  main: mainStyle,
-  pageTitle: {
-    fontSize: 28, fontWeight: 850, marginBottom: 22,
-    color: "#102033", letterSpacing: 0,
-  },
-  card: {
-    background: "rgba(255, 255, 255, 0.9)",
-    border: "1px solid rgba(15, 118, 110, 0.15)",
-    borderRadius: 16,
-    padding: 22,
-    boxShadow: "0 24px 64px rgba(15, 118, 110, 0.08), inset 0 1px 0 rgba(255,255,255,0.5)",
-    backdropFilter: "blur(20px)",
-  },
+  app: { height: "100dvh", width: "100%", overflow: "hidden", background: "var(--gr-bg)", color: "var(--gr-ink)", fontFamily: "var(--gr-font)", display: "flex" },
+  sidebar: { width: 248, background: "var(--gr-sidebar)", borderRight: "1px solid var(--gr-border)", display: "flex", flexDirection: "column", flexShrink: 0 },
+  logo: { padding: "22px 20px", marginBottom: 12 },
+  logoText: { fontSize: 18, fontWeight: 650, letterSpacing: "-.035em", color: "var(--gr-ink)" },
+  logoSub: { fontSize: 12, color: "var(--gr-muted)", marginTop: 6, overflow: "hidden", textOverflow: "ellipsis" },
+  navItem: (active: boolean): CSSProperties => ({ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", minHeight: 42,
+    cursor: "pointer", fontSize: 13, fontWeight: active ? 600 : 450, color: active ? "var(--gr-accent)" : "var(--gr-muted)",
+    background: active ? "var(--gr-accent-soft)" : "transparent", border: "none", borderRadius: 7 }),
+  main: { flex: 1, minWidth: 0, overflow: "auto", padding: 32, position: "relative" },
+  pageTitle: { fontSize: 28, fontWeight: 600, marginBottom: 24, color: "var(--gr-ink)", letterSpacing: "-.04em", lineHeight: 1.2 },
+  card,
   statGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(185px,1fr))", gap: 16, marginBottom: 24 },
-  statCard: {
-    background: "rgba(255, 255, 255, 0.9)",
-    border: "1px solid rgba(15, 118, 110, 0.15)",
-    borderRadius: 16,
-    padding: 20,
-    boxShadow: "0 16px 42px rgba(15, 118, 110, 0.06), inset 0 1px 0 rgba(255,255,255,0.5)",
-    backdropFilter: "blur(20px)",
-  },
-  statLabel: { fontSize: 12, color: "#607086", letterSpacing: 0, fontWeight: 750 },
-  statValue: { fontSize: 32, fontWeight: 850, marginTop: 6, color: "#102033" },
-  statSub:   { fontSize: 12, color: "#7b8a9d", marginTop: 4 },
-  grid2: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))", gap: 18, marginBottom: 24 },
-  sectionTitle: { fontSize: 13, fontWeight: 800, letterSpacing: 0, color: "#27394f",
-    marginBottom: 16 },
-  table: tableStyle,
-  th: thStyle,
-  td: tdStyle,
-  badge,
-  input: inputStyle,
-  btn,
-  toggle,
-  toggleDot,
-  chip,
-  alert,
-  muted: { color: "#7b8a9d", fontSize: 13 },
-  label: { fontSize: 12, color: "#607086", fontWeight: 750, marginBottom: 6 },
-  heroPanel: {
-    background: "linear-gradient(135deg, #ffffff 0%, #ecfdf7 52%, #f0fdf4 100%)",
-    border: "1px solid #d3eadf",
-    borderRadius: 8,
-    padding: 24,
-    marginBottom: 24,
-    boxShadow: "0 18px 50px rgba(15, 118, 110, 0.08)",
-  },
-} satisfies Record<string, unknown>;
+  statCard: { ...card, padding: 22 },
+  statLabel: { fontSize: 12, color: "var(--gr-muted)", fontWeight: 500 },
+  statValue: { fontSize: 34, fontWeight: 550, marginTop: 12, color: "var(--gr-ink)", letterSpacing: "-.04em", fontVariantNumeric: "tabular-nums" },
+  statSub: { fontSize: 12, color: "var(--gr-muted)", marginTop: 6 },
+  grid2: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,340px),1fr))", gap: 20, marginBottom: 24 },
+  sectionTitle: { fontSize: 14, fontWeight: 600, color: "var(--gr-ink)", marginBottom: 18 },
+  table: { width: "100%", borderCollapse: "collapse", textAlign: "left" },
+  th: { textAlign: "left", padding: "12px 14px", fontSize: 11, color: "var(--gr-muted)", fontWeight: 600,
+    letterSpacing: ".05em", textTransform: "uppercase", borderBottom: "1px solid var(--gr-border)", whiteSpace: "nowrap" },
+  td: { padding: "14px", fontSize: 13, borderBottom: "1px solid var(--gr-border)", color: "var(--gr-ink)", lineHeight: 1.5 },
+  badge, input, btn,
+  toggle: (on: boolean): CSSProperties => ({ width: 42, height: 24, borderRadius: 999, position: "relative",
+    background: on ? "var(--gr-accent)" : "var(--gr-input-border)", border: "none", cursor: "pointer", flexShrink: 0 }),
+  toggleDot: (on: boolean): CSSProperties => ({ position: "absolute", top: 3, left: on ? 21 : 3,
+    width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .18s ease" }),
+  chip: (on: boolean): CSSProperties => ({ display: "inline-flex", padding: "8px 12px", minHeight: 36, alignItems: "center", borderRadius: 7, fontSize: 12,
+    cursor: "pointer", border: on ? "1px solid var(--gr-accent)" : "1px solid var(--gr-border)", background: on ? "var(--gr-accent-soft)" : "var(--gr-surface)",
+    color: on ? "var(--gr-accent)" : "var(--gr-muted)", fontWeight: 500 }),
+  alert: (type: string): CSSProperties => ({ padding: "14px 16px", borderRadius: 8, fontSize: 13, marginBottom: 16, lineHeight: 1.55,
+    background: type === "error" ? "var(--gr-danger-soft)" : type === "success" ? "var(--gr-accent-soft)" : "var(--gr-info-soft)",
+    color: type === "error" ? "var(--gr-danger)" : type === "success" ? "var(--gr-accent)" : "var(--gr-info)", border: "1px solid var(--gr-border)" }),
+  muted: { color: "var(--gr-muted)", fontSize: 13 },
+  label: { display: "block", fontSize: 12, color: "var(--gr-muted)", fontWeight: 550, marginBottom: 8 },
+  heroPanel: { ...card, background: "var(--gr-accent-soft)", padding: 28, marginBottom: 24 },
+} satisfies Record<string, CSSProperties | ((...args: any[]) => CSSProperties)>;

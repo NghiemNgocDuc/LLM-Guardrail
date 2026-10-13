@@ -209,8 +209,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Typecheck frontend
+        run: npm run typecheck
+
       - name: Build frontend
         run: npm run build
+
+      - name: Install frontend test browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Test desktop and mobile frontend
+        run: npm run test:frontend
 
       - name: Audit frontend dependencies
         run: npm audit --audit-level=high
