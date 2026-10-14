@@ -202,6 +202,11 @@
   .gr-auth-capabilities svg { width: 11px; }
   .gr-auth-footer { font-size: 10px; min-height: 62px; }
 }
+.gr-auth-story { animation: gr-auth-enter 550ms cubic-bezier(.22, 1, .36, 1) both; }
+.gr-auth-form-shell { animation: gr-auth-enter 450ms cubic-bezier(.22, 1, .36, 1) 80ms both; }
+.gr-auth-form-heading { animation: gr-auth-enter 240ms cubic-bezier(.22, 1, .36, 1) both; }
+.gr-auth-primary:active:not(:disabled) { transform: translateY(1px); }
+@keyframes gr-auth-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .gr-auth-page *, .gr-auth-page *::before, .gr-auth-page *::after { animation: none !important; transition: none !important; }
   .gr-auth-stream-cursor { display: none; }

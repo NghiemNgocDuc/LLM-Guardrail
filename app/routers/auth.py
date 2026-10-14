@@ -57,6 +57,11 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=256)
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=8, max_length=256)
+
+
 def _auth_response(user: User) -> dict:
     return {
         "access_token": create_access_token(user.id),
@@ -281,6 +286,22 @@ async def clerk_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 # ─── User info ────────────────────────────────────────────────────────────────
+
+@router.post("/change-password", response_model=MessageResponse)
+async def change_password(body: ChangePasswordRequest, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """Require the existing password before changing a local account password."""
+    if not current_user.hashed_password:
+        raise HTTPException(status_code=400, detail="This account uses an external sign-in provider. Change your password there.")
+    if not verify_password(body.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    # bcrypt hashes at most 72 bytes; do not silently truncate a new password.
+    if len(body.new_password.encode("utf-8")) > 72:
+        raise HTTPException(status_code=422, detail="New password must be at most 72 bytes")
+    if verify_password(body.new_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Choose a different new password")
+    current_user.hashed_password = hash_password(body.new_password)
+    await db.flush()
+    return {"message": "Password updated."}
 
 @router.get("/me", response_model=UserOut)
 async def me(current_user: CurrentUser):

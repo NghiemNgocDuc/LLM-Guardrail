@@ -1,163 +1,101 @@
-import React, { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import { api } from "../utils/api";
-import { s } from "../styles/theme";
 import type { components } from "../api-types";
-type OrgOut = components["schemas"]["OrgOut"];
-type UserOut = components["schemas"]["UserOut"];
+import { Badge, Button, Dialog, EmptyState, Field, LoadingState, Notice, PageHeader } from "../components/ui";
+import AppIcon from "../components/AppIcon";
+import "../styles/accounts.css";
 
-export default function TeamsHubView({ user, onSwitch, onBack }: { user: UserOut | null; onSwitch?: (org: OrgOut) => void; onBack?: () => void }) {
-  const [teams, setTeams] = useState<OrgOut[]>([]);
+type Organization = components["schemas"]["OrgOut"];
+type User = components["schemas"]["UserOut"];
+const errorMessage = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
+
+export default function TeamsHubView({ user, onSwitch, onBack, onUserUpdate }: { user: User | null; onSwitch?: (org: Organization) => void; onBack?: () => void; onUserUpdate?: (user: User) => void }) {
+  const [teams, setTeams] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [switching, setSwitching] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<Organization | null>(null);
   const [editName, setEditName] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<OrgOut | null>(null);
-  const [deleteFullName, setDeleteFullName] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Organization | null>(null);
+  const [signature, setSignature] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [dialogError, setDialogError] = useState("");
 
-  async function fetchTeams() {
+  const fetchTeams = useCallback(async () => {
     setLoading(true); setError("");
-    try {
-      const data = await api<OrgOut[]>("/org/list");
-      setTeams(data);
-    } catch (e) {
-      // fallback to current org single
-      try {
-        const cur = await api<OrgOut>("/org");
-        setTeams([cur]);
-      } catch { setError(e instanceof Error ? e.message : String(e)); }
+    try { setTeams(await api<Organization[]>("/org/list")); }
+    catch (reason) {
+      try { setTeams([await api<Organization>("/org")]); setError("The team list could not be loaded. Showing your current workspace only."); }
+      catch { setError(errorMessage(reason)); }
     } finally { setLoading(false); }
-  }
-  useEffect(() => { fetchTeams(); }, []);
+  }, []);
+  useEffect(() => { void fetchTeams(); }, [fetchTeams]);
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    setCreating(true); setError(""); setSuccess("");
+  async function create(event: FormEvent) {
+    event.preventDefault(); setCreating(true); setDialogError("");
     try {
-      const body: any = {};
-      if (newName.trim()) body.name = newName.trim();
-      const org = await api<OrgOut>("/org", { method: "POST", body });
-      setSuccess(`Created ${org.name}`);
-      setNewName("");
-      fetchTeams();
-      if (onSwitch) onSwitch(org);
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setCreating(false); }
+      const org = await api<Organization>("/org", { method: "POST", body: newName.trim() ? { name: newName.trim() } : {} });
+      setCreateOpen(false); setNewName(""); setSuccess(`Created ${org.name}.`); await fetchTeams();
+      if (onSwitch) onSwitch(org); else onUserUpdate?.(await api<User>("/auth/me"));
+    } catch (reason) { setDialogError(errorMessage(reason)); } finally { setCreating(false); }
   }
 
-  async function handleSwitch(org: OrgOut) {
-    setError(""); setSuccess("");
+  async function switchTeam(org: Organization) {
+    setSwitching(org.id); setError(""); setSuccess("");
     try {
-      const switched = await api<OrgOut>("/org/switch", { method: "POST", body: { org_id: org.id } });
-      setSuccess(`Switched to ${switched.name}`);
-      if (onSwitch) onSwitch(switched);
-      else window.location.reload();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+      const switched = await api<Organization>("/org/switch", { method: "POST", body: { org_id: org.id } });
+      if (onSwitch) onSwitch(switched); else { onUserUpdate?.(await api<User>("/auth/me")); setSuccess(`Now working in ${switched.name}.`); }
+    } catch (reason) { setError(errorMessage(reason)); } finally { setSwitching(null); }
   }
 
-  async function handleRename(org: OrgOut) {
-    if (!editName.trim()) return;
+  async function rename(event: FormEvent) {
+    event.preventDefault(); if (!renameTarget) return;
+    setRenaming(true); setDialogError("");
     try {
-      const updated = await api<OrgOut>(`/org/${org.id}`, { method: "PATCH", body: { name: editName.trim() } });
-      setTeams(teams.map(t => t.id === org.id ? updated : t));
-      setEditingId(null); setSuccess(`Renamed to ${updated.name}`);
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+      const updated = await api<Organization>(`/org/${renameTarget.id}`, { method: "PATCH", body: { name: editName.trim() } });
+      setTeams((current) => current.map((team) => team.id === updated.id ? updated : team));
+      setRenameTarget(null); setSuccess(`Renamed to ${updated.name}.`);
+    } catch (reason) { setDialogError(errorMessage(reason)); } finally { setRenaming(false); }
   }
 
-  async function handleDeleteConfirm() {
-    if (!deleteTarget || !user) return;
-    if (deleteFullName.trim() !== user.full_name.trim()) {
-      setError(`Full name does not match — type '${user.full_name}' exactly to confirm`);
-      return;
-    }
-    setDeleting(true); setError("");
+  async function deleteTeam(event: FormEvent) {
+    event.preventDefault(); if (!deleteTarget || !user || signature.trim() !== user.full_name.trim()) return;
+    setDeleting(true); setDialogError("");
     try {
-      await api(`/org/${deleteTarget.id}`, { method: "DELETE", body: { full_name: deleteFullName.trim() } });
-      setSuccess(`Deleted ${deleteTarget.name}`);
-      setDeleteTarget(null); setDeleteFullName("");
-      fetchTeams();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setDeleting(false); }
+      await api(`/org/${deleteTarget.id}`, { method: "DELETE", body: { full_name: signature.trim() } });
+      const name = deleteTarget.name;
+      const deletedCurrent = user.org_id === deleteTarget.id;
+      setDeleteTarget(null); setSignature(""); setSuccess(`Deleted ${name}.`);
+      if (deletedCurrent) { const updated = await api<User>("/auth/me"); if (onUserUpdate) onUserUpdate(updated); else window.location.reload(); }
+      await fetchTeams();
+    } catch (reason) { setDialogError(errorMessage(reason)); } finally { setDeleting(false); }
   }
 
-  return (
-    <div style={{ maxWidth: 900, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        {onBack && <button onClick={onBack} style={{ ...s.btn("secondary"), padding: "8px 14px", borderRadius: 10 }}>← Back</button>}
-        <div style={s.pageTitle}>Your Teams</div>
-        <span style={{ background: "#f1f5f9", border: "1px solid #e2e8f0", padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, color: "#475569" }}>{teams.length} / 500 project{teams.length !== 1 ? "s" : ""}</span>
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "#7b8a9d" }}>Leader can join multiple — click a team to work there • Cap 500 teams/user</span>
-      </div>
-
-      <div style={{ ...s.heroPanel, background: "linear-gradient(135deg,#fff 0%,#f8fafc 60%,#f0fdfa 100%)", border: "1px solid #e2e8f0", marginBottom: 16 }}>
-        <div style={{ color: "#405166", fontSize: 13, lineHeight: 1.6 }}>Choose a project to work with. Each team has its own skills, policy, and audit logs. Create <strong>Team 1, Team 2…</strong> by default — rename easily.</div>
-      </div>
-
-      {error && <div style={{ ...s.alert("error"), marginBottom: 12 }}>{error}</div>}
-      {success && <div style={{ ...s.alert("success"), marginBottom: 12 }}>{success}</div>}
-
-      {/* Create new team */}
-      <form onSubmit={handleCreate} style={{ ...s.card, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end", marginBottom: 16, background: "linear-gradient(135deg,#fff 0%,#f0fdfa 100%)", borderColor: "#99f6e4" }}>
-        <div style={{ flex: "1 1 260px" }}>
-          <label style={s.label}>New team name (optional — defaults to Team 1, Team 2)</label>
-          <input style={s.input} placeholder="Team 1" value={newName} onChange={e => setNewName(e.target.value)} maxLength={120} />
-        </div>
-        <button type="submit" disabled={creating} style={{ ...s.btn("primary"), height: 42, padding: "0 18px" }}>{creating ? "Creating…" : "+ Create team"}</button>
-      </form>
-
-      {/* Teams grid */}
-      {loading ? <div style={s.muted}>Loading teams…</div> : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 14 }}>
-          {teams.map(org => {
-            const isCurrent = user?.org_id === org.id;
-            const isEditing = editingId === org.id;
-            return (
-              <div key={org.id} style={{ ...s.card, padding: 16, borderColor: isCurrent ? "#0f766e" : "#e2e8f0", background: isCurrent ? "#ecfdf5" : "#fff", position: "relative" }}>
-                {isCurrent && <span style={{ position: "absolute", top: 10, right: 10, background: "#0f766e", color: "#fff", fontSize: 10, fontWeight: 800, padding: "3px 8px", borderRadius: 999 }}>Current</span>}
-                <div style={{ fontSize: 11, color: "#7b8a9d", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>Team</div>
-                {isEditing ? (
-                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                    <input style={{ ...s.input, flex: 1, padding: "6px 10px", fontSize: 13 }} value={editName} onChange={e => setEditName(e.target.value)} autoFocus onKeyDown={e => e.key === "Enter" && handleRename(org)} />
-                    <button onClick={() => handleRename(org)} style={{ ...s.btn("primary"), padding: "6px 10px", fontSize: 11 }}>Save</button>
-                    <button onClick={() => setEditingId(null)} style={{ ...s.btn("secondary"), padding: "6px 10px", fontSize: 11 }}>Cancel</button>
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-                    <div style={{ fontSize: 18, fontWeight: 900, color: "#102033", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.name}</div>
-                    <button onClick={() => { setEditingId(org.id); setEditName(org.name); }} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 8px", fontSize: 11, cursor: "pointer", color: "#475569" }}>Rename</button>
-                  </div>
-                )}
-                <div style={{ fontSize: 11, color: "#7b8a9d", marginTop: 4, fontFamily: "ui-monospace, monospace" }}>{org.slug} • {new Date(org.created_at).toLocaleDateString()}</div>
-                <button onClick={() => handleSwitch(org)} style={{ ...s.btn(isCurrent ? "secondary" : "primary"), width: "100%", marginTop: 12, padding: "10px 12px", borderRadius: 10 }}>
-                  {isCurrent ? "Working here ✓" : `Open ${org.name} →`}
-                </button>
-                {/* Delete project — last button, leader only, requires full name signature */}
-                <button onClick={() => { setDeleteTarget(org); setDeleteFullName(""); setError(""); }} style={{ ...s.btn("danger"), width: "100%", marginTop: 8, padding: "8px 12px", borderRadius: 10, fontSize: 11 }}>Delete project</button>
-              </div>
-            );
-          })}
-          {teams.length === 0 && !loading && <div style={{ ...s.card, textAlign: "center", color: "#7b8a9d", padding: 24 }}>No teams yet — create Team 1 above.</div>}
-        </div>
-      )}
-
-      {/* Delete confirm modal — sign full name */}
-      {deleteTarget && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(16,32,51,0.5)", display: "grid", placeItems: "center", zIndex: 50, padding: 16 }} onClick={() => setDeleteTarget(null)}>
-          <div style={{ ...s.card, maxWidth: 440, width: "100%", background: "#fff" }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: 16, fontWeight: 900, color: "#be123c" }}>Delete project — {deleteTarget.name}?</div>
-            <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, marginTop: 8 }}>This will delete the team, its memberships, and policies. This action cannot be undone.</div>
-            <div style={{ fontSize: 13, color: "#102033", fontWeight: 700, marginTop: 12 }}>Type your full name <code style={{ background: "#fef2f2", border: "1px solid #fecdd3", padding: "2px 6px", borderRadius: 6, fontSize: 12 }}>{user?.full_name}</code> to confirm:</div>
-            <input style={{ ...s.input, marginTop: 8 }} placeholder={user?.full_name || "Full name"} value={deleteFullName} onChange={e => setDeleteFullName(e.target.value)} autoFocus onKeyDown={e => e.key === "Enter" && handleDeleteConfirm()} />
-            <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
-              <button onClick={() => setDeleteTarget(null)} style={{ ...s.btn("secondary"), padding: "8px 14px" }} disabled={deleting}>Cancel</button>
-              <button onClick={handleDeleteConfirm} disabled={deleting || deleteFullName.trim() !== (user?.full_name.trim() || "")} style={{ ...s.btn("danger"), padding: "8px 14px", opacity: (deleting || deleteFullName.trim() !== (user?.full_name.trim() || "")) ? 1 : 0.6 }}>Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  return <div className="accounts-page">
+    <PageHeader eyebrow="Shared workspaces" title="Good work happens together." description="Choose a team, create a fresh workspace, or manage the spaces you belong to." actions={<><Button variant="secondary" icon="refresh" loading={loading} onClick={() => void fetchTeams()}>Refresh</Button><Button variant="primary" icon="plus" onClick={() => { setCreateOpen(true); setNewName(""); setDialogError(""); }}>Create team</Button></>} />
+    {onBack && <div><Button variant="ghost" onClick={onBack}>Back to team details</Button></div>}
+    {error && <Notice tone="danger">{error}</Notice>}{success && <Notice tone="success">{success}</Notice>}
+    <div className="accounts-section-heading"><div><h2>Your teams</h2><p>Each workspace has its own policies, skills, and request logs.</p></div><Badge>{teams.length} {teams.length === 1 ? "team" : "teams"}</Badge></div>
+    {loading && !teams.length ? <LoadingState label="Loading your teams" /> : !teams.length ? <EmptyState icon="team" title="Your first team starts here" description="Create a workspace and bring your model traffic and teammates together." action={<Button variant="primary" icon="plus" onClick={() => { setCreateOpen(true); setDialogError(""); }}>Create a team</Button>} /> : <div className="accounts-team-grid">{teams.map((org) => <article className={`accounts-team-card${user?.org_id === org.id ? " accounts-team-current" : ""}`} key={org.id}>
+      <div className="accounts-team-card-top"><span className="accounts-team-mark"><AppIcon name="team" size={21} /></span>{user?.org_id === org.id && <Badge tone="success">Current workspace</Badge>}</div>
+      <h3>{org.name}</h3><p className="accounts-mono accounts-copy">{org.slug}</p><p className="accounts-copy">Created <time dateTime={org.created_at}>{new Date(org.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</time></p>
+      <Button variant={user?.org_id === org.id ? "secondary" : "primary"} icon="arrow" loading={switching === org.id} disabled={Boolean(switching)} onClick={() => void switchTeam(org)}>{user?.org_id === org.id ? "Open team" : "Switch workspace"}</Button>
+      <div className="accounts-team-card-footer"><Button variant="ghost" onClick={() => { setRenameTarget(org); setEditName(org.name); setDialogError(""); }} aria-label={`Rename ${org.name}`}>Rename</Button><Button variant="ghost" className="accounts-danger-text" onClick={() => { setDeleteTarget(org); setSignature(""); setDialogError(""); }} aria-label={`Delete ${org.name}`}>Delete team</Button></div>
+    </article>)}</div>}
+    <Dialog open={createOpen} onClose={() => setCreateOpen(false)} title="Create a team" description="You will become an administrator of the new workspace." dismissible={!creating} footer={<><Button onClick={() => setCreateOpen(false)} disabled={creating}>Cancel</Button><Button variant="primary" type="submit" form="accounts-create-team" loading={creating}>Create team</Button></>}>
+      <form id="accounts-create-team" className="ui-form" onSubmit={create}><Field label="Team name" hint="Optional. Leave empty to use the next available Team number."><input className="ui-input" value={newName} onChange={(event) => setNewName(event.target.value)} maxLength={120} placeholder="e.g. Product engineering" autoFocus /></Field>{dialogError && <Notice tone="danger">{dialogError}</Notice>}</form>
+    </Dialog>
+    <Dialog open={Boolean(renameTarget)} onClose={() => setRenameTarget(null)} title="Rename team" description="Team administrators can update the workspace name." dismissible={!renaming} footer={<><Button onClick={() => setRenameTarget(null)} disabled={renaming}>Cancel</Button><Button variant="primary" type="submit" form="accounts-rename-team" loading={renaming}>Save name</Button></>}>
+      <form id="accounts-rename-team" className="ui-form" onSubmit={rename}><Field label="Team name"><input className="ui-input" value={editName} onChange={(event) => setEditName(event.target.value)} required minLength={2} maxLength={120} autoFocus /></Field>{dialogError && <Notice tone="danger">{dialogError}</Notice>}</form>
+    </Dialog>
+    <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} title={`Delete ${deleteTarget?.name || "team"}?`} description="This permanently removes the team and its memberships, policies, and skills. Only a team administrator can delete it." dismissible={!deleting} footer={<><Button onClick={() => setDeleteTarget(null)} disabled={deleting}>Keep team</Button><Button variant="danger" type="submit" form="accounts-delete-team" loading={deleting} disabled={!user?.full_name || signature.trim() !== user.full_name.trim()}>Delete team</Button></>}>
+      <form id="accounts-delete-team" className="ui-form" onSubmit={deleteTeam}><Field label="Confirm with your full name" hint={<>Type <strong>{user?.full_name}</strong> exactly to confirm.</>}><input className="ui-input" value={signature} onChange={(event) => setSignature(event.target.value)} autoComplete="off" required minLength={2} maxLength={120} autoFocus /></Field>{dialogError && <Notice tone="danger">{dialogError}</Notice>}</form>
+    </Dialog>
+  </div>;
 }

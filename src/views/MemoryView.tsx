@@ -1,360 +1,147 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../utils/api";
-import { s } from "../styles/theme";
+import AppIcon from "../components/AppIcon";
+import { Badge, Button, Dialog, EmptyState, Field, LoadingState, Notice, PageHeader, Panel, useConfirmation } from "../components/ui";
+import "../styles/memory.css";
 
-// -- Types ------------------------------------------------------------------
-type Memory = {
-  id: string; title: string; content: string; category: string; kind: string;
-  confidence: number; importance: number; pinned: boolean; archived: boolean;
-  source_type: string | null; source_id: string | null;
-  created_at: string; updated_at: string; last_accessed: string | null;
-};
+type Memory = { id: string; title: string; content: string; category: string; kind: string; confidence: number; importance: number; pinned: boolean; archived: boolean; source_type: string | null; source_id: string | null; created_at: string; updated_at: string; last_accessed: string | null };
+type MemoryStats = { total: number; pinned: number; by_category: Record<string, number> };
+type Candidate = { title: string; content: string; category: string; confidence: number; importance?: number; source_id?: string };
+type Draft = { title: string; content: string; category: string; importance: number; pinned: boolean };
+const CATEGORIES = ["fact", "preference", "procedure", "persona", "goal", "skill"];
+const emptyDraft = (): Draft => ({ title: "", content: "", category: "fact", importance: 3, pinned: false });
+const categoryLabel = (category: string) => category.charAt(0).toUpperCase() + category.slice(1);
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+const formatDate = (date: string | null) => date ? new Date(date).toLocaleString() : "Never";
 
-// -- Category meta — Linear label style ------------------------------------
-const CAT_META: Record<string, { icon: string; color: string; bg: string; border: string; label: string }> = {
-  fact:       { icon: "", color: "#0f766e", bg: "#ecfdf5", border: "#a7f3d0", label: "Fact" },
-  preference: { icon: "", color: "#db2777", bg: "#fdf2f8", border: "#f9a8d4", label: "Preference" },
-  procedure:  { icon: "", color: "#2563eb", bg: "#eff6ff", border: "#bfdbfe", label: "Procedure" },
-  persona:    { icon: "", color: "#7c3aed", bg: "#f5f3ff", border: "#ddd6fe", label: "Persona" },
-  goal:       { icon: "", color: "#d97706", bg: "#fffbeb", border: "#fde68a", label: "Goal" },
-  skill:      { icon: "", color: "#0e7490", bg: "#ecfeff", border: "#a5f3fc", label: "Skill" },
-};
-const CATS = Object.keys(CAT_META) as (keyof typeof CAT_META)[];
-
-function timeAgo(iso: string) {
-  const d = new Date(iso);
-  const s = (Date.now() - d.getTime()) / 1000;
-  if (s < 60) return "now";
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  if (s < 604800) return `${Math.floor(s / 86400)}d`;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
 function groupLabel(iso: string) {
-  const d = new Date(iso);
-  const today = new Date(); today.setHours(0,0,0,0);
-  const yest = new Date(today); yest.setDate(yest.getDate()-1);
-  const ts = d.getTime();
-  if (ts >= today.getTime()) return "Today";
-  if (ts >= yest.getTime()) return "Yesterday";
-  if (ts >= today.getTime() - 6*86400000) return "This week";
+  const timestamp = new Date(iso).getTime(); const today = new Date(); today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  if (timestamp >= today.getTime()) return "Today";
+  if (timestamp >= yesterday.getTime()) return "Yesterday";
+  if (timestamp >= today.getTime() - 6 * 86400000) return "This week";
   return "Earlier";
 }
 
 export default function MemoryView() {
   const [items, setItems] = useState<Memory[]>([]);
   const [q, setQ] = useState("");
-  const [cat, setCat] = useState<string>("");
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("");
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [selected, setSelected] = useState<Memory | null>(null);
-  const [editing, setEditing] = useState<Partial<Memory> & { id?: string } | null>(null);
-  const [showNew, setShowNew] = useState(false);
+  const [editor, setEditor] = useState<Memory | "new" | null>(null);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [formError, setFormError] = useState("");
   const [recallQ, setRecallQ] = useState("");
-  const [recallRes, setRecallRes] = useState<Memory[] | null>(null);
+  const [recallResult, setRecallResult] = useState<{ query: string; memories: Memory[] } | null>(null);
+  const [recalling, setRecalling] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [stats, setStats] = useState<{total:number; pinned:number; by_category:Record<string,number>}|null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState("");
+  const [stats, setStats] = useState<MemoryStats | null>(null);
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
+  const [extracting, setExtracting] = useState(false);
+  const [candidates, setCandidates] = useState<Candidate[] | null>(null);
+  const [chosen, setChosen] = useState<number[]>([]);
+  const sequence = useRef(0);
+  const mutation = useRef(false);
+  const { confirm, dialog } = useConfirmation();
 
+  const refreshStats = useCallback(async () => {
+    try { setStats(await api<MemoryStats>("/memories/stats")); } catch { setStats(null); }
+  }, []);
   const load = useCallback(async () => {
-    setLoading(true);
+    const request = ++sequence.current; setLoading(true); setError("");
+    const params = new URLSearchParams({ ...(query ? { q: query } : {}), ...(category ? { category } : {}), ...(pinnedOnly ? { pinned_only: "true" } : {}), archived: "false", limit: "100" });
     try {
-      const [mems, st] = await Promise.all([
-        api<Memory[]>(`/memories?` + new URLSearchParams({ ...(q?{q}:{}), ...(cat?{category:cat}:{}), ...(pinnedOnly?{pinned_only:"true"}:{}), archived:"false", limit:"100" })),
-        api<{total:number; pinned:number; by_category:Record<string,number>}>("/memories/stats").catch(()=>null),
-      ]);
-      setItems(mems);
-      if (st) setStats(st);
-      if (mems.length && !selected) setSelected(mems[0]);
-    } finally { setLoading(false); }
-  }, [q, cat, pinnedOnly]);
-
-  useEffect(()=>{ load(); }, [load]);
-  useEffect(()=>{ if(toast){ const t=setTimeout(()=>setToast(null),2800); return ()=>clearTimeout(t); } }, [toast]);
-
-  const groups = useMemo(()=>{
-    const g: Record<string, Memory[]> = {};
-    for (const m of items) {
-      const label = groupLabel(m.updated_at);
-      (g[label] ||= []).push(m);
-    }
-    const order = ["Today","Yesterday","This week","Earlier"];
-    return order.filter(k=>g[k]).map(k=>({ label:k, items:g[k]}));
+      const [memories, nextStats] = await Promise.all([api<Memory[]>(`/memories?${params}`), api<MemoryStats>("/memories/stats").catch(() => null)]);
+      if (request !== sequence.current) return;
+      setItems(memories); setStats(nextStats);
+      setSelected((current) => memories.find((memory) => memory.id === current?.id) || memories[0] || null);
+    } catch (failure) { if (request === sequence.current) setError(errorMessage(failure)); }
+    finally { if (request === sequence.current) setLoading(false); }
+  }, [query, category, pinnedOnly]);
+  useEffect(() => { const timer = window.setTimeout(() => setQuery(q), 220); return () => window.clearTimeout(timer); }, [q]);
+  useEffect(() => { void load(); return () => { sequence.current++; }; }, [load]);
+  useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(""), 3500); return () => window.clearTimeout(timer); }, [toast]);
+  const groups = useMemo(() => {
+    const grouped: Record<string, Memory[]> = {};
+    items.forEach((memory) => (grouped[groupLabel(memory.updated_at)] ||= []).push(memory));
+    return ["Today", "Yesterday", "This week", "Earlier"].filter((label) => grouped[label]).map((label) => ({ label, items: grouped[label] }));
   }, [items]);
+  const filtersApplied = !!(q || category || pinnedOnly);
+  function openEditor(memory?: Memory) { setDraft(memory ? { title: memory.title, content: memory.content, category: memory.category, importance: memory.importance, pinned: memory.pinned } : emptyDraft()); setFormError(""); setEditor(memory || "new"); }
+  function applyUpdated(memory: Memory) { setItems((current) => current.map((item) => item.id === memory.id ? memory : item).filter((item) => !pinnedOnly || item.pinned)); setSelected((current) => current?.id === memory.id ? memory : current); setRecallResult((current) => current ? { ...current, memories: current.memories.map((item) => item.id === memory.id ? memory : item) } : null); }
 
-  async function createManual(content: string, category: string) {
-    if (!content.trim()) return;
-    setSaving(true);
+  async function saveMemory(event: React.FormEvent) {
+    event.preventDefault(); if (!editor || !draft.content.trim() || mutation.current) return;
+    mutation.current = true; setSaving(true); setFormError("");
     try {
-      const mem = await api<Memory>("/memories", { method:"POST", body:{ content: content.trim(), category, kind:"user" }});
-      setToast("Memory saved • pinned to top");
-      setShowNew(false);
-      setItems(v=>[mem, ...v]);
-      setSelected(mem);
-    } finally { setSaving(false); }
+      const isNew = editor === "new";
+      const body = { title: isNew ? draft.title.trim() || undefined : draft.title, content: isNew ? draft.content.trim() : draft.content, category: draft.category, importance: draft.importance, pinned: draft.pinned, ...(isNew ? { kind: "user" } : {}) };
+      const memory = await api<Memory>(isNew ? "/memories" : `/memories/${editor.id}`, { method: isNew ? "POST" : "PATCH", body });
+      if (isNew) { setItems((current) => [memory, ...current]); setSelected(memory); } else { applyUpdated(memory); setSelected(memory); }
+      setEditor(null); setToast(isNew ? "Memory saved" : "Memory updated"); await refreshStats();
+    } catch (failure) { setFormError(errorMessage(failure)); }
+    finally { mutation.current = false; setSaving(false); }
   }
-  async function togglePin(m: Memory) {
-    const upd = await api<Memory>(`/memories/${m.id}`, { method:"PATCH", body:{ pinned: !m.pinned }});
-    setItems(v=>v.map(x=>x.id===m.id? upd : x));
-    if (selected?.id===m.id) setSelected(upd);
+  async function togglePin(memory: Memory) {
+    if (mutation.current) return; mutation.current = true; setBusyId(memory.id); setError("");
+    try { applyUpdated(await api<Memory>(`/memories/${memory.id}`, { method: "PATCH", body: { pinned: !memory.pinned } })); setToast(memory.pinned ? "Memory unpinned" : "Memory pinned to context"); await refreshStats(); }
+    catch (failure) { setError(errorMessage(failure)); }
+    finally { mutation.current = false; setBusyId(""); }
   }
-  async function saveEdit() {
-    if (!editing?.id) return;
-    setSaving(true);
-    try {
-      const upd = await api<Memory>(`/memories/${editing.id}`, { method:"PATCH", body:{ title: editing.title, content: editing.content, category: editing.category, importance: editing.importance, pinned: editing.pinned }});
-      setItems(v=>v.map(x=>x.id===upd.id? upd : x));
-      setSelected(upd);
-      setEditing(null);
-      setToast("Memory updated");
-    } finally { setSaving(false); }
+  async function archive(memory: Memory) {
+    if (mutation.current || !await confirm({ title: "Archive this memory?", description: `“${memory.title}” will be removed from active memory and recall.`, confirmLabel: "Archive memory", danger: true })) return;
+    mutation.current = true; setBusyId(memory.id); setError("");
+    try { await api(`/memories/${memory.id}`, { method: "DELETE" }); setItems((current) => current.filter((item) => item.id !== memory.id)); setSelected((current) => current?.id === memory.id ? items.find((item) => item.id !== memory.id) || null : current); setRecallResult((current) => current ? { ...current, memories: current.memories.filter((item) => item.id !== memory.id) } : null); setToast("Memory archived"); await refreshStats(); }
+    catch (failure) { setError(errorMessage(failure)); }
+    finally { mutation.current = false; setBusyId(""); }
   }
-  async function archive(m: Memory) {
-    if (!confirm(`Archive "${m.title}"?`)) return;
-    await api(`/memories/${m.id}`, { method:"DELETE" });
-    setItems(v=>v.filter(x=>x.id!==m.id));
-    if (selected?.id===m.id) setSelected(items.find(x=>x.id!==m.id) || null);
-    setToast("Archived");
-  }
-  async function doRecall() {
-    if (!recallQ.trim()) { setRecallRes(null); return; }
-    const res = await api<{memories:Memory[]; query:string}>("/memories/recall", { method:"POST", body:{ query: recallQ, top_k:6 }});
-    setRecallRes(res.memories);
+  async function doRecall(event: React.FormEvent) {
+    event.preventDefault(); if (!recallQ.trim() || recalling) return;
+    setRecalling(true); setError("");
+    try { setRecallResult(await api<{ memories: Memory[]; query: string }>("/memories/recall", { method: "POST", body: { query: recallQ.trim(), top_k: 6 } })); }
+    catch (failure) { setError(errorMessage(failure)); }
+    finally { setRecalling(false); }
   }
   async function extractFromChat() {
-    // preview extraction from last prompt stored in localStorage (ChatView)
-    const hist = JSON.parse(localStorage.getItem("guardrails_chat_history") || "[]") as {prompt:string; result:{response?:string}}[];
-    const last = hist[hist.length-1];
-    if (!last) { setToast("No recent chat to extract from — chat first"); return; }
-    const preview = await api<{candidates:{title:string; content:string; category:string; confidence:number}[]}>("/memories/extract/preview", { method:"POST", body:{ prompt:last.prompt, response: last.result?.response }});
-    if (!preview.candidates.length) { setToast("Nothing memorable in last chat"); return; }
-    if (!confirm(`Extract ${preview.candidates.length} memories?\n\n` + preview.candidates.map(c=>`• ${c.content}`).join("\n"))) return;
-    const created = await api<Memory[]>("/memories/extract/confirm", { method:"POST", body:{ items: preview.candidates }});
-    setToast(`Extracted ${created.length} memories`);
-    load();
+    if (extracting || mutation.current) return; setExtracting(true); setError("");
+    try {
+      const history: unknown = JSON.parse(localStorage.getItem("guardrails_chat_history") || "[]");
+      const last = Array.isArray(history) ? history.at(-1) as { prompt?: string; result?: { response?: string } } | undefined : undefined;
+      if (!last?.prompt) { setToast("Run a chat request before extracting memories."); return; }
+      const preview = await api<{ candidates: Candidate[] }>("/memories/extract/preview", { method: "POST", body: { prompt: last.prompt, response: last.result?.response } });
+      if (!preview.candidates.length) { setToast("No memory candidates found in the last chat."); return; }
+      const review = preview.candidates.slice(0, 5); setCandidates(review); setChosen(review.map((_, index) => index)); setFormError("");
+    } catch (failure) { setError(errorMessage(failure)); }
+    finally { setExtracting(false); }
+  }
+  async function confirmExtraction() {
+    if (!candidates || !chosen.length || mutation.current) return;
+    mutation.current = true; setSaving(true); setFormError("");
+    try { const created = await api<Memory[]>("/memories/extract/confirm", { method: "POST", body: { items: candidates.filter((_, index) => chosen.includes(index)) } }); setCandidates(null); setToast(`${created.length} ${created.length === 1 ? "memory" : "memories"} saved`); await load(); }
+    catch (failure) { setFormError(errorMessage(failure)); }
+    finally { mutation.current = false; setSaving(false); }
   }
 
-  return (
-    <div style={{ minWidth: 0 }}>
-      {/* Hero — Linear inbox style */}
-      <div style={{ ...s.heroPanel, background: "linear-gradient(135deg,#ffffff 0%,#f0fdfa 55%,#eff6ff 100%)", border:"1px solid #ccfbf1", position:"relative", overflow:"hidden" }}>
-        <div style={{ position:"absolute", inset:0, background:"radial-gradient(600px 300px at 85% -10%, rgba(20,184,166,0.10), transparent 60%), radial-gradient(500px 400px at -5% 110%, rgba(59,130,246,0.07), transparent 60%)", pointerEvents:"none"}}/>
-        <div style={{ position:"relative", display:"flex", justifyContent:"space-between", gap:16, flexWrap:"wrap", alignItems:"flex-start" }}>
-          <div style={{ minWidth:280 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
-              <div style={{ ...s.pageTitle, marginBottom:0 }}>Memory</div>
-              <span style={{ background:"#0f766e", color:"#fff", fontSize:10, fontWeight:800, letterSpacing:"0.06em", textTransform:"uppercase", padding:"3px 8px", borderRadius:999 }}>Mem0 x Linear</span>
-            </div>
-            <div style={{ color:"#405166", fontSize:14, lineHeight:1.55, maxWidth:620 }}>
-              Your long-term memory — <b>facts, preferences, procedures</b> auto-extracted from chats and skills. Pinned memories are injected into every prompt.
-              <span style={{ color:"#0f766e", fontWeight:700 }}> • Superhuman-fast search</span> <span style={{color:"#a8a29e"}}>• Notion-grade blocks</span>
-            </div>
-            <div style={{ display:"flex", gap:8, marginTop:12, flexWrap:"wrap" }}>
-              <span style={{ ...s.badge("delivered"), background:"#ecfdf5", borderColor:"#6ee7b7", color:"#065f46" }}>{stats?.total ?? items.length} remembered</span>
-              <span style={{ ...s.badge("rate_limited") }}>{stats?.pinned ?? items.filter(x=>x.pinned).length} pinned</span>
-              <span style={{ ...s.badge("input_blocked") }}>{Object.keys(stats?.by_category || {}).length || CATS.length} categories</span>
-              <span style={{ fontSize:11, color:"#7b8a9d", alignSelf:"center" }}>K to search • C to create</span>
-            </div>
-          </div>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignSelf:"flex-start" }}>
-            <button style={{ ...s.btn("secondary"), borderRadius:10 }} onClick={extractFromChat}> Extract from last chat</button>
-            <button style={{ ...s.btn("primary"), borderRadius:10, boxShadow:"0 10px 24px rgba(15,118,110,0.22)" }} onClick={()=>setShowNew(v=>!v)}>+ New memory</button>
-          </div>
-        </div>
-      </div>
-
-      {toast && <div style={{ position:"fixed", top:16, right:16, zIndex:50, background:"#0f766e", color:"#fff", padding:"10px 16px", borderRadius:10, fontSize:13, fontWeight:700, boxShadow:"0 12px 28px rgba(0,0,0,0.18)" }}>{toast}</div>}
-
-      {/* Command / search bar — Superhuman + Linear */}
-      <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
-        <div style={{ position:"relative", flex:"1 1 320px", minWidth:260 }}>
-          <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", color:"#8a9bb0", fontSize:13 }}>K</span>
-          <input
-            value={q}
-            onChange={e=>setQ(e.target.value)}
-            placeholder="Search memories — try 'my stack', 'prefers dark mode', 'deployment steps'…"
-            style={{ ...s.input, paddingLeft:36, marginBottom:0, borderRadius:12, background:"#fff", border:"1px solid #cfe4de", boxShadow:"0 4px 14px rgba(15,118,110,0.06)" }}
-            onKeyDown={e=>{ if(e.key==="Enter" && recallQ) doRecall(); }}
-          />
-        </div>
-        <div style={{ display:"flex", background:"#eef3f8", borderRadius:999, padding:3, gap:2, flexWrap:"wrap" }}>
-          {["","fact","preference","procedure","persona","goal","skill"].map(c=>(
-            <button key={c||"all"} onClick={()=>setCat(c)} style={{ padding:"6px 12px", borderRadius:999, border:"none", cursor:"pointer", fontSize:12, fontWeight:800, background: cat===c ? "#0f766e" : "transparent", color: cat===c ? "#fff" : "#405166", transition:"all .15s" }}>
-              {c ? CAT_META[c as string]?.label || c : "All"}
-            </button>
-          ))}
-        </div>
-        <label style={{ display:"inline-flex", alignItems:"center", gap:6, fontSize:12, fontWeight:700, color: pinnedOnly?"#0f766e":"#607086", cursor:"pointer", background: pinnedOnly?"#ecfdf5":"#fff", border:`1px solid ${pinnedOnly?"#6ee7b7":"#dce7f0"}`, padding:"7px 12px", borderRadius:999 }}>
-          <input type="checkbox" checked={pinnedOnly} onChange={e=>setPinnedOnly(e.target.checked)} /> Pinned
-        </label>
-      </div>
-
-      {/* Semantic recall bar — Mem0 style */}
-      <div style={{ display:"flex", gap:8, marginBottom:16, alignItems:"center", flexWrap:"wrap" }}>
-        <input value={recallQ} onChange={e=>setRecallQ(e.target.value)} placeholder="Semantic recall — ask your memory: 'what do you know about my project?'" style={{ ...s.input, flex:"1 1 300px", minWidth:240, marginBottom:0, borderRadius:10, background:"#f8fbff" }} />
-        <button style={{ ...s.btn("secondary"), borderRadius:10 }} onClick={doRecall}>Recall</button>
-        {recallRes && <button style={{ ...s.btn("secondary"), borderRadius:10 }} onClick={()=>setRecallRes(null)}>Clear</button>}
-      </div>
-      {recallRes && (
-        <div style={{ ...s.card, marginBottom:16, background:"#f8fbff", borderColor:"#c7d2fe" }}>
-          <div style={{ ...s.sectionTitle, marginBottom:8 }}>Recall: "{recallQ}" • {recallRes.length} hits</div>
-          {recallRes.length===0 ? <div style={s.muted}>No matches — try a broader query.</div> : recallRes.map(m=>(
-            <div key={m.id} onClick={()=>setSelected(m)} style={{ display:"flex", gap:10, padding:"8px 10px", borderRadius:8, cursor:"pointer", background: selected?.id===m.id?"#fff":"transparent", border: selected?.id===m.id?"1px solid #c7d2fe":"1px solid transparent" }}>
-              <span style={{ ...s.badge("delivered"), background: CAT_META[m.category]?.bg, borderColor: CAT_META[m.category]?.border, color: CAT_META[m.category]?.color, height:22 }}>{CAT_META[m.category]?.icon} {m.category}</span>
-              <span style={{ fontSize:13, color:"#102033", fontWeight:600 }}>{m.title}</span>
-              <span style={{ fontSize:12, color:"#7b8a9d", marginLeft:"auto" }}>{(m.confidence*100).toFixed(0)}%</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {showNew && (
-        <div style={{ ...s.card, marginBottom:16, borderColor:"#99f6e4", background:"linear-gradient(135deg,#fff 0%,#f0fdfa 100%)" }}>
-          <div style={s.sectionTitle}>New memory — manual</div>
-          <NewMemoryForm onCreate={createManual} saving={saving} onCancel={()=>setShowNew(false)} />
-        </div>
-      )}
-
-      {/* Main — Linear master/detail */}
-      <div style={{ display:"flex", gap:16, alignItems:"flex-start", flexWrap:"wrap" }}>
-        {/* List */}
-        <div style={{ flex:"1 1 420px", minWidth:320, display:"flex", flexDirection:"column", gap:14 }}>
-          {loading ? (
-            <div style={{ ...s.card, padding:40, textAlign:"center", color:"#8a9bb0" }}>Loading memories…</div>
-          ) : items.length===0 ? (
-            <div style={{ ...s.card, padding:28, textAlign:"center" }}>
-              <div style={{ fontSize:22, marginBottom:8 }}></div>
-              <div style={{ fontWeight:800, color:"#102033" }}>No memories yet</div>
-              <div style={{ fontSize:13, color:"#7b8a9d", marginTop:6, lineHeight:1.5 }}>Chat with the playground — we'll auto-extract facts & preferences.<br/>Or create one manually.</div>
-              <button style={{ ...s.btn("primary"), marginTop:14, borderRadius:10 }} onClick={()=>setShowNew(true)}>Create first memory</button>
-            </div>
-          ) : groups.map(g=>(
-            <div key={g.label}>
-              <div style={{ fontSize:11, fontWeight:800, color:"#7b8a9d", letterSpacing:"0.06em", textTransform:"uppercase", margin:"4px 0 8px 4px" }}>{g.label} <span style={{ fontWeight:600, color:"#a8a29e"}}>• {g.items.length}</span></div>
-              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                {g.items.map(m=>(
-                  <div key={m.id} onClick={()=>setSelected(m)} style={{
-                    ...s.card,
-                    padding:"14px 16px",
-                    cursor:"pointer",
-                    borderColor: selected?.id===m.id ? "#0f766e" : m.pinned ? "#6ee7b7" : "rgba(15,118,110,0.12)",
-                    background: selected?.id===m.id ? "#f0fdfa" : m.pinned ? "#f8fffe" : "rgba(255,255,255,0.92)",
-                    borderLeftWidth: m.pinned ? 3 : 1,
-                    borderLeftColor: m.pinned ? "#0f766e" : undefined,
-                    boxShadow: selected?.id===m.id ? "0 8px 24px rgba(15,118,110,0.10)" : "0 4px 12px rgba(15,118,110,0.04)",
-                    transform: selected?.id===m.id ? "translateY(-1px)" : undefined,
-                    transition:"all .14s",
-                  }}>
-                    <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
-                      <span style={{ width:28, height:28, borderRadius:8, display:"grid", placeItems:"center", background: CAT_META[m.category]?.bg, border:`1px solid ${CAT_META[m.category]?.border}`, color: CAT_META[m.category]?.color, fontSize:12, flexShrink:0 }}>{CAT_META[m.category]?.icon}</span>
-                      <div style={{ minWidth:0, flex:1 }}>
-                        <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", marginBottom:4 }}>
-                          <span style={{ fontSize:11, fontWeight:800, color: CAT_META[m.category]?.color, background: CAT_META[m.category]?.bg, border:`1px solid ${CAT_META[m.category]?.border}`, padding:"2px 7px", borderRadius:999 }}>{CAT_META[m.category]?.label}</span>
-                          {m.pinned && <span style={{ fontSize:10, fontWeight:800, color:"#065f46", background:"#d1fae5", padding:"2px 6px", borderRadius:999 }}>PINNED</span>}
-                          <span style={{ fontSize:10, color:"#8a9bb0" }}>{timeAgo(m.updated_at)} • {m.confidence.toFixed(2)}</span>
-                        </div>
-                        <div style={{ fontSize:13, fontWeight:800, color:"#102033", lineHeight:1.3, display:"-webkit-box", WebkitLineClamp:1, WebkitBoxOrient:"vertical", overflow:"hidden" }}>{m.title}</div>
-                        <div style={{ fontSize:13, color:"#405166", lineHeight:1.5, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden", marginTop:3 }}>{m.content}</div>
-                        <div style={{ display:"flex", gap:6, marginTop:8, flexWrap:"wrap", alignItems:"center" }}>
-                          <span style={{ fontSize:10, color:"#7b8a9d", border:"1px solid #e7eef6", padding:"3px 7px", borderRadius:999, background:"#f8fbff" }}>{m.source_type || "manual"} {m.source_id ? "• " + m.source_id.slice(0,6) : ""}</span>
-                          <span style={{ display:"inline-flex", gap:3 }}>{Array.from({length:5}).map((_,i)=>(
-                            <span key={i} style={{ width:6, height:6, borderRadius:999, background: i < m.importance ? "#f59e0b" : "#e7eef6" }} />
-                          ))}</span>
-                          <span style={{ marginLeft:"auto", display:"inline-flex", gap:4 }}>
-                            <button onClick={e=>{ e.stopPropagation(); togglePin(m); }} title={m.pinned?"Unpin":"Pin"} style={{ width:26, height:26, borderRadius:8, border:"1px solid #dce7f0", background: m.pinned?"#0f766e":"#fff", color: m.pinned?"#fff":"#607086", cursor:"pointer" }}>{m.pinned?"":""}</button>
-                            <button onClick={e=>{ e.stopPropagation(); setEditing(m); }} style={{ width:26, height:26, borderRadius:8, border:"1px solid #dce7f0", background:"#fff", color:"#607086", cursor:"pointer" }}>Edit</button>
-                            <button onClick={e=>{ e.stopPropagation(); archive(m); }} style={{ width:26, height:26, borderRadius:8, border:"1px solid #fecdd3", background:"#fff", color:"#be123c", cursor:"pointer" }}>x</button>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Detail — Notion block + Linear properties */}
-        <div style={{ flex:"1.2 1 420px", minWidth:340, position:"sticky", top:16, alignSelf:"flex-start" }}>
-          {!selected ? (
-            <div style={{ ...s.card, padding:32, textAlign:"center", color:"#8a9bb0" }}>Select a memory</div>
-          ) : editing && editing.id===selected.id ? (
-            <div style={{ ...s.card }}>
-              <div style={s.sectionTitle}>Edit memory</div>
-              <input value={editing.title || ""} onChange={e=>setEditing(v=>({...v!, title:e.target.value}))} placeholder="Title" style={{ ...s.input, marginBottom:10 }} />
-              <textarea value={editing.content || ""} onChange={e=>setEditing(v=>({...v!, content:e.target.value}))} style={{ ...s.input, minHeight:140, resize:"vertical" }} />
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:10 }}>
-                <div><label style={s.label}>Category</label><select value={editing.category} onChange={e=>setEditing(v=>({...v!, category:e.target.value}))} style={s.input}>{CATS.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                <div><label style={s.label}>Importance</label><select value={editing.importance} onChange={e=>setEditing(v=>({...v!, importance: Number(e.target.value)}))} style={s.input}>{[1,2,3,4,5].map(n=><option key={n} value={n}>{n}</option>)}</select></div>
-              </div>
-              <label style={{ display:"flex", gap:8, alignItems:"center", marginTop:10, fontSize:13, fontWeight:700 }}><input type="checkbox" checked={!!editing.pinned} onChange={e=>setEditing(v=>({...v!, pinned:e.target.checked}))} /> Pinned (injected into every prompt)</label>
-              <div style={{ display:"flex", gap:8, marginTop:14 }}>
-                <button style={s.btn("primary")} onClick={saveEdit} disabled={saving}>{saving?"Saving…":"Save"}</button>
-                <button style={s.btn("secondary")} onClick={()=>setEditing(null)}>Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <div style={{ ...s.card, padding:0, overflow:"hidden" }}>
-              <div style={{ height:4, background:`linear-gradient(90deg, ${CAT_META[selected.category]?.color}, ${CAT_META[selected.category]?.color}66)`, opacity:0.95 }} />
-              <div style={{ padding:20 }}>
-                <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:10, flexWrap:"wrap" }}>
-                  <span style={{ ...s.badge("delivered"), background: CAT_META[selected.category]?.bg, borderColor: CAT_META[selected.category]?.border, color: CAT_META[selected.category]?.color }}>{CAT_META[selected.category]?.icon} {selected.category}</span>
-                  <span style={{ fontSize:11, color:"#7b8a9d", fontWeight:700 }}>{selected.kind} • {selected.confidence.toFixed(2)} • {new Date(selected.created_at).toLocaleString()}</span>
-                  {selected.pinned && <span style={{ ...s.badge("rate_limited") }}>Pinned</span>}
-                </div>
-                <div style={{ fontSize:20, fontWeight:850, color:"#102033", lineHeight:1.25, letterSpacing:"-0.01em" }}>{selected.title}</div>
-                <div style={{ marginTop:12, padding:16, background:"#f8fbff", border:"1px solid #e7eef6", borderRadius:12, fontSize:14, lineHeight:1.65, color:"#27394f", whiteSpace:"pre-wrap" }}>{selected.content}</div>
-
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:16 }}>
-                  <Info label="Importance" value={"".repeat(selected.importance) + "".repeat(5-selected.importance)} />
-                  <Info label="Source" value={`${selected.source_type || "manual"} ${selected.source_id ? "• " + selected.source_id.slice(0,8) : ""}`} />
-                  <Info label="Created" value={new Date(selected.created_at).toLocaleString()} />
-                  <Info label="Updated" value={new Date(selected.updated_at).toLocaleString()} />
-                </div>
-
-                {/* Mem0-style recall provenance mini-graph */}
-                <div style={{ marginTop:16, padding:12, background:"linear-gradient(135deg,#fff 0%,#f0fdfa 100%)", border:"1px solid #ccfbf1", borderRadius:10, display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
-                  <span style={{ width:28, height:28, borderRadius:8, background:"#0f766e", color:"#fff", display:"grid", placeItems:"center", fontSize:12 }}></span>
-                  <div style={{ fontSize:12, color:"#405166" }}><b>Recall provenance</b> — vector + keyword fallback. Last accessed {selected.last_accessed ? timeAgo(selected.last_accessed) + " ago" : "never"}.</div>
-                </div>
-
-                <div style={{ display:"flex", gap:8, marginTop:16, flexWrap:"wrap" }}>
-                  <button style={s.btn("primary")} onClick={()=>setEditing(selected)}>Edit</button>
-                  <button style={{ ...s.btn("secondary"), color: selected.pinned?"#065f46":undefined, borderColor: selected.pinned?"#6ee7b7":undefined }} onClick={()=>togglePin(selected)}>{selected.pinned?"Unpin":"Pin to context"}</button>
-                  <button style={{ ...s.btn("danger"), marginLeft:"auto" }} onClick={()=>archive(selected)}>Archive</button>
-                </div>
-              </div>
-            </div>
-          )}
-          {/* Tips */}
-          <div style={{ marginTop:12, padding:12, background:"#fffbeb", border:"1px solid #fde68a", borderRadius:10, fontSize:12, color:"#92400e", lineHeight:1.6 }}>
-            <b>Pro tips</b> — Mem0/Notion style: Type <code style={{ background:"#fff", border:"1px solid #fde68a", padding:"1px 6px", borderRadius:6 }}>remember that…</code> in chat to auto-create a memory. Pinned memories are prepended to every LLM call.
-          </div>
-        </div>
-      </div>
+  return <div className="memory-page">
+    <PageHeader eyebrow="CONTEXT LIBRARY" title="Memory" description="Keep useful facts and preferences close. Pin what should follow every request." actions={<><Button icon="sparkles" loading={extracting} disabled={saving || !!busyId} onClick={() => void extractFromChat()}>Extract from last chat</Button><Button variant="primary" icon="plus" disabled={saving || !!busyId} onClick={() => openEditor()}>New memory</Button></>} />
+    {toast && <Notice tone="success">{toast}</Notice>}{error && <Notice tone="danger">{error}</Notice>}
+    <div className="memory-summary"><div><span>Active memories</span><strong>{stats ? stats.total.toLocaleString() : "—"}</strong></div><div><span>Pinned to context</span><strong>{stats ? stats.pinned.toLocaleString() : "—"}</strong></div><div><span>Categories in use</span><strong>{stats ? Object.keys(stats.by_category).length : "—"}</strong></div><p>Pinned memories are included when your chat context is assembled.</p></div>
+    <Panel className="memory-controls"><div className="memory-search-row"><Field label="Search memories"><input className="ui-input" type="search" value={q} onChange={(event) => setQ(event.target.value)} placeholder="Search facts, preferences, or procedures" /></Field><label className="memory-pinned-filter"><input type="checkbox" checked={pinnedOnly} onChange={(event) => setPinnedOnly(event.target.checked)} />Pinned only</label>{filtersApplied && <Button variant="ghost" onClick={() => { setQ(""); setQuery(""); setCategory(""); setPinnedOnly(false); }}>Reset filters</Button>}</div><div className="ui-tabs memory-category-tabs" aria-label="Memory category">{["", ...CATEGORIES].map((value) => <button type="button" key={value || "all"} className={category === value ? "is-active" : ""} aria-pressed={category === value} onClick={() => setCategory(value)}>{value ? categoryLabel(value) : "All categories"}</button>)}</div></Panel>
+    <Panel title="Recall from memory" description="Ask a question to find relevant saved context." className="memory-recall-panel"><form className="memory-recall-form" onSubmit={(event) => void doRecall(event)}><Field label="Recall query"><input className="ui-input" value={recallQ} onChange={(event) => setRecallQ(event.target.value)} maxLength={2000} placeholder="What do you know about my project?" /></Field><Button variant="primary" type="submit" icon="search" loading={recalling} disabled={!recallQ.trim()}>Recall</Button>{recallResult && <Button onClick={() => setRecallResult(null)}>Clear results</Button>}</form>{recallResult && <div className="memory-recall-results"><div className="memory-recall-title"><strong>Results for “{recallResult.query}”</strong><Badge>{recallResult.memories.length} matches</Badge></div>{!recallResult.memories.length ? <EmptyState icon="search" title="No matching memories" description="Try a broader query or save more context." /> : recallResult.memories.map((memory) => <button type="button" className={`memory-recall-item${selected?.id === memory.id ? " is-selected" : ""}`} key={memory.id} onClick={() => setSelected(memory)}><Badge>{categoryLabel(memory.category)}</Badge><strong>{memory.title}</strong><span>{Math.round(memory.confidence * 100)}% confidence</span><AppIcon name="chevron" size={15} /></button>)}</div>}</Panel>
+    <div className="memory-workspace">
+      <section className="memory-list" aria-label="Saved memories">{loading ? <LoadingState label="Loading memories" /> : !items.length ? <Panel><EmptyState icon={filtersApplied ? "search" : "layers"} title={filtersApplied ? "No memories match your filters" : "Your context library starts here"} description={filtersApplied ? "Reset your filters to see all active memories." : "Create a memory or extract useful context from a recent chat."} action={<Button variant="primary" icon={filtersApplied ? "refresh" : "plus"} onClick={() => filtersApplied ? (setQ(""), setQuery(""), setCategory(""), setPinnedOnly(false)) : openEditor()}>{filtersApplied ? "Reset filters" : "Create first memory"}</Button>} /></Panel> : groups.map((group) => <div className="memory-group" key={group.label}><div className="memory-group-label"><h2>{group.label}</h2><span>{group.items.length}</span></div>{group.items.map((memory) => <article key={memory.id} className={`memory-card${selected?.id === memory.id ? " is-selected" : ""}${memory.pinned ? " is-pinned" : ""}`}><button type="button" className="memory-card-content" onClick={() => setSelected(memory)} aria-pressed={selected?.id === memory.id}><div className="memory-card-tags"><Badge>{categoryLabel(memory.category)}</Badge>{memory.pinned && <Badge tone="success">Pinned</Badge>}<span>{new Date(memory.updated_at).toLocaleDateString()}</span></div><h3>{memory.title}</h3><p>{memory.content}</p></button><div className="memory-card-footer"><span>{memory.source_type || "manual"} · Importance {memory.importance}/5</span><Button variant="ghost" disabled={saving || !!busyId} onClick={() => void togglePin(memory)}>{memory.pinned ? "Unpin" : "Pin"}</Button><Button variant="ghost" disabled={saving || !!busyId} onClick={() => openEditor(memory)}>Edit</Button></div></article>)}</div>)}</section>
+      <div className="memory-detail">{!selected ? <Panel><EmptyState icon="layers" title="Select a memory" description="Open a saved memory to inspect its context and source." /></Panel> : <Panel title="Memory details" actions={<Badge tone={selected.pinned ? "success" : "neutral"}>{selected.pinned ? "Pinned to context" : "Available for recall"}</Badge>}><div className="memory-detail-heading"><span className="memory-detail-category">{categoryLabel(selected.category)} · {selected.kind}</span><h2>{selected.title}</h2></div><div className="memory-content">{selected.content}</div><dl className="memory-properties"><div><dt>Importance</dt><dd>{selected.importance} of 5</dd></div><div><dt>Confidence</dt><dd>{Math.round(selected.confidence * 100)}%</dd></div><div><dt>Source</dt><dd>{selected.source_type || "manual"}</dd></div>{selected.source_id && <div><dt>Source ID</dt><dd className="ui-mono">{selected.source_id}</dd></div>}<div><dt>Created</dt><dd>{formatDate(selected.created_at)}</dd></div><div><dt>Updated</dt><dd>{formatDate(selected.updated_at)}</dd></div><div><dt>Last recalled</dt><dd>{formatDate(selected.last_accessed)}</dd></div></dl><div className="memory-detail-actions"><Button variant="primary" disabled={saving || !!busyId} onClick={() => openEditor(selected)}>Edit memory</Button><Button loading={busyId === selected.id} disabled={saving || !!busyId} onClick={() => void togglePin(selected)}>{selected.pinned ? "Unpin" : "Pin to context"}</Button><Button variant="danger" disabled={saving || !!busyId} onClick={() => void archive(selected)}>Archive</Button></div></Panel>}<div className="memory-tip"><AppIcon name="shield" size={17} /><p>Keep memories specific and current. Review extracted context before adding it to your library.</p></div></div>
     </div>
-  );
-}
-
-function Info({ label, value }: { label:string; value:string }) {
-  return <div style={{ background:"#f8fbff", border:"1px solid #e7eef6", borderRadius:8, padding:"10px 12px" }}><div style={{ fontSize:10, fontWeight:800, color:"#7b8a9d", letterSpacing:"0.05em", textTransform:"uppercase"}}>{label}</div><div style={{ fontSize:13, fontWeight:700, color:"#102033", marginTop:4}}>{value}</div></div>;
-}
-
-function NewMemoryForm({ onCreate, saving, onCancel }: { onCreate:(content:string, category:string)=>void; saving:boolean; onCancel:()=>void }) {
-  const [content, setContent] = useState("");
-  const [cat, setCat] = useState("fact");
-  return (
-    <div>
-      <textarea value={content} onChange={e=>setContent(e.target.value)} placeholder="e.g. User prefers dark mode and concise answers. Always use pnpm, never npm." style={{ ...{width:"100%", background:"#fff", border:"1px solid #99f6e4", borderRadius:10, padding:"12px 14px", fontSize:14, lineHeight:1.5, outline:"none"}, minHeight:90, resize:"vertical" } as React.CSSProperties} />
-      <div style={{ display:"flex", gap:8, marginTop:10, alignItems:"center", flexWrap:"wrap" }}>
-        <select value={cat} onChange={e=>setCat(e.target.value)} style={{ ...{ background:"#fff", border:"1px solid #99f6e4", borderRadius:8, padding:"8px 12px", fontSize:13, fontWeight:700 } as React.CSSProperties, minWidth:140 }}>
-          {CATS.map(c=><option key={c} value={c}>{CAT_META[c].label}</option>)}
-        </select>
-        <button style={{ ...{ padding:"10px 16px", borderRadius:10, border:"1px solid transparent", cursor:"pointer", fontSize:13, fontWeight:800, background:"linear-gradient(135deg,#0f766e,#047857)", color:"#fff", opacity: saving?0.6:1 } as React.CSSProperties }} onClick={()=>onCreate(content, cat)} disabled={saving || !content.trim()}>{saving?"Saving…":"Save memory"}</button>
-        <button style={{ background:"#fff", border:"1px solid #dce7f0", borderRadius:10, padding:"8px 12px", fontSize:12, fontWeight:700, color:"#405166", cursor:"pointer" }} onClick={onCancel}>Cancel</button>
-        <span style={{ fontSize:11, color:"#7b8a9d" }}>Stored per-user, vectored for recall</span>
-      </div>
-    </div>
-  );
+    <Dialog open={!!editor} onClose={() => setEditor(null)} dismissible={!saving} title={editor === "new" ? "Create a memory" : "Edit memory"} description="Save context that helps future requests." footer={<><Button disabled={saving} onClick={() => setEditor(null)}>Cancel</Button><Button variant="primary" type="submit" form="memory-edit-form" loading={saving} disabled={!draft.content.trim()}>Save memory</Button></>}>
+      {formError && <Notice tone="danger">{formError}</Notice>}<form id="memory-edit-form" className="ui-form" onSubmit={(event) => void saveMemory(event)}><Field label="Title" hint="Leave blank to derive a title from the content."><input className="ui-input" value={draft.title} maxLength={160} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /></Field><Field label="Memory content"><textarea className="ui-input memory-edit-content" required maxLength={4000} value={draft.content} onChange={(event) => setDraft((current) => ({ ...current, content: event.target.value }))} placeholder="A fact, preference, procedure, or goal to remember" /></Field><div className="ui-grid"><Field label="Category"><select className="ui-input" value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value }))}>{CATEGORIES.map((value) => <option key={value} value={value}>{categoryLabel(value)}</option>)}</select></Field><Field label="Importance"><select className="ui-input" value={draft.importance} onChange={(event) => setDraft((current) => ({ ...current, importance: Number(event.target.value) }))}>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} of 5</option>)}</select></Field></div><label className="memory-pinned-filter"><input type="checkbox" checked={draft.pinned} onChange={(event) => setDraft((current) => ({ ...current, pinned: event.target.checked }))} />Pin to every chat context</label></form>
+    </Dialog>
+    <Dialog open={!!candidates} onClose={() => setCandidates(null)} dismissible={!saving} title="Review extracted memories" description="Choose the context you want to save from your last chat." footer={<><Button disabled={saving} onClick={() => setCandidates(null)}>Cancel</Button><Button variant="primary" loading={saving} disabled={!chosen.length} onClick={() => void confirmExtraction()}>Save {chosen.length} {chosen.length === 1 ? "memory" : "memories"}</Button></>}>
+      {formError && <Notice tone="danger">{formError}</Notice>}<div className="memory-candidates">{candidates?.map((candidate, index) => <label className="memory-candidate" key={index}><input type="checkbox" checked={chosen.includes(index)} onChange={(event) => setChosen((current) => event.target.checked ? [...current, index] : current.filter((item) => item !== index))} /><div><Badge>{categoryLabel(candidate.category)}</Badge><h3>{candidate.title}</h3><p>{candidate.content}</p>{typeof candidate.confidence === "number" && <span>{Math.round(candidate.confidence * 100)}% confidence</span>}</div></label>)}</div>
+    </Dialog>{dialog}
+  </div>;
 }

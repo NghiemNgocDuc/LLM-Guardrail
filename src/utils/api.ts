@@ -46,6 +46,13 @@ export type ApiOptions = {
   body?: unknown;
 };
 
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export async function getAuthToken(): Promise<string | null> {
   return localStorage.getItem("access_token");
 }
@@ -75,7 +82,7 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(formatApiError(err.detail) || "Request failed");
+    throw new ApiError(formatApiError(err.detail) || "Request failed", res.status);
   }
   if (res.status === 204) return null as T;
   return res.json() as Promise<T>;

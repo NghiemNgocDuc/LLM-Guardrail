@@ -10,6 +10,13 @@
   color: var(--gr-ink);
   font-family: var(--gr-font);
 }
+.gr-dash-metric { animation: gr-page-in 300ms var(--gr-ease) both; }
+.gr-dash-metric:nth-child(2) { animation-delay: 35ms; }
+.gr-dash-metric:nth-child(3) { animation-delay: 70ms; }
+.gr-dash-metric:nth-child(4) { animation-delay: 105ms; }
+.gr-dash-panel { animation: gr-page-in 300ms var(--gr-ease) both; }
+.gr-dash-text-link svg, .gr-dash-icon-link svg { transition: transform var(--gr-motion-base) var(--gr-ease); }
+.gr-dash-text-link:hover svg, .gr-dash-icon-link:hover svg { transform: translateX(3px); }
 .gr-dash-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 8px; }
 .gr-dash-eyebrow { color: var(--gr-muted); font-family: var(--gr-mono); text-transform: uppercase; letter-spacing: .1em; font-size: 10px; line-height: 1.5; font-weight: 500; }
 .gr-dash-header h1 { font-size: clamp(26px, 2.5vw, 36px); font-weight: 550; letter-spacing: -.045em; line-height: 1.15; margin: 10px 0 12px; }

@@ -5,6 +5,7 @@ import { identifyUser } from "./utils/analytics";
 import type { components } from "./api-types";
 import GlobalStyles from "./styles/GlobalStyles";
 import AppIcon from "./components/AppIcon";
+import { trapDialogFocus } from "./components/ui";
 import type { IconName } from "./components/AppIcon";
 import AuthView from "./views/AuthView";
 
@@ -105,7 +106,7 @@ function WorkspaceShell({ user, setUser, signOut }: GateContext) {
   }, []);
   useEffect(() => {
     document.title = pageLabel + " · LLM Guardrail";
-    contentRef.current?.scrollTo({ top: 0 });
+    contentRef.current?.scrollTo({ top: 0, behavior: "instant" });
     const frame = window.requestAnimationFrame(() => contentRef.current?.focus({ preventScroll: true }));
     return () => window.cancelAnimationFrame(frame);
   }, [view, pageLabel]);
@@ -146,6 +147,7 @@ function WorkspaceShell({ user, setUser, signOut }: GateContext) {
     const anchor = event.target.closest<HTMLAnchorElement>("a[href]");
     if (!anchor || anchor.target || anchor.hasAttribute("download")) return;
     const url = new URL(anchor.href), id = url.searchParams.get("view");
+    if (url.hash && url.search === window.location.search) return;
     if (url.origin === window.location.origin && url.pathname === window.location.pathname && id && validViews.has(id)) { event.preventDefault(); navigate(id); }
   }
   function openCommand() { setQuery(""); setSelected(0); if (!commandRef.current?.open) commandRef.current?.showModal(); commandInput.current?.focus(); }
@@ -162,12 +164,12 @@ function WorkspaceShell({ user, setUser, signOut }: GateContext) {
       case "logs": return <LogsView />;
       case "keys": return <ApiKeysView />;
       case "policy": return <PolicyView user={user} />;
-      case "teams": return <TeamsHubView user={user} onSwitch={async () => { try { setUser(await api<UserOut>("/auth/me")); } catch {} navigate("team"); }} onBack={() => navigate("team")} />;
-      case "team": return <div><button onClick={() => navigate("teams")} className="workspace-back-button"><AppIcon name="chevron" size={14} style={{ transform: "rotate(180deg)" }} />All teams</button><TeamView user={user} /></div>;
+      case "teams": return <TeamsHubView user={user} onUserUpdate={setUser} onSwitch={async () => { setUser(await api<UserOut>("/auth/me")); navigate("team"); }} onBack={() => navigate("team")} />;
+      case "team": return <div><button onClick={() => navigate("teams")} className="workspace-back-button"><AppIcon name="chevron" size={14} style={{ transform: "rotate(180deg)" }} />All teams</button><TeamView user={user} onUserUpdate={setUser} /></div>;
       case "health": return <HealthView />;
       case "about": return <AboutView />;
       case "profile": return <ProfileView user={user} onUserUpdate={setUser} />;
-      case "admin": return user.is_admin ? <AdminView /> : <DashboardView />;
+      case "admin": return user.is_admin ? <AdminView user={user} onUserUpdate={setUser} /> : <DashboardView />;
       case "settings": return <SettingsView user={user} onUserUpdate={setUser} darkMode={darkMode} setDarkMode={setDarkMode} onLogout={signOut} />;
       default: return <DashboardView />;
     }
@@ -184,10 +186,10 @@ function WorkspaceShell({ user, setUser, signOut }: GateContext) {
       <div className="workspace-sidebar-footer"><button type="button" className="workspace-account" onClick={() => navigate("profile")} aria-label="Open your profile"><span className="workspace-avatar">{initials}</span><span className="workspace-account-copy"><strong>{displayName}</strong><span title={user.email}>{user.email}</span></span><AppIcon name="chevron" size={14} /></button></div>
     </aside>
     <div className="workspace-area" inert={mobile && sidebarOpen ? true : undefined}><header className="workspace-topbar">
-      <div className="workspace-breadcrumb"><button type="button" className="workspace-icon-button workspace-menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation" aria-expanded={sidebarOpen} aria-controls="workspace-navigation"><AppIcon name="menu" size={20} /></button><span>{current?.group || "Workspace"}</span><AppIcon name="chevron" size={12} /><strong>{pageLabel}</strong></div>
-      <div className="workspace-header-actions"><button type="button" className="workspace-search-trigger" onClick={openCommand} aria-label="Jump to a page"><AppIcon name="search" size={15} /><span>Jump to…</span><kbd>Ctrl K</kbd></button><button type="button" className="workspace-icon-button" aria-label={darkMode ? "Switch to light theme" : "Switch to dark theme"} onClick={() => setDarkMode(value => !value)}><AppIcon name={darkMode ? "sun" : "moon"} size={17} /></button><button type="button" className="workspace-icon-button" aria-label="Sign out" onClick={signOut}><AppIcon name="logout" size={17} /></button></div>
-    </header><main className="workspace-content" id="workspace-main" ref={contentRef} tabIndex={-1} aria-label={pageLabel} onClick={contentClick}><ViewBoundary key={view}><Suspense fallback={<LoadingWorkspace />}>{renderView()}</Suspense></ViewBoundary></main></div>
-    <dialog className="workspace-command" ref={commandRef} aria-label="Jump to a page" onClick={event => { if (event.target === event.currentTarget) commandRef.current?.close(); }}>
+      <div className="workspace-breadcrumb"><button type="button" className="workspace-icon-button workspace-menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation" aria-expanded={sidebarOpen} aria-controls="workspace-navigation"><AppIcon name="menu" size={20} /></button><span>{current?.group || "Workspace"}</span><AppIcon name="chevron" size={12} /><strong key={pageLabel}>{pageLabel}</strong></div>
+      <div className="workspace-header-actions"><button type="button" className="workspace-search-trigger" onClick={openCommand} aria-label="Jump to a page"><AppIcon name="search" size={15} /><span>Jump to…</span><kbd>Ctrl K</kbd></button><button type="button" className="workspace-icon-button" aria-label={darkMode ? "Switch to light theme" : "Switch to dark theme"} onClick={() => setDarkMode(value => !value)}><AppIcon key={darkMode ? "sun" : "moon"} className="workspace-theme-icon" name={darkMode ? "sun" : "moon"} size={17} /></button><button type="button" className="workspace-icon-button" aria-label="Sign out" onClick={signOut}><AppIcon name="logout" size={17} /></button></div>
+    </header><main className="workspace-content" id="workspace-main" ref={contentRef} tabIndex={-1} aria-label={pageLabel} onClick={contentClick}><ViewBoundary key={view}><div className="workspace-route"><Suspense fallback={<LoadingWorkspace />}>{renderView()}</Suspense></div></ViewBoundary></main></div>
+    <dialog className="workspace-command" ref={commandRef} aria-label="Jump to a page" onKeyDown={trapDialogFocus} onClick={event => { if (event.target === event.currentTarget) commandRef.current?.close(); }}>
       <div className="workspace-command-header"><AppIcon name="search" /><input ref={commandInput} value={query} onChange={event => { setQuery(event.target.value); setSelected(0); }} placeholder="Find a page…" aria-label="Search pages" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="workspace-page-results" aria-activedescendant={results[selected] ? "workspace-page-" + results[selected].id : undefined} onKeyDown={event => {
         if (event.key === "ArrowDown") { event.preventDefault(); setSelected(value => Math.min(value + 1, Math.max(0, results.length - 1))); }
         else if (event.key === "ArrowUp") { event.preventDefault(); setSelected(value => Math.max(value - 1, 0)); }

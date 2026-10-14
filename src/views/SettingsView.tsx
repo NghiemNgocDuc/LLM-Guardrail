@@ -1,318 +1,173 @@
-import React, { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { Dispatch, FormEvent, SetStateAction } from "react";
 import { api } from "../utils/api";
-import { s } from "../styles/theme";
 import type { components } from "../api-types";
-import type { CSSProperties } from "react";
+import { Badge, Button, Field, LoadingState, Notice, PageHeader, Panel, useConfirmation } from "../components/ui";
+import "../styles/accounts.css";
 
-type UserOut = components["schemas"]["UserOut"];
-type PolicyOut = components["schemas"]["PolicyOut"];
-type OrgOut = components["schemas"]["OrgOut"];
+type User = components["schemas"]["UserOut"];
+type Organization = components["schemas"]["OrgOut"];
+type Policy = components["schemas"]["PolicyOut"];
+const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
 
-interface AuthMessageResponse { message: string }
-
-const field: CSSProperties = {
-  display: "block",
-  marginBottom: 18,
-};
-const label: CSSProperties = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 700,
-  color: "#607086",
-  marginBottom: 6,
-  letterSpacing: "0.02em",
-};
-const hint: CSSProperties = {
-  display: "block",
-  fontSize: 11,
-  color: "#9aabba",
-  marginTop: 4,
-};
-const input: CSSProperties = {
-  width: "100%",
-  maxWidth: 440,
-  background: "#fff",
-  border: "1px solid #ccd9e6",
-  borderRadius: 8,
-  padding: "11px 13px",
-  fontSize: 14,
-  color: "#102033",
-  fontFamily: "inherit",
-  outline: "none",
-  boxSizing: "border-box",
-  display: "block",
-};
-
-function Card({ title, subtitle, children }: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div style={{
-      background: "rgba(255,255,255,0.92)",
-      border: "1px solid rgba(15,118,110,0.13)",
-      borderRadius: 14,
-      padding: "24px 28px",
-      marginBottom: 18,
-      boxShadow: "0 4px 24px rgba(15,118,110,0.06)",
-    }}>
-      <div style={{ marginBottom: 20, paddingBottom: 14, borderBottom: "1px solid #edf2f7" }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: "#102033" }}>{title}</div>
-        {subtitle && <div style={{ fontSize: 12, color: "#8a9bb0", marginTop: 3 }}>{subtitle}</div>}
-      </div>
-      {children}
-    </div>
-  );
+export function Feedback({ error, success }: { error?: string; success?: string }) {
+  return <>{error && <Notice tone="danger">{error}</Notice>}{success && <Notice tone="success">{success}</Notice>}</>;
 }
 
-function SaveBtn({ saving, label: lbl }: { saving: boolean; label?: string }) {
-  return (
-    <button style={s.btn("primary")} type="submit" disabled={saving}>
-      {saving ? "Saving…" : lbl || "Save"}
-    </button>
-  );
+export function useWorkspaceSettings(user: User | null) {
+  const [policy, setPolicy] = useState<Policy | null>(null);
+  const [org, setOrg] = useState<Organization | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const orgId = user?.org_id;
+  const admin = user?.is_admin;
+  const reload = useCallback(async () => {
+    if (!orgId || !admin) return;
+    setLoading(true); setError("");
+    try { const [nextPolicy, nextOrg] = await Promise.all([api<Policy>("/policy"), api<Organization>("/org")]); setPolicy(nextPolicy); setOrg(nextOrg); }
+    catch (reason) { setError(message(reason)); }
+    finally { setLoading(false); }
+  }, [orgId, admin]);
+  useEffect(() => { void reload(); }, [reload]);
+  return { policy, setPolicy, org, setOrg, loading, error, reload };
 }
 
-export default function SettingsView({ user, onUserUpdate, darkMode, setDarkMode, onLogout }: {
-  user: UserOut | null;
-  onUserUpdate?: (u: UserOut) => void;
-  darkMode: boolean;
-  setDarkMode: React.Dispatch<React.SetStateAction<boolean>>;
-  onLogout: () => void;
-}) {
-  const [fullName, setFullName] = useState(user?.full_name || "");
-  const [savingProfile, setSavingProfile] = useState(false);
-
-  const [currentPw, setCurrentPw] = useState("");
-  const [newPw, setNewPw]         = useState("");
-  const [confirmPw, setConfirmPw] = useState("");
-  const [savingPw, setSavingPw]   = useState(false);
-
-  const [orgName, setOrgName]     = useState("");
-  const [savingOrg, setSavingOrg] = useState(false);
-
-  const [webhookUrl, setWebhookUrl]         = useState("");
-  const [blockedIpsText, setBlockedIpsText] = useState("");
-  const [savingSec, setSavingSec]           = useState(false);
-
-  const [error, setError]     = useState("");
+export function ProfileForm({ user, onUserUpdate }: { user: User | null; onUserUpdate?: (user: User) => void }) {
+  const [name, setName] = useState(user?.full_name || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  useEffect(() => { setName(user?.full_name || ""); }, [user?.full_name]);
+  async function save(event: FormEvent) {
+    event.preventDefault(); setSaving(true); setError(""); setSuccess("");
+    try { const updated = await api<User>("/auth/profile", { method: "PATCH", body: { full_name: name.trim() } }); onUserUpdate?.(updated); setSuccess("Your profile has been saved."); }
+    catch (reason) { setError(message(reason)); } finally { setSaving(false); }
+  }
+  return <Panel title="Personal profile" description="The name your teammates see throughout the workspace."><form className="ui-form accounts-form" onSubmit={save}>
+    <Field label="Display name"><input className="ui-input" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required minLength={1} maxLength={120} /></Field>
+    <Field label="Email address" hint="Your sign-in email cannot be changed here."><input className="ui-input" type="email" value={user?.email || ""} readOnly autoComplete="email" /></Field>
+    <Feedback error={error} success={success} /><div><Button variant="primary" type="submit" loading={saving} disabled={!name.trim() || name.trim() === user?.full_name}>Save profile</Button></div>
+  </form></Panel>;
+}
 
+export function OrganizationForm({ org, onSaved }: { org: Organization; onSaved: (org: Organization) => void }) {
+  const [name, setName] = useState(org.name);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  useEffect(() => { setName(org.name); }, [org.name]);
+  async function save(event: FormEvent) {
+    event.preventDefault(); setSaving(true); setError(""); setSuccess("");
+    try { const updated = await api<Organization>("/org", { method: "PATCH", body: { name: name.trim() } }); onSaved(updated); setSuccess("Workspace name updated."); }
+    catch (reason) { setError(message(reason)); } finally { setSaving(false); }
+  }
+  return <Panel title="Workspace identity" description="Give your current workspace a name your team recognises."><form className="ui-form accounts-form" onSubmit={save}>
+    <Field label="Workspace name" hint={`Current identifier: ${org.slug}`}><input className="ui-input" value={name} onChange={(event) => setName(event.target.value)} required minLength={2} maxLength={120} /></Field>
+    <Feedback error={error} success={success} /><div><Button variant="primary" type="submit" loading={saving} disabled={name.trim().length < 2 || name.trim() === org.name}>Rename workspace</Button></div>
+  </form></Panel>;
+}
+
+export function SecurityForm({ policy, onSaved }: { policy: Policy; onSaved: (policy: Policy) => void }) {
+  const [webhook, setWebhook] = useState("");
+  const [ips, setIps] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   useEffect(() => {
-    const loads: Promise<unknown>[] = [api<PolicyOut>("/policy")];
-    if (user?.org_id) loads.push(api<OrgOut>("/org"));
-    Promise.all(loads).then(([policy, org]) => {
-      const cr = (policy as PolicyOut)?.compliance_rules || {};
-      const crMap = cr as Record<string, unknown>;
-      setWebhookUrl(typeof crMap.webhook_url === "string" ? crMap.webhook_url : "");
-      setBlockedIpsText(Array.isArray(crMap.blocked_ips) ? (crMap.blocked_ips as string[]).join("\n") : "");
-      if (org) setOrgName((org as OrgOut).name);
-    }).catch(() => {});
-  }, [user]);
-
-  function flash(msg: string, isErr = false) {
-    if (isErr) { setError(msg); setSuccess(""); }
-    else        { setSuccess(msg); setError(""); }
-    setTimeout(() => { setError(""); setSuccess(""); }, 4000);
-  }
-
-  async function saveProfile(e: React.FormEvent) {
-    e.preventDefault(); setSavingProfile(true);
+    const rules = policy.compliance_rules || {};
+    setWebhook(typeof rules.webhook_url === "string" ? rules.webhook_url : "");
+    setIps(Array.isArray(rules.blocked_ips) ? rules.blocked_ips.filter((ip): ip is string => typeof ip === "string").join("\n") : "");
+  }, [policy]);
+  async function save(event: FormEvent) {
+    event.preventDefault(); setSaving(true); setError(""); setSuccess("");
     try {
-      const updated = await api<UserOut>("/auth/profile", { method: "PATCH", body: { full_name: fullName } });
-      onUserUpdate?.(updated);
-      flash("Profile updated.");
-    } catch (err) { flash(err instanceof Error ? err.message : String(err), true); }
-    finally { setSavingProfile(false); }
+      const latest = await api<Policy>("/policy");
+      const updated = await api<Policy>("/policy", { method: "PATCH", body: { compliance_rules: { ...latest.compliance_rules, webhook_url: webhook.trim(), blocked_ips: ips.split("\n").map((ip) => ip.trim()).filter(Boolean) } } });
+      onSaved(updated); setSuccess("Webhook and access settings saved.");
+    } catch (reason) { setError(message(reason)); } finally { setSaving(false); }
   }
+  return <Panel title="Notifications & access" description="Route blocked-request notifications and manage IP access."><form className="ui-form accounts-form" onSubmit={save}>
+    <Field label="Webhook URL" hint="Receives guardrail block notifications. Leave empty to turn notifications off."><input className="ui-input" type="url" value={webhook} onChange={(event) => setWebhook(event.target.value)} placeholder="https://your-server.com/webhook" /></Field>
+    <Field label="IP blocklist" hint="Enter one IP address per line. Matching requests are rejected with HTTP 403."><textarea className="ui-input accounts-code-input" rows={5} value={ips} onChange={(event) => setIps(event.target.value)} placeholder={"192.168.1.100\n10.0.0.50"} /></Field>
+    <Feedback error={error} success={success} /><div><Button variant="primary" type="submit" loading={saving}>Save security settings</Button></div>
+  </form></Panel>;
+}
 
-  async function savePassword(e: React.FormEvent) {
-    e.preventDefault();
-    if (newPw !== confirmPw) { flash("New passwords do not match.", true); return; }
-    setSavingPw(true);
+function PasswordForm() {
+  const [current, setCurrent] = useState("");
+  const [password, setPassword] = useState("");
+  const [repeat, setRepeat] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [mismatch, setMismatch] = useState(false);
+  async function save(event: FormEvent) {
+    event.preventDefault(); setError(""); setSuccess("");
+    if (password !== repeat) { setMismatch(true); return; }
+    setSaving(true); setMismatch(false);
+    try { const response = await api<{ message: string }>("/auth/change-password", { method: "POST", body: { current_password: current, new_password: password } }); setSuccess(response.message || "Password updated."); setCurrent(""); setPassword(""); setRepeat(""); }
+    catch (reason) { setError(message(reason)); } finally { setSaving(false); }
+  }
+  return <Panel title="Password" description="Use at least eight characters and a password unique to this account."><form className="ui-form accounts-form" onSubmit={save}>
+    <Field label="Current password"><input className="ui-input" type="password" value={current} onChange={(event) => setCurrent(event.target.value)} autoComplete="current-password" required maxLength={256} /></Field>
+    <div className="accounts-form-grid"><Field label="New password"><input className="ui-input" type="password" value={password} onChange={(event) => { setPassword(event.target.value); setMismatch(false); }} autoComplete="new-password" required minLength={8} maxLength={256} /></Field><Field label="Confirm new password" error={mismatch ? "The new passwords do not match." : undefined}><input className="ui-input" type="password" value={repeat} onChange={(event) => { setRepeat(event.target.value); setMismatch(false); }} autoComplete="new-password" required minLength={8} maxLength={256} /></Field></div>
+    <Feedback error={error} success={success} /><div><Button variant="primary" type="submit" loading={saving}>Update password</Button></div>
+  </form></Panel>;
+}
+
+function LimitsForm({ policy, onSaved }: { policy: Policy; onSaved: (policy: Policy) => void }) {
+  const [rpm, setRpm] = useState(String(policy.rate_limit_rpm || ""));
+  const [rpd, setRpd] = useState(String(policy.rate_limit_rpd || ""));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  useEffect(() => { setRpm(String(policy.rate_limit_rpm || "")); setRpd(String(policy.rate_limit_rpd || "")); }, [policy.rate_limit_rpm, policy.rate_limit_rpd]);
+  async function save(event: FormEvent) {
+    event.preventDefault(); setSaving(true); setError(""); setSuccess("");
+    try { const updated = await api<Policy>("/policy", { method: "PATCH", body: { rate_limit_rpm: Number(rpm) || 0, rate_limit_rpd: Number(rpd) || 0 } }); onSaved(updated); setSuccess("Workspace request limits saved."); }
+    catch (reason) { setError(message(reason)); } finally { setSaving(false); }
+  }
+  return <Panel title="Request limits" description="Set workspace quotas. Empty values use the gateway defaults."><form className="ui-form accounts-form" onSubmit={save}><div className="accounts-form-grid">
+    <Field label="Requests per minute"><input className="ui-input" type="number" min={1} step={1} value={rpm} onChange={(event) => setRpm(event.target.value)} placeholder="Gateway default" /></Field><Field label="Requests per day"><input className="ui-input" type="number" min={1} step={1} value={rpd} onChange={(event) => setRpd(event.target.value)} placeholder="Gateway default" /></Field>
+  </div><Feedback error={error} success={success} /><div><Button variant="primary" type="submit" loading={saving}>Save request limits</Button></div></form></Panel>;
+}
+
+function AuditExport() {
+  const [days, setDays] = useState(30);
+  const [exporting, setExporting] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  async function download() {
+    setExporting(true); setProgress(0); setError(""); setSuccess("");
     try {
-      const res = await api<AuthMessageResponse>("/auth/change-password", {
-        method: "POST",
-        body: { current_password: currentPw, new_password: newPw },
-      });
-      flash(res.message || "Password changed.");
-      setCurrentPw(""); setNewPw(""); setConfirmPw("");
-    } catch (err) { flash(err instanceof Error ? err.message : String(err), true); }
-    finally { setSavingPw(false); }
+      const records: Record<string, unknown>[] = [];
+      let page = 1;
+      while (true) {
+        const data = await api<{ total: number; items: Record<string, unknown>[] }>(`/org/export?days=${days}&page=${page}&page_size=500`);
+        records.push(...data.items); setProgress(records.length);
+        if (!data.items.length || records.length >= data.total) break;
+        page += 1;
+      }
+      const url = URL.createObjectURL(new Blob([JSON.stringify({ exported_at: new Date().toISOString(), days, total: records.length, items: records }, null, 2)], { type: "application/json" }));
+      const anchor = document.createElement("a"); anchor.href = url; anchor.download = `guardrails-audit-${days}days-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setSuccess(`Exported ${records.length.toLocaleString()} audit records.`);
+    } catch (reason) { setError(message(reason)); } finally { setExporting(false); }
   }
+  return <Panel title="Audit export" description="Download workspace request decisions as JSON. Raw prompts and credentials are excluded."><div className="ui-form accounts-form"><Field label="Export period"><select className="ui-input" value={days} onChange={(event) => setDays(Number(event.target.value))} disabled={exporting}><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option></select></Field><Feedback error={error} success={success} />{exporting && <p role="status" className="accounts-copy">Preparing {progress.toLocaleString()} records…</p>}<div><Button variant="secondary" icon="logs" loading={exporting} onClick={() => void download()}>Download audit export</Button></div></div></Panel>;
+}
 
-  async function saveOrg(e: React.FormEvent) {
-    e.preventDefault(); setSavingOrg(true);
-    try {
-      await api<OrgOut>("/org", { method: "PATCH", body: { name: orgName } });
-      flash("Organisation renamed.");
-    } catch (err) { flash(err instanceof Error ? err.message : String(err), true); }
-    finally { setSavingOrg(false); }
-  }
-
-  async function saveSecurity(e: React.FormEvent) {
-    e.preventDefault(); setSavingSec(true);
-    try {
-      const blocked_ips = blockedIpsText.split("\n").map(l => l.trim()).filter(Boolean);
-      await api<PolicyOut>("/policy", {
-        method: "PATCH",
-        body: { compliance_rules: { webhook_url: webhookUrl.trim() || undefined, blocked_ips } },
-      });
-      flash("Security settings saved.");
-    } catch (err) { flash(err instanceof Error ? err.message : String(err), true); }
-    finally { setSavingSec(false); }
-  }
-
-  return (
-    <div>
-      {/* Page header */}
-      <div style={s.heroPanel}>
-        <div style={{ ...s.pageTitle, marginBottom: 6 }}>Settings</div>
-        <div style={{ color: "#607086", fontSize: 14 }}>
-          Signed in as <strong>{user?.email}</strong>
-          {user?.is_admin && (
-            <span style={{ ...s.badge("rate_limited"), marginLeft: 10 }}>Admin</span>
-          )}
-        </div>
+export default function SettingsView({ user, onUserUpdate, darkMode, setDarkMode, onLogout }: { user: User | null; onUserUpdate?: (user: User) => void; darkMode: boolean; setDarkMode: Dispatch<SetStateAction<boolean>>; onLogout: () => void }) {
+  const workspace = useWorkspaceSettings(user);
+  const { confirm, dialog } = useConfirmation();
+  return <div className="accounts-page accounts-settings">
+    <PageHeader eyebrow="Preferences & access" title="Make this workspace yours." description="Manage your profile, security, and the settings your team shares." actions={<Badge tone={user?.is_admin ? "info" : "neutral"}>{user?.is_admin ? "Administrator" : "Member"}</Badge>} />
+    <div className="accounts-settings-layout"><nav className="accounts-section-nav" aria-label="Settings sections"><a href="#settings-profile">Profile</a><a href="#settings-password">Password</a><a href="#settings-appearance">Appearance</a>{user?.is_admin && user.org_id && <><a href="#settings-workspace">Workspace</a><a href="#settings-security">Security</a><a href="#settings-limits">Request limits</a><a href="#settings-export">Audit export</a></>}<a href="#settings-session">Session</a></nav>
+      <div className="accounts-settings-content"><div id="settings-profile"><ProfileForm user={user} onUserUpdate={onUserUpdate} /></div><div id="settings-password"><PasswordForm /></div>
+        <div id="settings-appearance"><Panel title="Appearance" description="Choose the theme that feels comfortable for your work."><div className="accounts-theme-options" role="group" aria-label="Workspace theme"><Button variant={darkMode ? "secondary" : "primary"} icon="sun" aria-pressed={!darkMode} onClick={() => setDarkMode(false)}>Light</Button><Button variant={darkMode ? "primary" : "secondary"} icon="moon" aria-pressed={darkMode} onClick={() => setDarkMode(true)}>Dark</Button></div></Panel></div>
+        {user?.is_admin && user.org_id && <>{workspace.loading && !workspace.policy && <LoadingState label="Loading workspace settings" />}{workspace.error && <Notice tone="danger">{workspace.error}<Button variant="ghost" onClick={() => void workspace.reload()}>Retry workspace settings</Button></Notice>}{workspace.org && <div id="settings-workspace"><OrganizationForm org={workspace.org} onSaved={workspace.setOrg} /></div>}{workspace.policy && <><div id="settings-security"><SecurityForm policy={workspace.policy} onSaved={workspace.setPolicy} /></div><div id="settings-limits"><LimitsForm policy={workspace.policy} onSaved={workspace.setPolicy} /></div></>}<div id="settings-export"><AuditExport /></div></>}
+        <div id="settings-session"><Panel title="Your session" description={`Signed in as ${user?.email || "your account"}.`}><div className="accounts-session-row"><p className="accounts-copy">Sign out when you finish working on a shared device.</p><Button variant="danger" icon="logout" onClick={async () => { if (await confirm({ title: "Sign out of your account?", description: "You can sign back in to continue working with your workspace.", confirmLabel: "Sign out" })) onLogout(); }}>Sign out</Button></div></Panel></div>
       </div>
-
-      {/* Inline feedback */}
-      {error   && <div style={{ ...s.alert("error"),   marginBottom: 16 }}>{error}</div>}
-      {success && <div style={{ ...s.alert("success"), marginBottom: 16 }}>{success}</div>}
-
-      {/* -- Profile -- */}
-      <Card title="Profile" subtitle="Your public display name shown to teammates">
-        <form onSubmit={saveProfile}>
-          <div style={field}>
-            <label style={label}>Display Name</label>
-            <input style={input} value={fullName}
-              onChange={e => setFullName(e.target.value)}
-              required minLength={1} maxLength={120}
-              placeholder="Your full name" />
-          </div>
-          <div style={field}>
-            <label style={label}>Email</label>
-            <input style={{ ...input, background: "#f8fbff", color: "#8a9bb0", cursor: "not-allowed" }}
-              value={user?.email || ""} readOnly />
-            <span style={hint}>Email cannot be changed from the dashboard.</span>
-          </div>
-          <SaveBtn saving={savingProfile} label="Save Profile" />
-        </form>
-      </Card>
-
-      {/* -- Password -- */}
-      <Card title="Change Password" subtitle="Use a strong password of at least 8 characters">
-        <form onSubmit={savePassword}>
-          <div style={field}>
-            <label style={label}>Current Password</label>
-            <input style={input} type="password" value={currentPw}
-              onChange={e => setCurrentPw(e.target.value)} required
-              placeholder="Enter current password" />
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 18 }}>
-            <div>
-              <label style={label}>New Password</label>
-              <input style={{ ...input, maxWidth: "100%" }} type="password" value={newPw}
-                onChange={e => setNewPw(e.target.value)} required minLength={8}
-                placeholder="At least 8 characters" />
-            </div>
-            <div>
-              <label style={label}>Confirm New Password</label>
-              <input style={{ ...input, maxWidth: "100%" }} type="password" value={confirmPw}
-                onChange={e => setConfirmPw(e.target.value)} required minLength={8}
-                placeholder="Repeat new password" />
-            </div>
-          </div>
-          <SaveBtn saving={savingPw} label="Update Password" />
-        </form>
-      </Card>
-
-      {/* -- Appearance -- */}
-      <Card title="Appearance" subtitle="Customise how the dashboard looks">
-        <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "4px 0" }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#102033", marginBottom: 2 }}>Dark Mode</div>
-            <div style={{ fontSize: 12, color: "#8a9bb0" }}>
-              {darkMode ? "Currently using dark theme" : "Currently using light theme"}
-            </div>
-          </div>
-          <button
-            type="button"
-            style={{ ...s.toggle(darkMode), flexShrink: 0, position: "relative" }}
-            onClick={() => setDarkMode(d => !d)}
-          >
-            <div style={s.toggleDot(darkMode)} />
-          </button>
-        </div>
-      </Card>
-
-      {/* -- Organisation (admin only) -- */}
-      {user?.is_admin && user?.org_id && (
-        <Card title="Organisation" subtitle="Rename your organisation — the slug will update automatically">
-          <form onSubmit={saveOrg}>
-            <div style={field}>
-              <label style={label}>Organisation Name</label>
-              <input style={input} value={orgName}
-                onChange={e => setOrgName(e.target.value)}
-                required minLength={2} maxLength={120}
-                placeholder="Acme Corp" />
-            </div>
-            <SaveBtn saving={savingOrg} label="Rename Organisation" />
-          </form>
-        </Card>
-      )}
-
-      {/* -- Security (admin only) -- */}
-      {user?.is_admin && (
-        <Card title="Security" subtitle="Guardrail webhook notifications and IP-level access control">
-          <form onSubmit={saveSecurity}>
-            <div style={field}>
-              <label style={label}>Webhook URL</label>
-              <input style={input} type="url" value={webhookUrl}
-                onChange={e => setWebhookUrl(e.target.value)}
-                placeholder="https://your-server.com/webhook" />
-              <span style={hint}>
-                Receives a POST request with JSON payload whenever a guardrail blocks a request.
-              </span>
-            </div>
-            <div style={field}>
-              <label style={label}>IP Blocklist</label>
-              <textarea
-                style={{
-                  ...input, maxWidth: 440, height: 110,
-                  resize: "vertical", fontFamily: "ui-monospace, monospace", fontSize: 12,
-                  lineHeight: 1.6,
-                }}
-                placeholder={"192.168.1.100\n10.0.0.50"}
-                value={blockedIpsText}
-                onChange={e => setBlockedIpsText(e.target.value)}
-              />
-              <span style={hint}>One IP address per line. Requests from these IPs receive HTTP 403.</span>
-            </div>
-            <SaveBtn saving={savingSec} label="Save Security Settings" />
-          </form>
-        </Card>
-      )}
-
-      {/* -- Account / Sign out -- */}
-      <Card title="Account" subtitle="Manage your session">
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          flexWrap: "wrap", gap: 12,
-        }}>
-          <div style={{ fontSize: 13, color: "#607086", lineHeight: 1.6 }}>
-            Signing out clears your local session token.<br />
-            You can sign back in at any time.
-          </div>
-          <button
-            style={{ ...s.btn("danger"), padding: "11px 28px", fontSize: 13 }}
-            onClick={() => { if (confirm("Sign out of your account?")) onLogout(); }}
-          >
-            Sign out
-          </button>
-        </div>
-      </Card>
-    </div>
-  );
+    </div>{dialog}
+  </div>;
 }

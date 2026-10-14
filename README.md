@@ -416,15 +416,23 @@ npm run typecheck
 npm run build
 ```
 
-Frontend browser checks use mocked API data to verify authentication, dashboard
-navigation, prompt submission, mobile layouts, and accessibility:
+The frontend uses a shared design system across every view, with light/dark
+themes, responsive navigation, keyboard-friendly dialogs, and reduced-motion
+support. The login preview keeps its word-by-word LLM output. See the
+[frontend design notes](docs/FRONTEND_DESIGN.md) for components and research.
+
+Frontend browser checks use isolated API fixtures to verify authentication,
+every workspace view, and key, policy, skill, memory, account, team, billing,
+analytics, log, health, export, and provenance workflows:
 
 ```bash
 npx playwright install chromium
 npm run test:frontend
 ```
 
-They run at desktop and 375px mobile widths. On Windows with Edge already
+They run at desktop and 375px mobile widths, with automated accessibility checks
+in both themes. Tests never make real purchases or modify live accounts.
+On Windows with Edge already
 installed, set `$env:PW_CHANNEL="msedge"` in PowerShell to use it instead of
 downloading Chromium. Preview screenshots and failure traces are written to
 the ignored `test-results/` directory.

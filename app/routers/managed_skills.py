@@ -144,6 +144,14 @@ async def create_skill(
     }
 
 
+@router.get("/metrics", response_model=dict)
+async def skill_metrics(current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """Live fixture scores. Register this static path before the slug route."""
+    _require_org(current_user)
+    policy = await _org_policy_dict(db, current_user.org_id)
+    return compute_skill_metrics(org_policy=policy or {"block_secrets": True, "block_pii": True})
+
+
 @router.get("/{slug}", response_model=dict)
 async def get_skill(slug: str, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
     _require_org(current_user)
@@ -305,14 +313,6 @@ async def download_skill(
 
 
 # ── metrics + identical-block scan + auto test generation ──────────────────
-
-@router.get("/metrics", response_model=dict)
-async def skill_metrics(current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
-    """Live scores for skill conflict detection — used by About page."""
-    _require_org(current_user)
-    policy = await _org_policy_dict(db, current_user.org_id)
-    metrics = compute_skill_metrics(org_policy=policy or {"block_secrets": True, "block_pii": True})
-    return metrics
 
 @router.get("/metrics/combined", response_model=dict)
 async def combined_metrics(current_user: CurrentUser, db: AsyncSession = Depends(get_db)):

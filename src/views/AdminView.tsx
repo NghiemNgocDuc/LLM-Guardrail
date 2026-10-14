@@ -1,266 +1,117 @@
-import React, { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, maskGatewayKey } from "../utils/api";
-import { s } from "../styles/theme";
 import type { components } from "../api-types";
+import { Badge, Button, EmptyState, Field, LoadingState, Notice, PageHeader, Panel, TableWrap, useConfirmation } from "../components/ui";
+import "../styles/accounts.css";
 
-type AdminUserStats = components["schemas"]["AdminUserStats"];
-type APIKeyOut = components["schemas"]["APIKeyOut"];
-type SortCol = "" | keyof AdminUserStats;
+type Member = components["schemas"]["AdminUserStats"];
+type User = components["schemas"]["UserOut"];
+type Key = components["schemas"]["APIKeyOut"];
+type Ban = { type: string; id: string; retry_after: number; reason: string };
+type SortColumn = keyof Member;
+const number = (value: number) => value.toLocaleString();
+const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
+const sortable: [SortColumn, string][] = [["email", "Email"], ["full_name", "Name"], ["last_login", "Last sign-in"], ["tokens_used", "Tokens used"], ["tokens_balance", "Balance"], ["total_requests", "Requests"], ["total_blocked", "Blocked"]];
 
-type BanInfo = { type: string; id: string; retry_after: number; reason: string };
-
-export default function AdminView() {
-  const [stats, setStats] = useState<AdminUserStats[]>([]);
-  const [keys, setKeys] = useState<APIKeyOut[]>([]);
-  const [bans, setBans] = useState<BanInfo[]>([]);
+export default function AdminView({ user, onUserUpdate }: { user?: User; onUserUpdate?: (user: User) => void } = {}) {
+  const [members, setMembers] = useState<Member[] | null>(null);
+  const [keys, setKeys] = useState<Key[] | null>(null);
+  const [bans, setBans] = useState<Ban[] | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [bansError, setBansError] = useState("");
   const [success, setSuccess] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [sortCol, setSortCol] = useState<SortCol>("");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [bulking, setBulking] = useState(false);
+  const [query, setQuery] = useState("");
+  const [sortColumn, setSortColumn] = useState<SortColumn>("email");
+  const [direction, setDirection] = useState<"asc" | "desc">("asc");
+  const [busy, setBusy] = useState<string | null>(null);
+  const selectAll = useRef<HTMLInputElement>(null);
+  const { confirm, dialog } = useConfirmation();
 
-  const load = useCallback(() => {
-    setSelected(new Set());
-    Promise.all([api<AdminUserStats[]>("/admin/users/stats"), api<APIKeyOut[]>("/admin/api-keys"), api<BanInfo[]>("/admin/bans").catch(() => [] as BanInfo[])])
-      .then(([u, k, b]) => { setStats(u); setKeys(k); setBans(b as BanInfo[]); })
-      .catch((e: Error) => setError(e.message));
+  const load = useCallback(async () => {
+    setLoading(true); setError(""); setBansError(""); setSelected(new Set());
+    const [usersResult, keysResult, bansResult] = await Promise.allSettled([
+      api<Member[]>("/admin/users/stats"), api<Key[]>("/admin/api-keys"), api<Ban[]>("/admin/bans"),
+    ]);
+    const errors: string[] = [];
+    if (usersResult.status === "fulfilled") setMembers(usersResult.value); else { setMembers(null); errors.push(`Members: ${message(usersResult.reason)}`); }
+    if (keysResult.status === "fulfilled") setKeys(keysResult.value); else { setKeys(null); errors.push(`API keys: ${message(keysResult.reason)}`); }
+    if (bansResult.status === "fulfilled") setBans(bansResult.value); else { setBans(null); setBansError(message(bansResult.reason)); }
+    setError(errors.join(" · ")); setLoading(false);
   }, []);
+  useEffect(() => { void load(); }, [load]);
 
-  useEffect(() => { load(); }, [load]);
+  const sorted = useMemo(() => (members || []).filter((member) => `${member.email} ${member.full_name}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => {
+    const first = a[sortColumn] ?? "", second = b[sortColumn] ?? "";
+    const comparison = typeof first === "number" && typeof second === "number" ? first - second : String(first).localeCompare(String(second));
+    return direction === "asc" ? comparison : -comparison;
+  }), [members, query, sortColumn, direction]);
+  const selectable = sorted.filter((member) => member.id !== user?.id);
+  const visibleSelected = selectable.filter((member) => selected.has(member.id)).length;
+  useEffect(() => { if (selectAll.current) selectAll.current.indeterminate = visibleSelected > 0 && visibleSelected < selectable.length; }, [visibleSelected, selectable.length]);
 
-  function toggleSort(col: keyof AdminUserStats) {
-    if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortCol(col); setSortDir("asc"); }
+  function toggle(id: string) { setSelected((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; }); }
+  function toggleAll() { setSelected((current) => { const next = new Set(current); const clear = selectable.length > 0 && selectable.every((member) => next.has(member.id)); selectable.forEach((member) => clear ? next.delete(member.id) : next.add(member.id)); return next; }); }
+  function sort(column: SortColumn) { if (column === sortColumn) setDirection((current) => current === "asc" ? "desc" : "asc"); else { setSortColumn(column); setDirection("asc"); } }
+
+  async function mutate(id: string, request: () => Promise<unknown>, successMessage: string) {
+    setBusy(id); setError(""); setSuccess("");
+    try { await request(); setSuccess(successMessage); await load(); }
+    catch (reason) { setError(message(reason)); } finally { setBusy(null); }
   }
 
-  const sorted: AdminUserStats[] = sortCol ? [...stats].sort((a, b) => {
-    const av = a[sortCol] ?? ""; const bv = b[sortCol] ?? "";
-    if (av < bv) return sortDir === "asc" ? -1 : 1;
-    if (av > bv) return sortDir === "asc" ? 1 : -1;
-    return 0;
-  }) : stats;
-
-  const SortArrow = ({ col }: { col: keyof AdminUserStats }) => sortCol === col ? (sortDir === "asc" ? " " : " ") : "";
-
-  function toggleSelect(id: string) {
-    setSelected(s => {
-      const next = new Set(s);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+  async function bulk(action: "enable" | "disable" | "remove") {
+    const ids = [...selected]; if (!ids.length) return;
+    const labels = { enable: "Enable", disable: "Disable", remove: "Remove" };
+    if (!await confirm({ title: `${labels[action]} ${ids.length} selected accounts?`, description: action === "remove" ? "These users will lose membership in the current workspace." : action === "disable" ? "These users will be prevented from using their accounts." : "These accounts will be enabled again.", confirmLabel: `${labels[action]} accounts`, danger: action !== "enable" })) return;
+    await mutate("bulk", () => api("/admin/users/bulk", { method: "POST", body: { action, user_ids: ids } }), "Bulk request completed. Review the refreshed accounts below.");
   }
 
-  function toggleAll() {
-    if (selected.size === stats.length) setSelected(new Set());
-    else setSelected(new Set(stats.map(u => u.id)));
+  async function changeRole(member: Member) {
+    if (!await confirm({ title: member.is_admin ? "Remove administrator access?" : "Grant administrator access?", description: `${member.email} will become ${member.is_admin ? "a member" : "an administrator"} of this workspace.`, confirmLabel: member.is_admin ? "Make member" : "Make administrator", danger: !member.is_admin })) return;
+    if (member.id === user?.id) {
+      setBusy(member.id); setError(""); setSuccess("");
+      try { await api(`/admin/users/${member.id}`, { method: "PATCH", body: { is_admin: !member.is_admin } }); const updated = await api<User>("/auth/me"); if (onUserUpdate) onUserUpdate(updated); else window.location.reload(); }
+      catch (reason) { setError(message(reason)); } finally { setBusy(null); }
+    } else await mutate(member.id, () => api(`/admin/users/${member.id}`, { method: "PATCH", body: { is_admin: !member.is_admin } }), `Role updated for ${member.email}.`);
   }
 
-  async function bulkAction(action: "enable" | "disable" | "remove") {
-    if (selected.size === 0) return;
-    const verb: Record<string, string> = { enable: "enable", disable: "disable", remove: "remove from org" };
-    if (!confirm(`${verb[action]} ${selected.size} selected user(s)?`)) return;
-    setBulking(true); setError(""); setSuccess("");
-    try {
-      await api("/admin/users/bulk", { method: "POST", body: { action, user_ids: [...selected] } });
-      setSuccess(`${selected.size} user(s) updated.`);
-      load();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBulking(false); }
+  async function remove(member: Member) {
+    if (!await confirm({ title: `Remove ${member.full_name || member.email}?`, description: `${member.email} will lose membership in this workspace.`, confirmLabel: "Remove member", danger: true })) return;
+    await mutate(member.id, () => api(`/admin/users/${member.id}`, { method: "DELETE" }), `${member.email} removed from this workspace.`);
   }
 
-  async function patchUser(userId: string, body: Record<string, unknown>) {
-    setError(""); setSuccess("");
-    try {
-      await api("/admin/users/" + userId, { method: "PATCH", body });
-      setSuccess("User updated.");
-      load();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  async function revoke(key: Key) {
+    if (!await confirm({ title: `Revoke ${key.name}?`, description: "Applications using this key will no longer be able to send requests. This cannot be undone.", confirmLabel: "Revoke key", danger: true })) return;
+    await mutate(key.id, () => api(`/admin/api-keys/${key.id}`, { method: "DELETE" }), `Revoked ${key.name}.`);
   }
 
-  async function removeUser(u: AdminUserStats) {
-    if (!confirm(`Remove ${u.email} from the organisation?`)) return;
-    setError(""); setSuccess("");
-    try {
-      await api("/admin/users/" + u.id, { method: "DELETE" });
-      setSuccess(`${u.email} removed from org.`);
-      load();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  async function liftBan(ban: Ban) {
+    if (!await confirm({ title: "Lift this temporary restriction?", description: <>The {ban.type.replaceAll("_", " ")} <span className="accounts-mono">{ban.id}</span> was restricted for {ban.reason}. Access can resume immediately.</>, confirmLabel: "Lift restriction" })) return;
+    await mutate(ban.id, () => api("/admin/bans/unban", { method: "POST", body: ban.type === "api_key" ? { api_key_id: ban.id } : { user_id: ban.id } }), "Temporary restriction lifted.");
   }
 
-  async function revokeKey(id: string) {
-    if (!confirm("Revoke this organisation key?")) return;
-    setError(""); setSuccess("");
-    try {
-      await api("/admin/api-keys/" + id, { method: "DELETE" });
-      setSuccess("Key revoked.");
-      load();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  function sortHeading(column: SortColumn, label: string) {
+    return <th scope="col" aria-sort={sortColumn === column ? direction === "asc" ? "ascending" : "descending" : "none"}><button className="accounts-sort-button" onClick={() => sort(column)} aria-label={`Sort by ${label}${sortColumn === column ? `, currently ${direction === "asc" ? "ascending" : "descending"}` : ""}`}>{label}<span aria-hidden="true">{sortColumn === column ? direction === "asc" ? "↑" : "↓" : "↕"}</span></button></th>;
   }
 
-  async function unban(b: BanInfo) {
-    if (!confirm(`Lift temporary ban for ${b.type} ${b.id.slice(0,8)}… (${b.reason})?`)) return;
-    setError(""); setSuccess("");
-    try {
-      await api("/admin/bans/unban", { method: "POST", body: b.type === "api_key" ? { api_key_id: b.id } : { user_id: b.id } });
-      setSuccess("Ban lifted.");
-      load();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-  }
-
-  const fmt = (n: number) => Number(n).toLocaleString();
-
-  return (
-    <div>
-      <div style={s.heroPanel}>
-        <div style={{ ...s.pageTitle, marginBottom: 8 }}>Admin Controls</div>
-        <div style={{ color: "#405166", fontSize: 15, lineHeight: 1.6 }}>
-          Manage organisation users, view usage, and revoke keys.
-        </div>
-      </div>
-      {error && <div style={s.alert("error")}>{error}</div>}
-      {success && <div style={s.alert("success")}>{success}</div>}
-
-      {/* Users + usage */}
-      <div style={{ ...s.card, marginBottom: 24, overflowX: "auto" }}>
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 12, gap: 10, flexWrap: "wrap" }}>
-          <div style={s.sectionTitle}>Organisation Members</div>
-          {selected.size > 0 && (
-            <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-              <span style={{ fontSize: 12, color: "#607086", alignSelf: "center" }}>{selected.size} selected</span>
-              <button style={{ ...s.btn("secondary"), fontSize: 12 }} onClick={() => bulkAction("enable")} disabled={bulking}>Enable</button>
-              <button style={{ ...s.btn("secondary"), fontSize: 12 }} onClick={() => bulkAction("disable")} disabled={bulking}>Disable</button>
-              <button style={{ ...s.btn("danger"), fontSize: 12 }} onClick={() => bulkAction("remove")} disabled={bulking}>Remove</button>
-            </div>
-          )}
-        </div>
-        <table style={s.table}>
-          <thead>
-            <tr>
-              <th style={{ ...s.th, width: 36 }}>
-                <input type="checkbox"
-                  checked={stats.length > 0 && selected.size === stats.length}
-                  onChange={toggleAll}
-                  style={{ cursor: "pointer" }}
-                />
-              </th>
-              {([
-                ["email", "Email"],
-                ["full_name", "Name"],
-                [null, "Role"],
-                [null, "Status"],
-                ["last_login", "Last Login"],
-                ["tokens_used", "Tokens Used"],
-                ["tokens_balance", "Balance"],
-                ["total_requests", "Requests"],
-                ["total_blocked", "Blocked"],
-                [null, ""],
-              ] as [keyof AdminUserStats | null, string][]).map(([col, h]) => (
-                <th key={h} style={{ ...s.th, cursor: col ? "pointer" : "default", userSelect: "none" }}
-                  onClick={col ? () => toggleSort(col) : undefined}>
-                  {h}{col && <SortArrow col={col} />}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map(u => (
-              <tr key={u.id} style={{ background: selected.has(u.id) ? "#f0fdf4" : "transparent" }}>
-                <td style={s.td}>
-                  <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleSelect(u.id)} style={{ cursor: "pointer" }} />
-                </td>
-                <td style={s.td}>{u.email}</td>
-                <td style={s.td}>{u.full_name}</td>
-                <td style={s.td}><span style={s.badge(u.is_admin ? "rate_limited" : "delivered")}>{u.is_admin ? "admin" : "member"}</span></td>
-                <td style={s.td}><span style={s.badge(u.is_active ? "delivered" : "error")}>{u.is_active ? "active" : "disabled"}</span></td>
-                <td style={{ ...s.td, whiteSpace: "nowrap", fontSize: 12 }}>
-                  {u.last_login ? new Date(u.last_login).toLocaleString() : "Never"}
-                </td>
-                <td style={s.td}>{fmt(u.tokens_used)}</td>
-                <td style={s.td}>{fmt(u.tokens_balance)}</td>
-                <td style={s.td}>{fmt(u.total_requests)}</td>
-                <td style={s.td}>{fmt(u.total_blocked)}</td>
-                <td style={{ ...s.td, whiteSpace: "nowrap" }}>
-                  <button style={{ ...s.btn("secondary"), fontSize: 12, padding: "5px 10px" }}
-                    onClick={() => patchUser(u.id, { is_admin: !u.is_admin })}>
-                    {u.is_admin ? "Demote" : "Promote"}
-                  </button>
-                  <button style={{ ...s.btn(u.is_active ? "danger" : "secondary"), fontSize: 12, padding: "5px 10px", marginLeft: 6 }}
-                    onClick={() => patchUser(u.id, { is_active: !u.is_active })}>
-                    {u.is_active ? "Disable" : "Enable"}
-                  </button>
-                  <button style={{ ...s.btn("danger"), fontSize: 12, padding: "5px 10px", marginLeft: 6 }}
-                    onClick={() => removeUser(u)}>
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {stats.length === 0 && (
-              <tr><td colSpan={11} style={s.td}>No users found</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Active exploit bans */}
-      <div style={{ ...s.card, overflowX: "auto", borderColor: bans.length ? "#fecdd3" : undefined, background: bans.length ? "#fffbfb" : undefined }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <div style={s.sectionTitle}>Active Auto-Bans</div>
-          {bans.length > 0 ? <span style={{ ...s.badge("error"), fontSize: 11 }}>{bans.length} active</span> : <span style={{ ...s.badge("delivered") }}>clean</span>}
-          <button style={{ ...s.btn("secondary"), marginLeft: "auto", fontSize: 12, padding: "6px 12px" }} onClick={load}>Refresh</button>
-        </div>
-        <div style={{ fontSize: 12, color: "#7b8a9d", marginBottom: 12, lineHeight: 1.5 }}>
-          Auto-ban triggers on <b>rpm burst &gt;{120}/min</b>, <b>token burn &gt;50k/5m</b>, <b>IP diversity &gt;=5/10m</b>, <b>blocked-ratio &gt;=80% /20 reqs</b> or <b>dedup abuse &gt;=6x/5m</b>. First ban 15 min, doubles to 24h cap. User + key both banned.
-        </div>
-        {bans.length === 0 ? (
-          <div style={{ padding: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, fontSize: 13, color: "#065f46" }}>No active bans — no exploit activity detected.</div>
-        ) : (
-          <table style={s.table}>
-            <thead><tr>{["Type", "ID", "Reason", "Retry after", ""].map(h => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
-            <tbody>
-              {bans.map(b => (
-                <tr key={b.type + b.id}>
-                  <td style={s.td}><span style={s.badge(b.type === "api_key" ? "input_blocked" : "rate_limited")}>{b.type}</span></td>
-                  <td style={{ ...s.td, fontFamily: "monospace", fontSize: 12 }}>{b.id.slice(0, 12)}…</td>
-                  <td style={s.td}><code style={{ fontSize: 11, background: "#fff7ed", padding: "2px 6px", borderRadius: 4, border: "1px solid #fed7aa" }}>{b.reason}</code></td>
-                  <td style={s.td}>{Math.floor(b.retry_after / 60)}m {b.retry_after % 60}s</td>
-                  <td style={s.td}><button style={s.btn("secondary")} onClick={() => unban(b)}>Lift ban</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* API Keys */}
-      <div style={{ ...s.card, overflowX: "auto" }}>
-        <div style={s.sectionTitle}>Organisation API Keys</div>
-        <table style={s.table}>
-          <thead>
-            <tr>{["Name", "Prefix", "Requests", "Blocked", "Status", ""].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
-          </thead>
-          <tbody>
-            {keys.map(k => (
-              <tr key={k.id} style={{ opacity: bans.some(b => b.id === k.id) ? 0.6 : 1, background: bans.some(b => b.id === k.id) ? "#fff1f2" : undefined }}>
-                <td style={s.td}>{k.name}</td>
-                <td style={{ ...s.td, fontFamily: "monospace", color: "#0f766e", fontWeight: 800 }}>
-                  {maskGatewayKey(k.key_prefix + "0".repeat(24))}
-                </td>
-                <td style={s.td}>{fmt(k.total_requests)}</td>
-                <td style={s.td}>{fmt(k.total_blocked)}</td>
-                <td style={s.td}>
-                  {bans.some(b => b.id === k.id) ? <span style={s.badge("error")}>banned</span> : <span style={s.badge(k.is_active ? "delivered" : "error")}>{k.is_active ? "active" : "revoked"}</span>}
-                </td>
-                <td style={s.td}>{k.is_active && <button style={s.btn("danger")} onClick={() => revokeKey(k.id)}>Revoke</button>}</td>
-              </tr>
-            ))}
-            {keys.length === 0 && (
-              <tr><td colSpan={6} style={s.td}>No organisation keys found</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+  return <div className="accounts-page">
+    <PageHeader eyebrow="Administration" title="A clear view of access." description="Review workspace accounts, monitor usage, and manage temporary restrictions and API keys." actions={<Button variant="secondary" icon="refresh" loading={loading} disabled={Boolean(busy)} onClick={() => void load()}>Refresh records</Button>} />
+    {error && <Notice tone="danger">{error}</Notice>}{success && <Notice tone="success">{success}</Notice>}
+    <div className="accounts-summary-grid"><div><span>Workspace members</span><strong>{members ? number(members.length) : "—"}</strong></div><div><span>Enabled API keys</span><strong>{keys ? number(keys.filter((key) => key.is_active).length) : "—"}</strong></div><div><span>Temporary restrictions</span><strong>{bans ? number(bans.length) : "—"}</strong></div></div>
+    <Panel title="Workspace accounts" description="Sort usage, select accounts, and update permissions." actions={<a className="accounts-link" href="?view=team">Manage invitations →</a>}>
+      <div className="accounts-filter-bar"><Field label="Find a member"><input className="ui-input" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name or email" /></Field><Field label="Sort records"><select className="ui-input" value={sortColumn} onChange={(event) => { setSortColumn(event.target.value as SortColumn); setDirection("asc"); }}>{sortable.map(([column, label]) => <option key={column} value={column}>{label}</option>)}</select></Field><Button variant="secondary" onClick={() => setDirection((current) => current === "asc" ? "desc" : "asc")}>{direction === "asc" ? "Ascending ↑" : "Descending ↓"}</Button></div>
+      {selected.size > 0 && <div className="accounts-bulk-bar" role="region" aria-label="Actions for selected accounts"><strong>{selected.size} selected</strong><div className="accounts-actions"><Button variant="secondary" disabled={Boolean(busy)} onClick={() => void bulk("enable")}>Enable</Button><Button variant="secondary" disabled={Boolean(busy)} onClick={() => void bulk("disable")}>Disable</Button><Button variant="danger" loading={busy === "bulk"} disabled={Boolean(busy)} onClick={() => void bulk("remove")}>Remove</Button><Button variant="ghost" disabled={Boolean(busy)} onClick={() => setSelected(new Set())}>Clear selection</Button></div></div>}
+      {loading && members === null ? <LoadingState label="Loading workspace accounts" /> : members === null ? <EmptyState icon="team" title="Accounts could not be loaded" description="Refresh the records to try again." /> : !sorted.length ? <EmptyState icon="team" title={members.length ? "No matching accounts" : "No workspace accounts"} description={members.length ? "Try another name or email." : "Workspace members will appear here."} /> : <TableWrap label="Workspace account usage and permissions"><table className="ui-table accounts-table"><thead><tr><th scope="col"><input ref={selectAll} type="checkbox" checked={selectable.length > 0 && visibleSelected === selectable.length} onChange={toggleAll} aria-label="Select all eligible visible members" disabled={Boolean(busy) || !selectable.length} /></th>{sortHeading("email", "Email")}{sortHeading("full_name", "Name")}<th scope="col">Role</th><th scope="col">Access</th>{sortHeading("last_login", "Last sign-in")}{sortHeading("tokens_used", "Tokens used")}{sortHeading("tokens_balance", "Balance")}{sortHeading("total_requests", "Requests")}{sortHeading("total_blocked", "Blocked")}<th scope="col"><span className="sr-only">Actions</span></th></tr></thead><tbody>{sorted.map((member) => <tr key={member.id} data-selected={selected.has(member.id)}>
+        <td><input type="checkbox" checked={selected.has(member.id)} onChange={() => toggle(member.id)} aria-label={`Select ${member.email}`} disabled={Boolean(busy) || member.id === user?.id} /></td><td className="accounts-nowrap">{member.email}</td><td>{member.full_name}</td><td><Badge tone={member.is_admin ? "info" : "neutral"}>{member.is_admin ? "Admin" : "Member"}</Badge></td><td><Badge tone={member.is_active ? "success" : "neutral"}>{member.is_active ? "Enabled" : "Disabled"}</Badge></td><td className="accounts-small accounts-nowrap">{member.last_login ? new Date(member.last_login).toLocaleString() : "Never"}</td><td className="accounts-mono">{number(member.tokens_used)}</td><td className="accounts-mono">{number(member.tokens_balance)}</td><td className="accounts-mono">{number(member.total_requests)}</td><td className="accounts-mono">{number(member.total_blocked)}</td><td><div className="accounts-table-actions"><Button variant="ghost" disabled={Boolean(busy)} onClick={() => void changeRole(member)}>{member.is_admin ? "Make member" : "Make admin"}</Button><Button variant="ghost" disabled={Boolean(busy) || member.id === user?.id} loading={busy === member.id} onClick={() => void mutate(member.id, () => api(`/admin/users/${member.id}`, { method: "PATCH", body: { is_active: !member.is_active } }), `Access updated for ${member.email}.`)}>{member.is_active ? "Disable" : "Enable"}</Button><Button variant="ghost" className="accounts-danger-text" onClick={() => void remove(member)} disabled={Boolean(busy) || member.id === user?.id}>Remove</Button></div></td>
+      </tr>)}</tbody></table></TableWrap>}
+    </Panel>
+    <Panel title="Temporary restrictions" description="Automatic restrictions reported by the gateway. Retry times reflect the latest refresh." actions={bans !== null && <Badge tone={bans.length ? "warning" : "neutral"}>{bans.length} active</Badge>}>
+      {bansError ? <Notice tone="danger">Restrictions could not be loaded: {bansError}</Notice> : loading && bans === null ? <LoadingState label="Loading temporary restrictions" /> : bans?.length ? <TableWrap label="Active temporary restrictions"><table className="ui-table accounts-table"><thead><tr><th scope="col">Target</th><th scope="col">Reference</th><th scope="col">Reason</th><th scope="col">Retry after</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead><tbody>{bans.map((ban) => <tr key={ban.type + ban.id}><td><Badge tone="warning">{ban.type.replaceAll("_", " ")}</Badge></td><td className="accounts-mono" title={ban.id}>{ban.id.slice(0, 12)}…</td><td>{ban.reason}</td><td className="accounts-mono accounts-nowrap">{Math.floor(ban.retry_after / 60)}m {Math.round(ban.retry_after % 60)}s</td><td><Button variant="secondary" disabled={Boolean(busy)} loading={busy === ban.id} onClick={() => void liftBan(ban)}>Lift restriction</Button></td></tr>)}</tbody></table></TableWrap> : <EmptyState icon="shield" title="No active restrictions" description="The gateway has no temporary bans to report for this workspace." />}
+    </Panel>
+    <Panel title="Workspace API keys" description="Usage and configured access for keys in this workspace." actions={<a className="accounts-link" href="?view=keys">Manage API keys →</a>}>
+      {loading && keys === null ? <LoadingState label="Loading workspace keys" /> : keys === null ? <EmptyState icon="key" title="Keys could not be loaded" description="Refresh to try again." /> : keys.length ? <TableWrap label="Workspace API keys"><table className="ui-table accounts-table"><thead><tr><th scope="col">Key</th><th scope="col">Prefix</th><th scope="col">Requests</th><th scope="col">Blocked</th><th scope="col">Access</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead><tbody>{keys.map((key) => <tr key={key.id}><td>{key.name}</td><td className="accounts-mono">{maskGatewayKey(key.key_prefix)}</td><td className="accounts-mono">{number(key.total_requests)}</td><td className="accounts-mono">{number(key.total_blocked)}</td><td><div className="accounts-actions"><Badge tone={key.is_active ? "success" : "neutral"}>{key.is_active ? "Enabled" : "Revoked"}</Badge>{bans?.some((ban) => ban.type === "api_key" && ban.id === key.id) && <Badge tone="warning">Temporarily banned</Badge>}</div></td><td>{key.is_active && <Button variant="ghost" className="accounts-danger-text" loading={busy === key.id} disabled={Boolean(busy)} onClick={() => void revoke(key)}>Revoke</Button>}</td></tr>)}</tbody></table></TableWrap> : <EmptyState icon="key" title="No workspace keys" description="Create a gateway key to connect your first application." action={<a className="accounts-link" href="?view=keys">Open API keys →</a>} />}
+    </Panel>{dialog}
+  </div>;
 }

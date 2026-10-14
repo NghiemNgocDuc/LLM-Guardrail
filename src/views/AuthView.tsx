@@ -209,7 +209,7 @@ export default function AuthView({ onAuth }: { onAuth: (user: UserOut) => void }
         {!mobileLayout && <AuthTerminalIntro />}
         <section className="gr-auth-form-shell" aria-labelledby="gr-auth-form-title">
           <div className="gr-auth-form-card">
-            <div className="gr-auth-form-heading"><p className="gr-auth-form-eyebrow">YOUR WORKSPACE</p><h2 id="gr-auth-form-title">{title}</h2><p>{description}</p></div>
+            <div className="gr-auth-form-heading" key={screen + tab}><p className="gr-auth-form-eyebrow">YOUR WORKSPACE</p><h2 id="gr-auth-form-title">{title}</h2><p>{description}</p></div>
             {screen === "auth" && tab !== "forgot" && <div className="gr-auth-form-tabs" aria-label="Account access">
               <button type="button" aria-pressed={tab === "login"} onClick={() => changeTab("login")} disabled={loading}>Sign in</button>
               <button type="button" aria-pressed={tab === "signup"} onClick={() => changeTab("signup")} disabled={loading}>Create account</button>

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { api, getToken, getGatewayKey, setGatewayKey, gatewayKeyInputProps, isProviderKey, PII_PATTERNS, INJECTION_KW, JAILBREAK_KW } from "../utils/api";
 import { trackEvent } from "../utils/analytics";
 import AppIcon from "../components/AppIcon";
+import { useConfirmation } from "../components/ui";
 import type { components, ChatFeedbackOut } from "../api-types";
 import "../styles/chat.css";
 
@@ -160,6 +161,7 @@ function ResponseCard({ message, number, onReuse, onFeedback }: {
 }
 
 export default function ChatView() {
+  const { confirm, dialog } = useConfirmation();
   const [prompt, setPrompt] = useState("");
   const [gatewayKey, setGatewayKeyState] = useState(getGatewayKey);
   const [keyError, setKeyError] = useState("");
@@ -188,8 +190,8 @@ export default function ChatView() {
   function updateFeedback(feedback: ChatFeedbackOut) {
     setMessages((current) => { const next = current.map((message) => "status" in message.result && message.result.request_id === feedback.request_id ? { ...message, feedback } : message); saveHistory(next); return next; });
   }
-  function clearHistory() {
-    if (!confirm("Clear all conversation history?")) return;
+  async function clearHistory() {
+    if (!await confirm({ title: "Clear conversation history?", description: "This removes saved playground runs from this browser. Your server audit logs stay available in Request logs.", confirmLabel: "Clear history", danger: true })) return;
     try { localStorage.removeItem(HISTORY_KEY); } catch { /* The current session can still be cleared. */ }
     setMessages([]);
   }
@@ -242,6 +244,6 @@ export default function ChatView() {
         </div>
         <div className="chat-output-footer"><AppIcon name="shield" size={14} /><span>Input and output decisions appear with every gateway response.</span></div>
       </section>
-    </div>
+    </div>{dialog}
   </div>;
 }

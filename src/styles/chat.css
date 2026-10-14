@@ -1,4 +1,9 @@
 .chat-page { color: var(--gr-ink); font-family: var(--gr-font); max-width: 1440px; margin: 0 auto; }
+.chat-result, .chat-pending { animation: gr-page-in var(--gr-motion-slow) var(--gr-ease) both; }
+.chat-pipeline-step { transition: background-color var(--gr-motion-base), color var(--gr-motion-base); }
+.chat-run-button:active:not(:disabled) { transform: translateY(1px); }
+.chat-sample > svg { transition: transform var(--gr-motion-base) var(--gr-ease); }
+.chat-sample:hover > svg { transform: translateX(3px); }
 .chat-page button, .chat-page input, .chat-page textarea { font: inherit; }
 .chat-page button { cursor: pointer; transition: background 160ms, border-color 160ms, color 160ms; }
 .chat-page button:disabled { cursor: not-allowed; opacity: .5; }
