@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { api, BASE_URL, formatApiError, getAuthToken } from "../utils/api";
 import { Badge, Button, Dialog, EmptyState, Field, LoadingState, Notice, PageHeader, Panel, TableWrap } from "../components/ui";
 import type { Tone } from "../components/ui";
-import type { RequestLogItem, LogsResponse } from "../api-types";
+import type { RequestLogItem, LogsResponse } from "../api-supplementary";
 import "../styles/observability.css";
 
 type SortColumn = keyof RequestLogItem | "";

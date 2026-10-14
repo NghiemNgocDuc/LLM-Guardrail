@@ -292,6 +292,7 @@ class SkillScanResponse(BaseModel):
     blocked: bool = False
     agent_may_continue: bool = True
     agent_status: str = "ok"
+    runtime_enforced: bool = Field(default=False, description="This endpoint returns a scan decision; the integrating agent must enforce it. No external process is paused or resumed.")
     rejection_summary: str | None = None
     blocking_findings: list[SkillFindingOut] = Field(default_factory=list)
     overridden_findings: list[SkillFindingOut] = Field(default_factory=list)
@@ -304,6 +305,7 @@ class SkillRejectionReportIn(BaseModel):
     source: str = Field(default="git_push", max_length=32)
     rejection_summary: str | None = None
     content_preview: str | None = Field(default=None, max_length=500)
+    content_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$", description="Client-attested SHA-256 of the complete scanned content; required for exact review approvals")
     findings: list[SkillFindingOut] = Field(min_length=1)
 
 

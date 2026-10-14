@@ -1,42 +1,32 @@
-"""
-Skill conflict detection — does a new skill contradict the current guardrails
-or existing managed skills?
-
-Primary use-case: team lead adds a skill that would leak API keys.
-That must be flagged as conflict with block_secrets policy and with any
-existing skill that says "never disclose secrets".
-
-Two conflict sources:
-  1. Policy conflict — new content would be blocked by the org's current InputGuardrail (secret/PII/env exfiltration).
-  2. Directive conflict — new content contains instructions that oppose an existing skill's instructions.
-
-Directive pairs are heuristic but cover the critical API-key leak vector explicitly.
-"""
+"""Advisory skill comparisons, scoped to the complete tenant/policy snapshot."""
 from __future__ import annotations
 
+import datetime as _dt
 import hashlib
+import json
 import re
+from collections import OrderedDict
+from copy import deepcopy
 from dataclasses import dataclass, field
+from threading import RLock
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit
 
-from functools import lru_cache
-from app.utils.secret_redaction import contains_env_exfiltration, contains_secret
-from guardrails.skill import SkillGuardrail
+from app.utils.secret_redaction import contains_secret
+from guardrails.skill import SkillGuardrail, is_prohibited_instruction, redact_skill_excerpt
 
-# ── LRU cache for hot prompts (Team 1 re-scan) — 1k entries, ~0.02ms hit ──
-_CACHE: dict[str, "ConflictCheckResult"] = {}
-_CACHE_ORDER: list[str] = []
+_CACHE: OrderedDict[str, "ConflictCheckResult"] = OrderedDict()
+_CACHE_LOCK = RLock()
 _CACHE_MAX = 1024
 
-def _cache_key(content: str, org_policy: dict | None, existing_len: int) -> str:
-    # Hash content prefix + policy flags + existing count — NOT full existing content for speed
-    h = hashlib.sha256(content[:200].encode()).hexdigest()[:12]
-    pol = f"{(org_policy or {}).get('block_secrets')}-{(org_policy or {}).get('block_pii')}"
-    return f"{h}:{pol}:{existing_len}:{len(content)}"
 
-# ── opposing directive pairs (lowercased) ────────────────────────────────────
-# If existing skill contains `a` and new skill contains `b`, they conflict (and vice versa).
-_OPPOSING_PAIRS: list[tuple[str, str, str]] = [
+def _cache_key(content: str, org_policy: dict | None, existing_skills: list[dict[str, Any]], org_id: str | None = None) -> str:
+    snapshot = {"content": content, "org_id": org_id, "policy": org_policy or {}, "existing_skills": existing_skills}
+    encoded = json.dumps(snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+_OPPOSING_PAIRS = [
     ("never share api keys", "share api keys", "API key sharing"),
     ("never expose secrets", "expose secrets", "Secret exposure"),
     ("never disclose secrets", "disclose secrets", "Secret disclosure"),
@@ -51,18 +41,14 @@ _OPPOSING_PAIRS: list[tuple[str, str, str]] = [
     ("never execute shell", "execute shell", "Shell execution"),
     ("read-only", "write files", "Write permission"),
 ]
-
-# Phrases that *instruct* the agent to leak — far stronger than accidental secret value.
-_LEAK_INSTRUCTION_RE = re.compile(
-    r"(?i)(share|expose|reveal|leak|print|echo|dump|include|send|output)\s+(.{0,40}?)(api[_-]?key|secret|credential|token|env|environment|password)"
-)
-_ENV_INSTRUCTION_RE = re.compile(r"(?i)(print|echo|dump|cat|show|reveal|expose).*(\.env|environ|process\.env)")
+_CLAUSES = re.compile(r"(?<=[;.!?])\s+|\b(?:but|however|instead|then|nevertheless)\b", re.I)
+_PII_INSTRUCTION_RE = re.compile(r"(?i)\b(?:collect\s+ssn|collect\s+credit\s+card|gather\s+pii|store\s+email)\b")
 
 
 @dataclass
 class SkillConflict:
-    type: str  # secret_leak | env_exfiltration | destructive_command | directive_conflict | pii_leak
-    severity: str  # critical | high | medium
+    type: str
+    severity: str
     reason: str
     reason_code: str
     evidence: str = ""
@@ -76,6 +62,7 @@ class SkillConflict:
 class ConflictCheckResult:
     has_conflict: bool
     conflicts: list[SkillConflict] = field(default_factory=list)
+    # Legacy hard-block eligibility: critical advisory findings, independent of save.
     blocked_by_policy: bool = False
     policy_findings: list[dict[str, Any]] = field(default_factory=list)
     safe: bool = True
@@ -87,306 +74,123 @@ def _hash(content: str) -> str:
 
 
 def _isolated_has(text_low: str, phrase: str, negated: str | None = None) -> bool:
-    """True if phrase occurs without being part of its negated form."""
-    if phrase not in text_low:
-        return False
-    if negated and negated in text_low and phrase in negated:
-        # if the negated phrase is present, the bare phrase occurrence is inside it — not isolated
-        # only count isolated if phrase occurs outside the negated phrase
-        # simple check: if negated present, require bare phrase not solely inside negated
-        # For our pairs where b is substring of a, presence of a means b is not isolated.
-        if negated in text_low:
-            # If text contains a, then bare b is not isolated (it's inside a)
-            return False
-    return True
+    negated_spans = [(match.start(), match.end()) for match in re.finditer(re.escape(negated), text_low)] if negated else []
+    for match in re.finditer(re.escape(phrase), text_low):
+        if any(start <= match.start() and match.end() <= end for start, end in negated_spans):
+            continue
+        if not is_prohibited_instruction(text_low, match.start()):
+            return True
+    return False
 
 
-def _find_directive_conflicts(
-    new_content: str,
-    existing_skills: list[dict[str, Any]],
-) -> list[SkillConflict]:
-    low = new_content.lower()
-    out: list[SkillConflict] = []
-    for ex in existing_skills:
-        ex_low = (ex.get("content") or "").lower()
-        ex_slug = ex.get("slug") or ex.get("name") or "existing"
-        ex_name = ex.get("name") or ex_slug
-        for a, b, label in _OPPOSING_PAIRS:
-            # a is the safe/negated phrase (e.g. "never share api keys"), b is unsafe (e.g. "share api keys")
-            # b is often substring of a — handle isolation.
-            ex_has_a = a in ex_low
-            # ex has isolated b only if b present without a
-            ex_has_b_iso = b in ex_low and a not in ex_low
-            new_has_a = a in low
-            new_has_b_iso = b in low and a not in low
-            # conflict if one has safe 'a' and other has isolated unsafe 'b'
-            if (ex_has_a and new_has_b_iso) or (ex_has_b_iso and new_has_a):
-                # determine which direction is the leak
-                is_leak = new_has_b_iso and ex_has_a
-                sev = "critical" if (is_leak and ("api key" in label.lower() or "secret" in label.lower())) else "high"
-                out.append(SkillConflict(
-                    type="directive_conflict",
-                    severity=sev,
-                    reason=f"Directive conflict on '{label}': new skill opposes '{ex_slug}'",
-                    reason_code="directive_conflict",
-                    evidence=f"Existing '{ex_slug}' has '{a if ex_has_a else b}' — new has '{b if new_has_b_iso else a}'",
-                    conflicting_skill_slug=ex_slug,
-                    conflicting_skill_name=ex_name,
-                    remediation="Align directives: both skills should forbid secret/API-key disclosure.",
-                ))
-    # de-duplicate by (slug, label, reason_code)
-    seen: set[tuple] = set()
-    uniq: list[SkillConflict] = []
-    for c in out:
-        k = (c.conflicting_skill_slug, c.reason, c.reason_code)
-        if k not in seen:
-            seen.add(k)
-            uniq.append(c)
-    return uniq
+def _find_directive_conflicts(new_content: str, existing_skills: list[dict[str, Any]]) -> list[SkillConflict]:
+    low = new_content.lower(); conflicts = []
+    for existing in existing_skills:
+        old = (existing.get("content") or "").lower()
+        slug = redact_skill_excerpt(str(existing.get("slug") or existing.get("name") or "existing"), 160)
+        name = redact_skill_excerpt(str(existing.get("name") or slug), 160)
+        for safe, unsafe, label in _OPPOSING_PAIRS:
+            old_safe = safe in old; new_safe = safe in low
+            old_unsafe = _isolated_has(old, unsafe, safe); new_unsafe = _isolated_has(low, unsafe, safe)
+            if (old_safe and new_unsafe) or (old_unsafe and new_safe):
+                leaking = old_safe and new_unsafe
+                severity = "critical" if leaking and ("api key" in label.lower() or "secret" in label.lower()) else "high"
+                conflicts.append(SkillConflict(type="directive_conflict", severity=severity,
+                    reason=f"Directive conflict on '{label}': new skill opposes '{slug}'", reason_code="directive_conflict",
+                    evidence=f"Existing '{slug}' has '{safe if old_safe else unsafe}' — new has '{unsafe if new_unsafe else safe}'",
+                    conflicting_skill_slug=slug, conflicting_skill_name=name,
+                    remediation="Resolve the opposing directives before distributing the skill."))
+    return conflicts
 
 
-def check_skill_conflicts(
-    new_content: str,
-    *,
-    existing_skills: list[dict[str, Any]] | None = None,
-    org_policy: dict[str, Any] | None = None,
-    org_id: str | None = None,
-) -> ConflictCheckResult:
-    # Cache hit — fast path for repeated Team 1 re-scans
-    key = _cache_key(new_content, org_policy, len(existing_skills or []))
-    if key in _CACHE:
-        return _CACHE[key]
-    existing_skills = existing_skills or []
-    org_policy = org_policy or {}
+def _unprohibited_matches(content: str, pattern: re.Pattern):
+    for clause in _CLAUSES.split(content):
+        for match in pattern.finditer(clause):
+            if not is_prohibited_instruction(clause, match.start()):
+                yield match
+
+
+def check_skill_conflicts(new_content: str, *, existing_skills: list[dict[str, Any]] | None = None,
+                          org_policy: dict[str, Any] | None = None, org_id: str | None = None) -> ConflictCheckResult:
+    existing_skills = deepcopy(existing_skills or [])
+    org_policy = deepcopy(org_policy or {})
+    key = _cache_key(new_content, org_policy, existing_skills, org_id)
+    with _CACHE_LOCK:
+        if key in _CACHE:
+            _CACHE.move_to_end(key)
+            return deepcopy(_CACHE[key])
 
     conflicts: list[SkillConflict] = []
-    policy_findings: list[dict] = []
+    policy_findings: list[dict[str, Any]] = []
+    credential_codes = {"gateway_api_key", "database_url", "credential_assignment", "bearer_token", "env_assignment"}
+    for finding in SkillGuardrail().scan(new_content).findings:
+        kind = "secret_leak" if finding.category == "secret" or finding.reason_code in credential_codes else "env_exfiltration" if finding.category == "env_exfiltration" else "destructive_command" if finding.category == "destructive_command" else "pii_leak" if finding.category == "pii" else "policy_conflict"
+        remediation = "Remove credential values and disclosure instructions; refer to a server-side environment variable or secret manager." if kind in {"secret_leak", "env_exfiltration"} else "Remove personal data from agent context." if kind == "pii_leak" else "Replace destructive commands with a scoped, reversible operation." if kind == "destructive_command" else "Remove sensitive infrastructure details from the shared agent context."
+        conflicts.append(SkillConflict(type=kind, severity=finding.severity, reason=f"{finding.check} detected on line {finding.line_number}",
+            reason_code=finding.reason_code, evidence=finding.snippet, line_number=finding.line_number, remediation=remediation))
+        policy_findings.append({"category": finding.category, "reason_code": finding.reason_code, "check": finding.check})
 
-    # ── 1. Guardrail scan (structural leaks) ──────────────────────────────────
-    scan = SkillGuardrail().scan(new_content)
-    for f in scan.findings:
-        t = "secret_leak" if f.category == "secret" else (
-            "destructive_command" if f.category == "destructive_command" else (
-                "pii_leak" if f.category == "pii" else "policy_conflict"
-            )
-        )
-        # Any secret-like finding while org policy blocks secrets = critical conflict with policy
-        is_policy_block = org_policy.get("block_secrets", True) and f.category == "secret"
-        conflicts.append(SkillConflict(
-            type=t,
-            severity=f.severity,  # already critical/high/medium
-            reason=f"{f.check} on line {f.line_number}: would be blocked by current guardrail",
-            reason_code=f.reason_code,
-            evidence=f.snippet,
-            line_number=f.line_number,
-            remediation="Remove the secret/credential from the skill. Secrets must live in a secret manager, never in SKILL.md.",
-        ))
-        policy_findings.append({"category": f.category, "reason_code": f.reason_code, "check": f.check})
+    conflicts.extend(_find_directive_conflicts(new_content, existing_skills))
+    if org_policy.get("block_pii") and next(_unprohibited_matches(new_content, _PII_INSTRUCTION_RE), None) is not None:
+        if not any(conflict.type == "pii_leak" for conflict in conflicts):
+            conflicts.append(SkillConflict(type="pii_leak", severity="high", reason="Skill requests PII collection while the organization blocks PII",
+                reason_code="pii_instruction_conflict", remediation="Do not collect personal identifiers in agent instructions."))
 
-    # ── 2. Literal secret patterns (including env assignments) ─────────────────
-    hit, kind = contains_secret(new_content)
-    if hit:
-        # avoid duplicate if scan already caught it
-        if not any(c.reason_code == "secret_detected" for c in conflicts):
-            conflicts.append(SkillConflict(
-                type="secret_leak",
-                severity="critical",
-                reason=f"Secret pattern detected ({kind}): conflicts with block_secrets policy and would leak via agent context",
-                reason_code="secret_detected",
-                evidence=kind or "",
-                remediation="Delete the credential value from the skill file. Use environment variable reference without value.",
-            ))
+    # A synchronous heuristic is reproducible and never silently sends context
+    # to an external model. Semantic judging belongs in an explicit, awaited API.
+    from guardrails.semantic import heuristic_implicit
+    implicit, evidence = heuristic_implicit(new_content)
+    if implicit:
+        conflicts.append(SkillConflict(type="pii_leak", severity="high", reason="Implicit identifying description detected", reason_code="implicit_pii",
+            evidence=redact_skill_excerpt(evidence, 80), remediation="Remove or generalize the identifying description."))
 
-    # ── 3. Env-exfiltration probes (instructions to leak) ───────────────────────
-    # Ignore negated leak instructions like "Never share api keys" — that's a prohibition, not a leak.
-    def _is_negated_leak(text: str, match: re.Match | None) -> bool:
-        if not match:
-            return False
-        start = max(0, match.start() - 20)
-        prefix = text[start:match.start()].lower()
-        return any(neg in prefix for neg in ("never ", "do not ", "don't ", "dont "))
-    hit_env, pat = contains_env_exfiltration(new_content)
-    m_leak = _LEAK_INSTRUCTION_RE.search(new_content)
-    m_env = _ENV_INSTRUCTION_RE.search(new_content)
-    # Negated leak (e.g. "Never share api keys") is not an exfiltration probe
-    if m_leak and _is_negated_leak(new_content, m_leak):
-        m_leak = None
-    if m_env and _is_negated_leak(new_content, m_env):
-        m_env = None
-    # contains_env_exfiltration may fire on "GROQ_API_KEY" inside "Never share..." safe sentence — ignore if negated context
-    if hit_env and "never" in new_content.lower() and m_leak is None and m_env is None:
-        # If the only hit is env var name inside a prohibition, don't treat as probe unless there's also a non-negated leak instruction
-        hit_env = False
-        pat = None
-    if hit_env or m_leak or m_env:
-        evidence = m_leak.group(0)[:80] if m_leak else (m_env.group(0)[:80] if m_env else pat or "")
-        if not any(c.type == "env_exfiltration" for c in conflicts):
-            conflicts.append(SkillConflict(
-                type="env_exfiltration",
-                severity="critical",
-                reason="Skill instructs agent to expose env / API keys — directly conflicts with API-key leak protection",
-                reason_code="env_exfiltration_probe",
-                evidence=evidence,
-                remediation="Remove instructions that ask the agent to print, share, or output API keys or env vars.",
-            ))
-
-    # ── 4. Directive conflicts vs existing managed skills ──────────────────────
-    if existing_skills:
-        dc = _find_directive_conflicts(new_content, existing_skills)
-        conflicts.extend(dc)
-
-    # ── 5. PII instruction conflict (if blocking PII but new skill says collect PII) ─
-    if org_policy.get("block_pii"):
-        low = new_content.lower()
-        if any(kw in low for kw in ["collect ssn", "collect credit card", "gather pii", "store email"]):
-            if not any(c.type == "pii_leak" for c in conflicts):
-                conflicts.append(SkillConflict(
-                    type="pii_leak",
-                    severity="high",
-                    reason="Skill instructs collection of PII while org policy blocks PII",
-                    reason_code="pii_instruction_conflict",
-                    remediation="Align with PII policy: do not collect SSN/credit-card/email in skill instructions.",
-                ))
-
-    # ── 6. Phase 2/3: code entity + implicit (wl4 / wl3) — adds recall without FP on cleans ─
-    # Code entities (wl4): snake_case / DB names etc.
-    try:
-        from guardrails.ner import detect_code_entities
-        if detect_code_entities(new_content):
-            # Only count as conflict if policy wants to block internal identifiers — we treat as pii_leak-like
-            # For benchmark we add a lightweight flag so wl4 gets some recall even without presidio
-            if not any(c.type == "pii_leak" for c in conflicts):
-                # Don't flag cleans that only have generic code — require at least one code entity and no prior finding
-                pass  # handled via skill scan PII fallback; keep here for future mode
-    except Exception:
-        pass
-    # Implicit (wl3): heuristic + optional Groq LLM judge (if GROQ_API_KEY set) — surfaces in metrics
-    try:
-        from guardrails.semantic import heuristic_implicit
-        hit, ev = heuristic_implicit(new_content)
-        # Tier 2 Groq is async background — don't block here (heuristic only sync, keeps <1ms)
-        # If heuristic missed and content looks like implicit, schedule Groq in background and return heuristic result now
-        if not hit:
-            try:
-                # Fire-and-forget Groq re-evaluation in background thread (non-blocking for /chat)
-                import threading
-                from guardrails.semantic import is_implicit as _is_imp
-                def _bg():
-                    try:
-                        h2, e2 = _is_imp(new_content, use_llm=True)
-                        if h2:
-                            # Update cache with LLM result for next call
-                            pass
-                    except: pass
-                # Only spawn if GROQ key exists and content has implicit hint (whose/who/only/anonymous)
-                if any(k in new_content.lower() for k in ["whose","who was","only","anonymous"]) :
-                    t = threading.Thread(target=_bg, daemon=True)
-                    t.start()
-            except: pass
-        if hit:
-            if not any(c.reason_code == "implicit_pii" for c in conflicts):
-                conflicts.append(SkillConflict(
-                    type="pii_leak",
-                    severity="high",
-                    reason=f"Implicit identifying description detected: {ev}",
-                    reason_code="implicit_pii",
-                    evidence=ev,
-                    remediation="Rephrase to remove implicit identity (Option C in LLM-Redactor) or enable Groq judge for semantic.",
-                ))
-    except Exception:
-        pass
-
-    has_conflict = len(conflicts) > 0
-    blocked_by_policy = any(c.severity == "critical" for c in conflicts)
-    safe = not has_conflict
-
-    if has_conflict:
-        crit = sum(1 for c in conflicts if c.severity == "critical")
-        summary = f"Conflict detected: {len(conflicts)} issue(s) ({crit} critical). New skill conflicts with current API-key leak protection and/or existing skills."
-    else:
-        summary = "No conflicts: new skill is compatible with current guardrails and existing skills."
-
-    res = ConflictCheckResult(
-        has_conflict=has_conflict,
-        conflicts=conflicts,
-        blocked_by_policy=blocked_by_policy,
-        policy_findings=policy_findings,
-        safe=safe,
-        summary=summary,
-    )
-    # Cache store (LRU)
-    try:
-        if len(_CACHE) >= _CACHE_MAX:
-            # evict oldest
-            oldest = _CACHE_ORDER.pop(0)
-            _CACHE.pop(oldest, None)
-        _CACHE[key] = res
-        _CACHE_ORDER.append(key)
-    except: pass
-    return res
+    has_conflict = bool(conflicts)
+    critical = sum(conflict.severity == "critical" for conflict in conflicts)
+    result = ConflictCheckResult(has_conflict=has_conflict, conflicts=conflicts, blocked_by_policy=critical > 0,
+        policy_findings=policy_findings, safe=not has_conflict,
+        summary=f"Conflict detected: {len(conflicts)} issue(s) ({critical} critical). Review findings and opposing directives." if has_conflict else "No conflicts: new skill is compatible with current guardrails and existing skills.")
+    with _CACHE_LOCK:
+        _CACHE[key] = deepcopy(result); _CACHE.move_to_end(key)
+        while len(_CACHE) > _CACHE_MAX:
+            _CACHE.popitem(last=False)
+    return result
 
 
-def build_skill_md(
-    slug: str,
-    name: str,
-    description: str,
-    content: str,
-    version: int,
-    content_hash: str | None = None,
-    update_mode: str = "overwrite",
-    live_url: str | None = None,
-) -> str:
-    """Render the downloadable SKILL.md with frontmatter that drives overwrite/versioned behavior."""
-    import datetime as _dt
-    h = content_hash or _hash(content)[:12]
-    full_hash = _hash(content)
-    now = _dt.datetime.now(_dt.timezone.utc).isoformat()
-    mode = update_mode if update_mode in ("overwrite", "versioned") else "overwrite"
-    live = live_url or f"/skills/live/{slug}"
+def _safe_live_url(value: str) -> str:
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ValueError("live_url must not contain control characters")
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"", "http", "https"} or (not parsed.scheme and (not value.startswith("/") or value.startswith("//"))) or (parsed.scheme and not parsed.netloc):
+        raise ValueError("live_url must be an HTTP(S) URL or a root-relative path")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("live_url must not include credentials")
+    credential_parameter = re.compile(r"(?:^|[_-])(?:key|token|bearer|auth|authorization|password|secret|credential)(?:$|[_-])", re.I)
+    if contains_secret(value)[0] or any(credential_parameter.search(name) or contains_secret(parameter_value)[0] for name, parameter_value in parse_qsl(parsed.query, keep_blank_values=True)):
+        raise ValueError("live_url must not include credential query parameters")
+    return value
 
-    if mode == "overwrite":
-        behavior_block = (
-            f"> **Auto-overwrite skill** — Re-downloading this file will **replace** "
-            f"` .cursor/skills/{slug}/SKILL.md` in place. You do not need to keep the old file.\n"
-            f"> The agent always uses the latest version; the `version` field below is authoritative."
-        )
-        install_note = f"Place this file at `.cursor/skills/{slug}/SKILL.md` (overwrite if it exists)."
-    else:
-        behavior_block = (
-            f"> **Versioned skill** — Re-downloading will create `.cursor/skills/{slug}/SKILL.v{version}.md` "
-            f"alongside the previous version. The old file is kept; the agent will load the highest version."
-        )
-        install_note = f"Place this file at `.cursor/skills/{slug}/SKILL.v{version}.md` (keep previous `.md` files)."
 
-    # Always add reporting footer so coding agent reports back what our layer blocked
-    reporting_footer = (
-        f"\n---\n"
-        f"**Report blocked — coding agent must report back:**\n"
-        f"If AI Guardrails blocks this skill (`input_blocked`/`output_blocked` with `X-Request-ID` + `X-Correlation-ID`), "
-        f"the coding agent (Cursor, etc.) must report back to the user: `status` + `reason_code` + `reason` + `X-Request-ID` "
-        f"and via `POST /skills/rejections/report` (or show in chat). Do not hide blocks.\n"
-    )
-    # Avoid duplicate if content already contains reporting footer
-    body = content.rstrip()
-    if "Report blocked" not in body and "report back" not in body.lower():
-        body = body + reporting_footer
-    return (
-        f"---\n"
-        f"name: {slug}\n"
-        f"description: {description or name}\n"
-        f"version: {version}\n"
-        f"hash: {h}\n"
-        f"full_hash: {full_hash}\n"
-        f"managed_by: llm-guardrails\n"
-        f"update_mode: {mode}\n"
-        f"live_url: {live}\n"
-        f"downloaded_at: {now}\n"
-        f"---\n"
-        f"\n"
-        f"{behavior_block}\n"
-        f"\n"
-        f"<!-- {install_note} -->\n"
-        f"<!-- managed_by: llm-guardrails | slug: {slug} | version: {version} | hash: {h} -->\n"
-        f"\n"
-        f"{body}\n"
-    )
+def build_skill_md(slug: str, name: str, description: str, content: str, version: int,
+                   content_hash: str | None = None, update_mode: str = "overwrite", live_url: str | None = None) -> str:
+    """Wrap byte-exact source content in safely quoted managed metadata."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,99}", slug):
+        raise ValueError("invalid managed skill slug")
+    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+        raise ValueError("skill version must be a positive integer")
+    full_hash = _hash(content); short_hash = content_hash or full_hash[:12]
+    mode = update_mode if update_mode in {"overwrite", "versioned"} else "overwrite"
+    live = _safe_live_url(live_url or f"/skills/live/{slug}")
+    # JSON strings are valid double-quoted YAML scalars, including embedded newlines.
+    quote = lambda value: json.dumps(str(value), ensure_ascii=False)
+    metadata_description = redact_skill_excerpt(description or name, 1000)
+    header = (f"---\nname: {quote(slug)}\ndescription: {quote(metadata_description)}\nversion: {version}\n"
+        f"hash: {quote(short_hash)}\nfull_hash: {quote(full_hash)}\nmanaged_by: llm-guardrails\nupdate_mode: {mode}\n"
+        f"live_url: {quote(live)}\ndownloaded_at: {quote(_dt.datetime.now(_dt.timezone.utc).isoformat())}\n---\n\n")
+    filename = "SKILL.md" if mode == "overwrite" else f"SKILL.v{version}.md"
+    behavior = "Overwrite installation" if mode == "overwrite" else "Versioned installation"
+    install = f".cursor/skills/{slug}/{filename}"
+    guidance = f"> **{behavior}** — fetch the intended version and install it at `{install}`. " + ("Replace the existing file explicitly." if mode == "overwrite" else "Keep prior files if needed and configure the consumer to select the intended version.") + " This document does not fetch, install, or update itself.\n\n"
+    reporting = ("\n\n---\n**Report blocked — coding agent must report back:**\n"
+        "If AI Guardrails blocks this skill, report the status, reason_code, reason, X-Request-ID and X-Correlation-ID to the user. "
+        "Report via POST /skills/rejections/report or show the block in chat. Do not hide blocks.\n")
+    return header + guidance + content + reporting

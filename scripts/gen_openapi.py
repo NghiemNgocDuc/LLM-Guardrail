@@ -7,7 +7,11 @@ requirements.txt -r requirements-dev.txt).
 
 Usage:
     python scripts/gen_openapi.py
-    npx openapi-typescript scripts/openapi.schema.json -o src/api-types.ts
+    npx openapi-typescript scripts/openapi.schema.json --empty-objects-unknown -o src/api-types.ts
+
+Hand-maintained response shapes live in src/api-supplementary.ts, so this
+generated file can be replaced without losing frontend imports. The flag
+preserves open backend policy dictionaries as unknown-valued maps.
 """
 import json
 import sys

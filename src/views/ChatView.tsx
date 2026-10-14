@@ -3,7 +3,8 @@ import { api, getToken, getGatewayKey, setGatewayKey, gatewayKeyInputProps, isPr
 import { trackEvent } from "../utils/analytics";
 import AppIcon from "../components/AppIcon";
 import { useConfirmation } from "../components/ui";
-import type { components, ChatFeedbackOut } from "../api-types";
+import type { components } from "../api-types";
+import type { ChatFeedbackOut } from "../api-supplementary";
 import "../styles/chat.css";
 
 type ChatResponse = components["schemas"]["ChatResponse"];

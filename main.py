@@ -178,6 +178,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "X-Skill-Slug", "X-Skill-Version", "X-Skill-Content-SHA256", "X-Skill-Document-SHA256", "X-Skill-Update-Mode", "X-Skill-Revision"],
 )
 app.add_middleware(I18nMiddleware)
 app.add_middleware(GlobalRateLimitMiddleware)

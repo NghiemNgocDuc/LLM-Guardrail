@@ -251,7 +251,34 @@ curl -X POST http://localhost:8080/skills/scan \
   -d '{"content":"---\nname: my-skill\n---\nDo not embed secrets here.","filename":"SKILL.md"}'
 ```
 
-Returns `safe`, `risk_score`, and per-line `findings` (secrets, PII, DB URLs, env assignments, internal paths, destructive shell/SQL commands).
+Returns `safe`, `risk_score`, and per-line `findings` (secrets, PII, DB URLs,
+environment exposure, internal paths, and destructive shell/SQL commands).
+`safe` describes the raw scan. Use `blocked` and `agent_may_continue` for the
+decision after explicit server approvals; `runtime_enforced` is `false`, so the
+integrating agent must honor that decision before loading the content.
+
+### Managed skills and review
+
+In **Skill Guard**, workspace admins can create and edit managed drafts. Saving
+a draft does not approve it for agent use: every download and live fetch runs a
+delivery scan, including authored metadata in wrapped Markdown. Blocked delivery
+returns HTTP 422 and a review-queue ID without returning the skill document.
+
+The review queue offers **Allow once**, **Always allow**, and **Keep blocked**.
+Hosted approvals belong to the reviewing user and workspace and match the exact
+content and findings. Delivery approvals also bind the revision, metadata,
+download mode, and raw/wrapped choice. Allow once is consumed by a matching
+scan or delivery attempt; changed content cannot reuse the previous approval.
+Client-supplied overrides and repository-local CLI override files cannot bypass
+hosted scans.
+
+`GET /skills/live/{slug}` requires a signed-in Bearer session or a gateway key
+with `skills:read`; it only reads that authenticated workspace. Send credentials
+in headers. Downloaded Markdown contains installation guidance and a live URL,
+but the consumer must fetch, install, and select versions explicitly.
+
+See [agent and skill logic](docs/SKILL_LOGIC.md) for the API contract,
+concurrency rules, integrity headers, and integration limits.
 
 ### Dashboard utilities
 
@@ -301,7 +328,7 @@ indication the sender isn't under your org's secret.
 
 ### Before `git push` (local hook)
 
-Install once per clone so sensitive or destructive skill content cannot be pushed to GitHub:
+Install once per clone to check skill content before pushing to GitHub:
 
 ```bash
 ./scripts/install-git-hooks.sh
@@ -313,18 +340,19 @@ Windows:
 .\scripts\install-git-hooks.ps1
 ```
 
-The **pre-push** hook scans only `.cursor/skills/` files in the commits you are pushing. If the push does not touch that folder, it skips instantly.
+The **pre-push** hook reads committed Markdown under `.cursor/skills/` from the
+outgoing commit trees. Local edits cannot hide unsafe committed content, and a
+later revert cannot hide an unsafe intermediate version. Identical blobs are
+checked once. New branches conservatively check their reachable skill history;
+missing Git objects or unreadable skills block the push until they can be checked.
 
-It prefers the compiled Go binary when present and falls back to Python:
+The hook requires the canonical Python scanner, `scripts/scan_agent_skills.py`.
+It can use the compatible Rust acceleration path when installed. A prebuilt Go
+binary or `SKILL_GUARD_BIN` does not replace the canonical pre-push check.
 
-```bash
-cd cli/guardrail-scan && make build   # optional: install into ~/go/bin with: make install
-```
-
-The Go binary is a drop-in reimplementation of `scripts/scan_agent_skills.py`
-(same flags, same output, same exit codes, same `.cursor/skill-guard-*.json`
-files) with no runtime dependencies — see [cli/guardrail-scan/README.md](cli/guardrail-scan/README.md).
-`make release` cross-compiles static binaries for macOS/Linux/Windows (amd64+arm64).
+The standalone Go companion has no Python runtime dependency. Its independent
+implementation can differ from the canonical scanner; use Python for the current
+checks. Build instructions are in [cli/guardrail-scan/README.md](cli/guardrail-scan/README.md).
 
 ### GitHub (pull requests and pushes)
 
@@ -332,6 +360,8 @@ files) with no runtime dependencies — see [cli/guardrail-scan/README.md](cli/g
 
 - Every pull request to `main`
 - Every **push** that changes `.cursor/skills/**` (any branch) — backup if someone skips the local hook
+
+The CI skill check also uses the canonical Python scanner.
 
 Scan manually anytime:
 
@@ -363,6 +393,14 @@ The MCP server (`GET /mcp/sse`, JSON-RPC over SSE, authenticated with a `grg_` g
 | `redact_pii` | Redact PII from text with reversible placeholders |
 | `get_default_policy` | Return the default guardrail policy configuration |
 | `explain_policy` | Explain what a JSON guardrail policy actually enforces (no LLM call) |
+
+Remote `chat` calls use the same workspace policy, billing, budgets, limits,
+and audit path as `POST /chat`; client policy overrides are rejected.
+`scan_skill` and `scan_repo` require `skills:read`. Explicit empty key scopes
+grant neither chat nor skill access; legacy null scopes retain chat access.
+Authenticated MCP utility tools without a required scope remain available.
+Local stdio mode is a separate integration and does not authenticate a hosted
+workspace. See [agent and skill logic](docs/SKILL_LOGIC.md).
 
 ## Configuration
 
@@ -444,8 +482,8 @@ Golden verdict fixtures (`tests/golden/cases.json`) pin input/output guardrail o
 The regex checks in `guardrails/` run through a compiled Rust extension
 (`guardrail_core`, a PyO3 module built with [maturin](https://www.maturin.rs)).
 The `regex` crate guarantees linear-time matching, so pathological inputs that
-could stall the Python `re` engine are safe. The extension is fail-open: any
-import or runtime error falls back to the original pure-Python implementation,
+could stall the Python `re` engine are safe. An extension import or runtime
+error falls back to the pure-Python implementation,
 so the app runs fine on machines without a Rust toolchain.
 
 Select the engine with `GUARDRAIL_ENGINE` (default `rust`). The current Docker

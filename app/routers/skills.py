@@ -1,9 +1,6 @@
 """
 Agent skill scanner — find secrets, PII, and internal details before they ship in agent context.
 """
-import json
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,14 +17,12 @@ from app.schemas import (
     SkillScanResponse,
 )
 from app.services.skill_rejections import list_rejections, record_rejection, resolve_rejection
-from app.services.skill_user_overrides import load_user_overrides
+from app.services.skill_user_overrides import approval_key, content_digest, load_user_overrides
 from guardrails.skill import SkillFinding, SkillGuardrail
 from guardrails.skill_messages import explain_finding
-from guardrails.skill_overrides import SkillOverrides, apply_overrides, finding_key
+from guardrails.skill_overrides import SkillScanDecision, finding_key
 
 router = APIRouter(prefix="/skills", tags=["Agent Skills"])
-
-DEFAULT_OVERRIDES_PATH = Path(".cursor/skill-guard-overrides.json")
 
 
 def _finding_out(f: SkillFinding, *, allowed: bool = False) -> SkillFindingOut:
@@ -44,25 +39,6 @@ def _finding_out(f: SkillFinding, *, allowed: bool = False) -> SkillFindingOut:
         risk_score=f.risk_score,
         allowed_by_override=allowed,
     )
-
-
-def _merge_overrides(base: SkillOverrides, extra: SkillOverrides) -> SkillOverrides:
-    base.session_allow_keys |= extra.session_allow_keys
-    base.always_allow_keys |= extra.always_allow_keys
-    base.always_allow_reason_codes |= extra.always_allow_reason_codes
-    return base
-
-
-async def _load_overrides(db: AsyncSession, user_id: str, body: SkillScanRequest) -> SkillOverrides:
-    base = SkillOverrides.from_dict(body.overrides.model_dump() if body.overrides else None)
-    base = _merge_overrides(base, await load_user_overrides(db, user_id))
-    if DEFAULT_OVERRIDES_PATH.is_file():
-        try:
-            on_disk = json.loads(DEFAULT_OVERRIDES_PATH.read_text(encoding="utf-8"))
-            base = _merge_overrides(base, SkillOverrides.from_dict(on_disk))
-        except (json.JSONDecodeError, OSError):
-            pass
-    return base
 
 
 @router.get("/rejections", response_model=list[SkillRejectionOut])
@@ -91,6 +67,7 @@ async def report_rejection(
         findings=[f.model_dump() for f in body.findings],
         summary=body.rejection_summary,
         content_preview=body.content_preview,
+        content_sha256=body.content_sha256,
     )
     await db.commit()
     return row
@@ -120,7 +97,8 @@ async def create_rejection_from_content(
         source=body.source,
         findings=result.findings,
         summary=body.rejection_summary or f"Rejected access: {len(result.findings)} issue(s)",
-        content_preview=body.content_preview or body.content[:500],
+        content_preview=body.content,
+        content_sha256=content_digest(body.content),
     )
     await db.commit()
     return row
@@ -150,11 +128,21 @@ async def scan_skill(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    result = SkillGuardrail().scan(body.content)
-    overrides = await _load_overrides(db, current_user.id, body)
-    decision = apply_overrides(result, overrides)
+    """Return an integration decision, not a remote process pause/resume action.
 
-    all_out = [_finding_out(f, allowed=overrides.is_allowed(f)) for f in result.findings]
+    Only explicit, server-persisted own-user approvals can unblock a finding.
+    Repository-local CLI overrides are never loaded by this hosted endpoint.
+    """
+    if body.overrides and any(body.overrides.model_dump().values()):
+        raise HTTPException(status_code=403, detail="Client-supplied overrides cannot bypass hosted scans. Review and approve the recorded rejection instead.")
+    result = SkillGuardrail().scan(body.content)
+    digest = content_digest(body.content)
+    approved = await load_user_overrides(db, current_user.id, org_id=current_user.org_id, filename=body.filename, digest=digest, findings=result.findings, consume_once=True)
+    allowed = [finding for finding in result.findings if approval_key(body.filename, digest, finding) in approved]
+    blocking = [finding for finding in result.findings if approval_key(body.filename, digest, finding) not in approved]
+    decision = SkillScanDecision(raw=result, blocking=blocking, allowed=allowed, safe=not blocking, blocked=bool(blocking))
+
+    all_out = [_finding_out(f, allowed=approval_key(body.filename, digest, f) in approved) for f in result.findings]
     blocking_out = [_finding_out(f) for f in decision.blocking]
     overridden_out = [_finding_out(f, allowed=True) for f in decision.allowed]
 
@@ -167,10 +155,13 @@ async def scan_skill(
             source="api_scan",
             findings=decision.blocking,
             summary=decision.rejection_summary,
-            content_preview=body.content[:500],
+            content_preview=body.content,
+            content_sha256=digest,
         )
         rejection_id = row.id
-        await db.commit()
+    # Commit approval consumption even when every finding was allowed. The
+    # owner's database row lock makes concurrent scans consume a grant once.
+    await db.commit()
 
     return SkillScanResponse(
         safe=result.safe,

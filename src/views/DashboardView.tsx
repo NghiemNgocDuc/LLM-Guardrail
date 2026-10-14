@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../utils/api";
 import AppIcon from "../components/AppIcon";
-import type { components, RecentLogItem, SuspiciousLogItem } from "../api-types";
+import type { components } from "../api-types";
+import type { RecentLogItem, SuspiciousLogItem } from "../api-supplementary";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer,
   Tooltip, XAxis, YAxis,

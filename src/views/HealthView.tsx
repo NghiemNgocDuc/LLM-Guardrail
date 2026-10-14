@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, BASE_URL } from "../utils/api";
 import AppIcon from "../components/AppIcon";
 import { Badge, Button, EmptyState, LoadingState, Notice, PageHeader, Panel, TableWrap } from "../components/ui";
-import type { ServiceHealth } from "../api-types";
+import type { ServiceHealth } from "../api-supplementary";
 import "../styles/observability.css";
 
 type BasicHealth = { status: string; env: string; backend: string; database: string };

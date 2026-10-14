@@ -13,7 +13,7 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     Boolean, DateTime, ForeignKey,
-    Integer, String, Text, JSON, BigInteger, Uuid,
+    Integer, String, Text, JSON, BigInteger, Uuid, UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -443,6 +443,8 @@ class ManagedSkill(Base):
     every write and conflicts are flagged against existing skills + org policy.
     """
     __tablename__ = "managed_skills"
+    # Match the production constraint created by migration 0014.
+    __table_args__ = (UniqueConstraint("org_id", "slug", name="uq_managed_skill_org_slug"),)
 
     id:         Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id:    Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)

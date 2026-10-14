@@ -29,19 +29,24 @@ SSE mode (requires auth):
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
+import math
 import os
 import sys
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable
+from typing import get_args, get_origin, get_type_hints
+from types import UnionType
 
 from guardrails.input import InputGuardrail
 from guardrails.output import OutputGuardrail
 from guardrails.pii_redactor import PIIRedactor
-from guardrails.skill import SkillGuardrail
+from guardrails.skill import SkillGuardrail, redact_skill_excerpt
+from app.utils.secret_redaction import scrub_text
 
 logger = logging.getLogger(__name__)
 
@@ -105,20 +110,24 @@ def tool(name: str | None = None, description: str = "", input_schema: dict[str,
 
 
 def _infer_schema(fn: Callable) -> dict[str, Any]:
-    import inspect
     sig = inspect.signature(fn)
+    hints = get_type_hints(fn)
     properties = {}
     required = []
     for param_name, param in sig.parameters.items():
-        ann = param.annotation
+        ann = hints.get(param_name, param.annotation)
+        options = get_args(ann) if get_origin(ann) is UnionType else (ann,)
+        ann = next((option for option in options if option is not type(None)), str)
         js_type = "string"
         if ann is int:
-            js_type = "number"
+            js_type = "integer"
         elif ann is float:
             js_type = "number"
         elif ann is bool:
             js_type = "boolean"
         props: dict[str, Any] = {"type": js_type}
+        if type(None) in options:
+            props["type"] = [js_type, "null"]
         if param.default is inspect.Parameter.empty:
             required.append(param_name)
         elif param.default is not None:
@@ -255,9 +264,41 @@ _VALIDATORS: dict[str, Callable[..., ValidationError | None]] = {
 
 
 def _validate_tool_call(name: str, args: dict[str, Any]) -> ValidationError | None:
+    if not isinstance(args, dict):
+        return ValidationError("arguments must be a JSON object")
+    definition = TOOL_REGISTRY.get(name)
+    if definition:
+        fn = definition["fn"]
+        try:
+            inspect.signature(fn).bind(**args)
+            hints = get_type_hints(fn)
+        except (TypeError, ValueError, NameError):
+            return ValidationError("arguments do not match this tool's parameters")
+        for key, value in args.items():
+            annotation = hints.get(key)
+            options = get_args(annotation) if get_origin(annotation) is UnionType else (annotation,)
+            valid = any(
+                (option is type(None) and value is None)
+                or (option is str and isinstance(value, str))
+                or (option is int and isinstance(value, int) and not isinstance(value, bool))
+                or (option is float and ((isinstance(value, int) and not isinstance(value, bool)) or (isinstance(value, float) and math.isfinite(value))))
+                or (option is bool and isinstance(value, bool))
+                for option in options
+            )
+            if not valid:
+                return ValidationError(f"{key} has an invalid type")
+            if key in {"policy_json", "topic_policy_json", "compliance_json"} and value:
+                try:
+                    if not isinstance(json.loads(value), dict):
+                        return ValidationError(f"{key} must be a JSON object")
+                except (json.JSONDecodeError, TypeError):
+                    return ValidationError(f"{key} must be valid JSON")
     validator = _VALIDATORS.get(name)
     if validator:
-        return validator(**args)
+        try:
+            return validator(**args)
+        except (TypeError, ValueError, AttributeError, OverflowError):
+            return ValidationError("arguments are invalid for this tool")
     return None
 
 
@@ -307,6 +348,7 @@ class MCPAuthContext:
     rpm: int = RATE_LIMIT_RPM_DEFAULT
     rpd: int = RATE_LIMIT_RPD_DEFAULT
     is_authenticated: bool = False
+    raw_key: str | None = field(default=None, repr=False)
 
 
 _UNAUTHENTICATED = MCPAuthContext(
@@ -705,10 +747,14 @@ def explain_policy(policy_json: str) -> str:
 # Tools not listed here are visible to any authenticated key.
 TOOL_SCOPES: dict[str, str] = {
     "chat": "chat",
+    "scan_skill": "skills:read",
+    "scan_repo": "skills:read",
 }
 
 
 def _visible_tools(auth: MCPAuthContext | None) -> list[dict[str, Any]]:
+    if auth is not None and not auth.is_authenticated:
+        return []
     scopes = set(auth.scopes) if auth and auth.is_authenticated else set()
     out = []
     for t in TOOL_REGISTRY.values():
@@ -743,7 +789,42 @@ def _drift_scan() -> None:
 _drift_scan()
 
 
-async def _call_tool(name: str, arguments: dict[str, Any], auth: MCPAuthContext | None = None) -> dict:
+async def _gateway_chat(arguments: dict[str, Any], auth: MCPAuthContext, request) -> str:
+    """Hosted chat shares the real gateway's policy, billing and audit gates."""
+    from fastapi import HTTPException, Response
+    from sqlalchemy import select
+    from app.database import get_sessionmaker
+    from app.deps import resolve_api_key
+    from app.models import OrgMembership, User
+    from app.routers.chat import chat as gateway_chat
+    from app.schemas import ChatRequest
+
+    if not auth.raw_key or request is None:
+        raise HTTPException(status_code=401, detail="Hosted chat requires the authenticated transport context")
+    if arguments.get("policy_json"):
+        raise HTTPException(status_code=403, detail="Hosted chat uses the workspace policy; client policy overrides are not permitted")
+    payload = {key: value for key, value in arguments.items() if key != "policy_json"}
+    async with get_sessionmaker()() as db:
+        key = await resolve_api_key(auth.raw_key, db)
+        if (key.id, key.owner_id, key.org_id) != (auth.key_id, auth.owner_id, auth.org_id):
+            raise HTTPException(status_code=401, detail="Authenticated key context changed")
+        owner = await db.get(User, key.owner_id)
+        if not owner or not owner.is_active:
+            raise HTTPException(status_code=403, detail="API key owner is inactive")
+        if key.org_id and owner.org_id != key.org_id:
+            membership = (await db.execute(select(OrgMembership).where(OrgMembership.user_id == owner.id, OrgMembership.org_id == key.org_id))).scalar_one_or_none()
+            if not membership:
+                raise HTTPException(status_code=403, detail="API key owner no longer belongs to this workspace")
+        response = await gateway_chat(body=ChatRequest(**payload), request=request, api_key=key, fastapi_response=Response(), db=db)
+        await db.commit()
+        return json.dumps(response.model_dump(mode="json"))
+
+
+async def _call_tool(name: str, arguments: dict[str, Any], auth: MCPAuthContext | None = None, request=None) -> dict:
+    if not isinstance(name, str) or not name:
+        return _tool_error("Tool name must be a non-empty string")
+    if auth is not None and not auth.is_authenticated:
+        return _tool_error("Authentication required")
     tool_def = TOOL_REGISTRY.get(name)
     if not tool_def:
         return _tool_error(f"Tool not found: {name}")
@@ -757,7 +838,8 @@ async def _call_tool(name: str, arguments: dict[str, Any], auth: MCPAuthContext 
             logger.error("blocked poisoned tool call: %s (%s)", name, reason)
             return _tool_error(f"Tool '{name}' blocked: description failed poisoning scan")
     except Exception:
-        pass
+        logger.exception("tool description security check unavailable: %s", name)
+        return _tool_error("Tool description security check unavailable")
 
     if auth is not None:
         required = TOOL_SCOPES.get(name)
@@ -771,28 +853,36 @@ async def _call_tool(name: str, arguments: dict[str, Any], auth: MCPAuthContext 
 
     fn = tool_def["fn"]
     try:
-        result = fn(**arguments)
+        result = _gateway_chat(arguments, auth, request) if name == "chat" and auth is not None else fn(**arguments)
         if asyncio.iscoroutine(result):
             result = await result
         return {"content": [{"type": "text", "text": str(result)}], "isError": False}
     except Exception as e:
         logger.exception("Tool call failed: %s", name)
-        return _tool_error(str(e))
+        return _tool_error(str(getattr(e, "detail", str(e))))
 
 
 def _tool_error(msg: str) -> dict:
-    return {"content": [{"type": "text", "text": json.dumps({"error": msg})}], "isError": True}
+    return {"content": [{"type": "text", "text": json.dumps({"error": scrub_text(msg)})}], "isError": True}
 
 
-async def _handle_request(body: dict, auth: MCPAuthContext | None = None) -> dict | None:
+async def _handle_request(body: dict, auth: MCPAuthContext | None = None, request=None) -> dict | None:
+    if not isinstance(body, dict):
+        return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Request must be a JSON object"}}
     method = body.get("method", "")
-    params = body.get("params", {}) or {}
+    params = body.get("params")
+    if params is None:
+        params = {}
     req_id = body.get("id")
+    if not (req_id is None or isinstance(req_id, str) or (isinstance(req_id, int) and not isinstance(req_id, bool)) or (isinstance(req_id, float) and math.isfinite(req_id))):
+        return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid request id"}}
+    if not isinstance(method, str) or not isinstance(params, dict):
+        return {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32602, "message": "Invalid method or parameters"}}
 
     if method == "tools/list":
         resp = {"tools": _visible_tools(auth) if auth else _list_tools()}
     elif method == "tools/call":
-        resp = await _call_tool(params.get("name", ""), params.get("arguments", {}), auth)
+        resp = await _call_tool(params.get("name", ""), params.get("arguments", {}), auth, request)
     elif method == "initialize":
         resp = {
             "protocolVersion": "2024-11-05",
@@ -829,6 +919,8 @@ async def _resolve_sse_auth(request) -> MCPAuthContext | None:
     try:
         from app.deps import resolve_api_key
         from app.database import get_sessionmaker
+        from app.models import OrgMembership, User
+        from sqlalchemy import select
 
         if not raw_key.startswith(GATEWAY_KEY_PREFIX):
             return None
@@ -836,13 +928,21 @@ async def _resolve_sse_auth(request) -> MCPAuthContext | None:
         sessionmaker = get_sessionmaker()
         async with sessionmaker() as db:
             key = await resolve_api_key(raw_key, db)
-            scopes = list(key.scopes) if key.scopes else ["chat"]
+            owner = await db.get(User, key.owner_id)
+            if not owner or not owner.is_active:
+                return None
+            if key.org_id and owner.org_id != key.org_id:
+                membership = (await db.execute(select(OrgMembership).where(OrgMembership.user_id == owner.id, OrgMembership.org_id == key.org_id))).scalar_one_or_none()
+                if not membership:
+                    return None
+            scopes = list(key.scopes) if key.scopes is not None else ["chat"]
             return MCPAuthContext(
                 key_id=key.id,
                 owner_id=key.owner_id,
                 org_id=key.org_id,
                 scopes=scopes,
                 is_authenticated=True,
+                raw_key=raw_key,
             )
     except Exception:
         logger.warning("SSE auth failed for key prefix %s", raw_key[:12] if len(raw_key) > 12 else raw_key)
@@ -881,7 +981,7 @@ async def _audit_log(auth: MCPAuthContext, tool_name: str, args: dict, status: s
                 api_key_id=auth.key_id,
                 org_id=auth.org_id,
                 prompt_hash=hashlib.sha256(prompt_str.encode()).hexdigest(),
-                prompt_preview=prompt_str[:120],
+                prompt_preview=redact_skill_excerpt(prompt_str, max_length=120),
                 model="mcp:" + tool_name,
                 backend="mcp",
                 input_passed=status in ("ok", "delivered"),
@@ -902,20 +1002,45 @@ async def _audit_log(auth: MCPAuthContext, tool_name: str, args: dict, status: s
 
 # ─── SSE transport (mounted into FastAPI at /mcp) ────────────────────────────
 
-async def _sse_listener(request, session_id: str, queue: asyncio.Queue):
+@dataclass
+class _SSESession:
+    auth: MCPAuthContext
+    queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=100))
+    last_activity: float = field(default_factory=time.monotonic)
+
+
+def _result_status(response: dict | None) -> tuple[str, bool]:
+    """Map actual tool outcomes; hosted chat already writes the gateway log."""
+    result = (response or {}).get("result", {})
+    if not isinstance(result, dict) or result.get("isError"):
+        return "error", False
     try:
-        while True:
-            await asyncio.sleep(30)
-            if await request.is_disconnected():
-                break
-    except asyncio.CancelledError:
-        pass
+        payload = json.loads(result["content"][0]["text"])
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+        return "ok", False
+    if not isinstance(payload, dict):
+        return "ok", False
+    status = payload.get("status")
+    if status in {"delivered", "input_blocked", "output_blocked", "rate_limited", "error"}:
+        return status, bool(payload.get("request_id"))
+    if payload.get("safe") is False or payload.get("allowed") is False:
+        return "input_blocked", False
+    if isinstance(payload.get("summary"), dict) and payload["summary"].get("files_with_findings", 0):
+        return "input_blocked", False
+    return "ok", False
 
 
 def get_mcp_app():
     from starlette.applications import Starlette
     from starlette.responses import JSONResponse, Response, StreamingResponse
     from starlette.routing import Route
+    sessions: dict[str, _SSESession] = {}
+
+    def purge_expired_sessions():
+        now = time.monotonic()
+        for session_id, session in list(sessions.items()):
+            if now - session.last_activity >= SSE_SESSION_TIMEOUT:
+                sessions.pop(session_id, None)
 
     async def sse_ep(request):
         auth = await _resolve_sse_auth(request)
@@ -926,22 +1051,31 @@ def get_mcp_app():
             )
 
         session_id = str(uuid.uuid4())
+        purge_expired_sessions()
+        if len(sessions) >= 200 or sum(session.auth.key_id == auth.key_id for session in sessions.values()) >= 5:
+            return JSONResponse({"error": "Too many active SSE sessions"}, status_code=429)
+        session = _SSESession(auth=auth)
+        sessions[session_id] = session
 
         async def event_generator():
             try:
-                yield f"event: endpoint\ndata: /mcp/message?session_id={session_id}\n\n"
+                mount = getattr(request, "scope", {}).get("root_path", "").rstrip("/")
+                yield f"event: endpoint\ndata: {mount}/message?session_id={session_id}\n\n"
                 while True:
-                    msg = await asyncio.wait_for(queue.get(), timeout=SSE_SESSION_TIMEOUT)
+                    remaining = SSE_SESSION_TIMEOUT - (time.monotonic() - session.last_activity)
+                    if remaining <= 0 or await request.is_disconnected():
+                        break
+                    msg = await asyncio.wait_for(session.queue.get(), timeout=remaining)
                     yield f"data: {json.dumps(msg)}\n\n"
             except asyncio.TimeoutError:
                 pass
             except asyncio.CancelledError:
-                pass
-
-        queue: asyncio.Queue = asyncio.Queue(maxsize=100)
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(_sse_listener(request, session_id, queue))
-            return StreamingResponse(event_generator(), media_type="text/event-stream")
+                raise
+            finally:
+                sessions.pop(session_id, None)
+        # Returning immediately is essential: awaiting a disconnect watcher
+        # here deadlocks before headers or the endpoint event can be sent.
+        return StreamingResponse(event_generator(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
     async def msg_ep(request):
         auth = await _resolve_sse_auth(request)
@@ -950,25 +1084,34 @@ def get_mcp_app():
                 {"error": "Authentication required. Provide X-Api-Key or Authorization: Bearer <grg_key>"},
                 status_code=401,
             )
+        session_id = request.query_params.get("session_id")
+        purge_expired_sessions()
+        session = sessions.get(session_id) if session_id else None
+        if session_id and (not session or (session.auth.key_id, session.auth.owner_id, session.auth.org_id) != (auth.key_id, auth.owner_id, auth.org_id)):
+            return JSONResponse({"error": "Session not found"}, status_code=404)
+        if session and session.queue.full():
+            return JSONResponse({"error": "Session response queue is full"}, status_code=429)
 
         try:
-            raw = await request.body()
-            if len(raw) > 512_000:
-                return JSONResponse({"error": "Request too large"}, status_code=413)
+            raw = bytearray()
+            async for chunk in request.stream():
+                if len(raw) + len(chunk) > 512_000:
+                    return JSONResponse({"error": "Request too large"}, status_code=413)
+                raw.extend(chunk)
             body = json.loads(raw)
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+        if not isinstance(body, dict) or (body.get("params") is not None and not isinstance(body.get("params"), dict)):
+            return JSONResponse(await _handle_request(body, auth, request), status_code=400)
+        params = body.get("params") or {}
 
         method = body.get("method", "")
         is_call = method == "tools/call"
 
         if is_call:
-            tool_name = body.get("params", {}).get("name", "")
-            if tool_name == "chat" and not _scope_allows(auth, "chat"):
-                return JSONResponse(
-                    {"error": "API key does not have the 'chat' scope required for this tool"},
-                    status_code=403,
-                )
+            tool_name = params.get("name", "")
+            if body.get("id") is None:
+                return JSONResponse({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Tool calls require a request id"}}, status_code=400)
 
             # Rate limit per key
             state = _check_rate_limit_local(auth.key_id, auth.rpm, auth.rpd)
@@ -977,29 +1120,30 @@ def get_mcp_app():
             if state.rpd_remaining < 0:
                 return JSONResponse({"error": "Rate limit exceeded (RPD)"}, status_code=429)
 
-            args = body.get("params", {}).get("arguments", {})
-            status = "ok"
-            try:
-                result = await _handle_request(body, auth)
-            except Exception:
-                status = "error"
-                raise
-            finally:
-                asyncio.ensure_future(_audit_log(auth, tool_name, args, status))
-
+            args = params.get("arguments", {})
+            result = await _handle_request(body, auth, request)
+            outcome, gateway_audited = _result_status(result)
+            if tool_name == "check_output" and outcome == "input_blocked":
+                outcome = "output_blocked"
+            if not (tool_name == "chat" and gateway_audited):
+                await _audit_log(auth, str(tool_name), args if isinstance(args, dict) else {}, outcome)
+        else:
+            result = await _handle_request(body, auth, request)
+        if session:
+            session.last_activity = time.monotonic()
             if result is not None:
-                return JSONResponse(result)
+                await session.queue.put(result)
             return Response(status_code=202)
-
-        result = await _handle_request(body, auth)
         if result is not None:
             return JSONResponse(result)
         return Response(status_code=202)
 
-    return Starlette(routes=[
+    app = Starlette(routes=[
         Route("/sse", endpoint=sse_ep, methods=["GET"]),
         Route("/message", endpoint=msg_ep, methods=["POST"]),
     ])
+    app.state.mcp_sessions = sessions
+    return app
 
 
 # ─── Standalone stdio mode (no auth — local only) ───────────────────────────

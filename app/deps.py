@@ -12,13 +12,13 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from jose.jwk import construct
 from passlib.context import CryptContext
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.http_client import get_http_client
 from app.i18n import _t
-from app.models import APIKey, User
+from app.models import APIKey, OrgMembership, User
 
 settings = get_settings()
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -152,6 +152,47 @@ def validate_gateway_api_key_format(raw_key: str) -> None:
         )
 
 
+def api_key_scopes(key: APIKey) -> list[str]:
+    """Only legacy null scopes inherit chat; an explicit empty list grants nothing."""
+    scopes = key.scopes
+    return list(scopes) if scopes is not None else ["chat"]
+
+
+def _utc_timestamp(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+async def _validate_key_access(key: APIKey, db: AsyncSession) -> None:
+    now = datetime.now(timezone.utc)
+    if key.expires_at and _utc_timestamp(key.expires_at) <= now:
+        raise HTTPException(status_code=401, detail=_t("api_key.expired"))
+    owner = await db.get(User, key.owner_id)
+    if owner is None or not owner.is_active:
+        raise HTTPException(status_code=401, detail=_t("auth.user_not_found"))
+    if key.org_id is not None and owner.org_id != key.org_id:
+        membership = await db.execute(select(OrgMembership).where(
+            OrgMembership.user_id == owner.id, OrgMembership.org_id == key.org_id,
+        ))
+        if membership.scalar_one_or_none() is None:
+            raise HTTPException(status_code=403, detail="The key owner no longer belongs to this workspace")
+    try:
+        from app.services.api_key_protection import check_ban_or_raise
+        await check_ban_or_raise(key.id, key.owner_id)
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+    if key.budget_tokens is not None:
+        if key.budget_reset_at and _utc_timestamp(key.budget_reset_at) <= now:
+            key.budget_used = 0
+            key.budget_reset_at = None
+            await db.flush()
+        if (key.budget_used or 0) >= key.budget_tokens:
+            raise HTTPException(status_code=429, detail={
+                "code": "budget_exceeded", "message": "Virtual key budget exceeded", "retry_after": 3600,
+            }, headers={"Retry-After": "3600"})
+
+
 async def resolve_api_key(raw_key: str, db: AsyncSession) -> APIKey:
     validate_gateway_api_key_format(raw_key)
     prefix = raw_key[:12]
@@ -163,29 +204,7 @@ async def resolve_api_key(raw_key: str, db: AsyncSession) -> APIKey:
 
     for key in candidates:
         if verify_api_key(raw_key, key.key_hash):
-            if key.expires_at and key.expires_at < datetime.now(timezone.utc):
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_t("api_key.expired"))
-            # ── exploit auto-ban check (key + owner) ─────────────────────
-            try:
-                from app.services.api_key_protection import check_ban_or_raise
-                await check_ban_or_raise(key.id, key.owner_id)
-            except HTTPException:
-                raise
-            except Exception:
-                pass
-            # ── virtual-key budget (429 before provider, Datadog pattern) ───
-            if key.budget_tokens is not None:
-                # reset monthly if needed
-                if key.budget_reset_at and key.budget_reset_at < datetime.now(timezone.utc):
-                    key.budget_used = 0
-                    key.budget_reset_at = None
-                    await db.flush()
-                if key.budget_used >= key.budget_tokens:
-                    raise HTTPException(
-                        status_code=429,
-                        detail={"code": "budget_exceeded", "message": "Virtual key budget exceeded", "retry_after": 3600},
-                        headers={"Retry-After": "3600"},
-                    )
+            await _validate_key_access(key, db)
             return key
 
     raise HTTPException(
@@ -197,15 +216,16 @@ async def resolve_api_key(raw_key: str, db: AsyncSession) -> APIKey:
 async def api_key_for_user(user: User, db: AsyncSession) -> APIKey:
     result = await db.execute(
         select(APIKey)
-        .where(APIKey.owner_id == user.id, APIKey.is_active == True)
+        .where(APIKey.owner_id == user.id, APIKey.org_id == user.org_id,
+               APIKey.is_active == True,
+               or_(APIKey.expires_at.is_(None), APIKey.expires_at > datetime.now(timezone.utc)))
         .order_by(APIKey.created_at.desc())
         .limit(1)
     )
     key = result.scalar_one_or_none()
     if not key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_t("api_key.none_active"))
-    if key.expires_at and key.expires_at < datetime.now(timezone.utc):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_t("api_key.expired"))
+    await _validate_key_access(key, db)
     return key
 
 
@@ -267,27 +287,7 @@ async def get_api_key_auth(
         if token.startswith(GATEWAY_KEY_PREFIX):
             return await resolve_api_key(token, db)
 
-        payload = None
-        if settings.CLERK_SECRET_KEY:
-            try:
-                payload = await _verify_clerk_token(token)
-            except HTTPException:
-                pass
-
-        if not payload:
-            payload = decode_token(token)
-            if payload.get("type") != "access":
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_t("auth.invalid_token_type"))
-
-        clerk_id = payload.get("sub") if settings.CLERK_SECRET_KEY else None
-        if clerk_id:
-            result = await db.execute(select(User).where(User.clerk_id == clerk_id))
-            user = result.scalar_one_or_none()
-        else:
-            user = await db.get(User, payload["sub"])
-
-        if not user or not user.is_active:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_t("auth.user_not_found"))
+        user = await get_current_user(credentials, db)
         # check temporary ban for JWT-sourced user as well
         try:
             from app.services.api_key_protection import check_ban_or_raise
@@ -297,15 +297,7 @@ async def get_api_key_auth(
             raise
         except Exception:
             pass
-        key = await api_key_for_user(user, db)
-        try:
-            from app.services.api_key_protection import check_ban_or_raise as _check
-            await _check(key.id, key.owner_id)
-        except HTTPException:
-            raise
-        except Exception:
-            pass
-        return key
+        return await api_key_for_user(user, db)
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

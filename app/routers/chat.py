@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db, get_sessionmaker
-from app.deps import AuthedAPIKey, get_current_user
+from app.deps import AuthedAPIKey, api_key_scopes, get_current_user
 from app.services.analytics import capture_event
 from app.services.vectorstore import upsert_conversation
 from app.demo_limits import client_ip, enforce_demo_payload_limits, enforce_demo_rate_limits
@@ -182,7 +182,7 @@ async def chat(
     request_id = str(uuid.uuid4())
 
     # ── 1. Scope enforcement ──────────────────────────────────────────────
-    key_scopes = list(api_key.scopes) if api_key.scopes else ["chat"]
+    key_scopes = api_key_scopes(api_key)
     if "chat" not in key_scopes:
         raise HTTPException(status_code=403, detail=_t("api_key.no_chat_scope"))
 
@@ -589,8 +589,8 @@ async def chat_stream(
     request_id = str(uuid.uuid4())
 
     # ── Scope enforcement ─────────────────────────────────────────────────
-    key_scopes = list(api_key.scopes) if api_key.scopes else ["chat"]
-    if "chat" not in key_scopes:
+    key_scopes = api_key_scopes(api_key)
+    if not {"chat", "chat:stream"}.intersection(key_scopes):
         raise HTTPException(status_code=403, detail=_t("api_key.no_chat_scope"))
 
     # ── Load policy ───────────────────────────────────────────────────────

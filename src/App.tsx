@@ -158,7 +158,7 @@ function WorkspaceShell({ user, setUser, signOut }: GateContext) {
       case "chat": return <ChatView />;
       case "memory": return <MemoryView />;
       case "mandate": return <MandateFlowView />;
-      case "skills": return <SkillGuardView />;
+      case "skills": return <SkillGuardView user={user} />;
       case "analytics": return <AnalyticsView />;
       case "billing": return <BillingView />;
       case "logs": return <LogsView />;

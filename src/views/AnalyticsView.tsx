@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api, BASE_URL, formatApiError, getAuthToken } from "../utils/api";
 import { Badge, Button, EmptyState, LoadingState, Notice, PageHeader, Panel, TableWrap } from "../components/ui";
-import type { components, UserUsageStat } from "../api-types";
+import type { components } from "../api-types";
+import type { UserUsageStat } from "../api-supplementary";
 import "../styles/observability.css";
 
 type DashboardData = components["schemas"]["AnalyticsDashboard"];

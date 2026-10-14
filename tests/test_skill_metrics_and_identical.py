@@ -39,14 +39,14 @@ def test_build_skill_md_overwrite_filename_and_frontmatter():
     assert "version: 3" in md
     assert "managed_by: llm-guardrails" in md
     assert ".cursor/skills/agent_b/SKILL.md" in md
-    assert "Auto-overwrite" in md
+    assert "Overwrite installation" in md
 
 
 def test_build_skill_md_versioned():
     md = build_skill_md("agent_b", "agent_b", "desc", "hello", version=3, update_mode="versioned", live_url="https://x/skills/live/agent_b")
     assert "update_mode: versioned" in md
     assert "SKILL.v3.md" in md
-    assert "Versioned skill" in md
+    assert "Versioned installation" in md
 
 
 def test_hash_integrity():
@@ -54,7 +54,7 @@ def test_hash_integrity():
     content = "hello world"
     md = build_skill_md("s", "s", "d", content, version=1, update_mode="overwrite")
     h = hashlib.sha256(content.encode()).hexdigest()[:12]
-    assert f"hash: {h}" in md
+    assert f'hash: "{h}"' in md
 
 
 # ── conflict detection still correct after About metrics refactor ───────────

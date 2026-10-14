@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
-from app.deps import AuthedAPIKey
+from app.deps import AuthedAPIKey, api_key_scopes
 from app.models import OrgPolicy
 from app.routers.chat import _log_request
 from app.services.llm import call_llm, stream_llm
@@ -65,8 +65,11 @@ async def list_models(api_key: AuthedAPIKey):
 @router.post("/chat/completions")
 async def chat_completions(body: dict[str, Any], request: Request, api_key: AuthedAPIKey, db: AsyncSession = Depends(get_db)):
     start = time.monotonic()
-    if "chat" not in (list(api_key.scopes) if api_key.scopes else ["chat"]):
-        raise HTTPException(status_code=403, detail="API key missing 'chat' scope")
+    if "stream" in body and not isinstance(body["stream"], bool):
+        raise HTTPException(status_code=422, detail="stream must be a boolean")
+    allowed_scopes = {"chat", "chat:stream"} if body.get("stream") is True else {"chat"}
+    if not allowed_scopes.intersection(api_key_scopes(api_key)):
+        raise HTTPException(status_code=403, detail="API key missing the required chat scope")
 
     messages = body.get("messages", [])
     if not messages:

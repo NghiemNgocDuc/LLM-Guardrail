@@ -6,6 +6,291 @@
     "version": "1.0.0"
   },
   "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Login",
+        "operationId": "login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/signup": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Signup",
+        "operationId": "signup_auth_signup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Refresh",
+        "operationId": "refresh_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/verify-email": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Verify Email",
+        "operationId": "verify_email_auth_verify_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/forgot-password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Forgot Password",
+        "operationId": "forgot_password_auth_forgot_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/reset-password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Reset Password",
+        "operationId": "reset_password_auth_reset_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/resend-verification": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Resend Verification",
+        "operationId": "resend_verification_auth_resend_verification_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/clerk-webhook": {
       "post": {
         "tags": [
@@ -23,6 +308,53 @@
             }
           }
         }
+      }
+    },
+    "/auth/change-password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Change Password",
+        "description": "Require the existing password before changing a local account password.",
+        "operationId": "change_password_auth_change_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/auth/me": {
@@ -223,6 +555,103 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AdminInviteUser"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/users/lookup": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Lookup User By Email",
+        "operationId": "lookup_user_by_email_admin_users_lookup_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Exact email to find",
+              "title": "Email"
+            },
+            "description": "Exact email to find"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/add-existing": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Add Existing To Team",
+        "description": "Add an existing user (found by email) to current org team \u2014 multi-team: keeps primary org, adds membership.",
+        "operationId": "add_existing_to_team_admin_users_add_existing_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Body"
               }
             }
           },
@@ -570,6 +999,72 @@
         }
       }
     },
+    "/admin/bans": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List Bans",
+        "description": "Active exploit auto-bans (API key + user). Auto-expire after TTL. Scoped to org.",
+        "operationId": "list_bans_admin_bans_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/bans/unban": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Unban",
+        "description": "Manually lift a temporary ban. Body: {\"api_key_id\": \"...\", \"user_id\": \"...\"}",
+        "operationId": "unban_admin_bans_unban_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/admin/replay/{request_id}": {
       "post": {
         "tags": [
@@ -857,7 +1352,7 @@
           "Analytics"
         ],
         "summary": "Top Blocked Reasons",
-        "description": "Most frequent fired rules among blocked requests, with the most recent occurrence of each.",
+        "description": "Most frequent fired rules among blocked requests, with the most recent occurrence of each.\n\nBacked by the mv_blocked_reasons_daily materialized view: counts are\naggregated from the per-org per-day rows for the requested window. The\nview is refreshed on a schedule (scripts/refresh_analytics_views.py) \u2014\ndata can lag live request logs by up to one refresh interval.",
         "operationId": "top_blocked_reasons_analytics_top_blocked_reasons_get",
         "security": [
           {
@@ -1163,7 +1658,7 @@
           "Analytics"
         ],
         "summary": "False Positive Candidates",
-        "description": "Blocked requests that users later disputed \u2014 either via positive feedback\n(thumbs-up on a blocked request) or because the owner later added the rule\nto their always-allow overrides. Grouped by fired rule so you can spot the\nguardrails most likely throwing false positives.",
+        "description": "Blocked requests that users later disputed \u2014 either via positive feedback\n(thumbs-up on a blocked request) or because the owner later added the rule\nto their always-allow overrides. Grouped by fired rule so you can spot the\nguardrails most likely throwing false positives.\n\nBacked by the mv_false_positive_candidates_daily materialized view, which\nprecomputes the feedback/override join once per refresh instead of per\nrequest. The view is refreshed on a schedule\n(scripts/refresh_analytics_views.py) \u2014 data can lag live request logs by\nup to one refresh interval; newly-arriving feedback is only visible after\nthe next refresh.",
         "operationId": "false_positive_candidates_analytics_false_positive_candidates_get",
         "security": [
           {
@@ -1288,6 +1783,53 @@
         ]
       }
     },
+    "/policy/validate-rego": {
+      "post": {
+        "tags": [
+          "Policy"
+        ],
+        "summary": "Validate Rego",
+        "description": "Compile-check a Rego custom rule WITHOUT saving it.\n\nReuses the same OPA compile check the PATCH endpoint runs on save. The\npolicy is never persisted \u2014 OPA is only asked to compile it, then the\nprobe is removed. Returns {valid, error}.",
+        "operationId": "validate_rego_policy_validate_rego_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegoValidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegoValidateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/policy/reset": {
       "post": {
         "tags": [
@@ -1364,6 +1906,85 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/policy/versions": {
+      "get": {
+        "tags": [
+          "Policy"
+        ],
+        "summary": "List Versions",
+        "description": "List version history for current org (newest first).",
+        "operationId": "list_versions_policy_versions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response List Versions Policy Versions Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/policy/rollback/{version}": {
+      "post": {
+        "tags": [
+          "Policy"
+        ],
+        "summary": "Rollback Policy",
+        "description": "Rollback to a prior version (creates new version).",
+        "operationId": "rollback_policy_policy_rollback__version__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/skills/rejections": {
@@ -1589,6 +2210,7 @@
           "Agent Skills"
         ],
         "summary": "Scan Skill",
+        "description": "Return an integration decision, not a remote process pause/resume action.\n\nOnly explicit, server-persisted own-user approvals can unblock a finding.\nRepository-local CLI overrides are never loaded by this hosted endpoint.",
         "operationId": "scan_skill_skills_scan_post",
         "requestBody": {
           "content": {
@@ -1627,6 +2249,1421 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/skills/managed": {
+      "get": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "List Skills",
+        "operationId": "list_skills_skills_managed_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response List Skills Skills Managed Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Create Skill",
+        "operationId": "create_skill_skills_managed_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSkillRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Create Skill Skills Managed Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/skills/managed/metrics": {
+      "get": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Skill Metrics",
+        "description": "Live fixture scores. Register this static path before the slug route.",
+        "operationId": "skill_metrics_skills_managed_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Skill Metrics Skills Managed Metrics Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/skills/managed/{slug}": {
+      "get": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Get Skill",
+        "operationId": "get_skill_skills_managed__slug__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Get Skill Skills Managed  Slug  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Update Skill",
+        "operationId": "update_skill_skills_managed__slug__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSkillRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Update Skill Skills Managed  Slug  Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Delete Skill",
+        "operationId": "delete_skill_skills_managed__slug__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Delete Skill Skills Managed  Slug  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/skills/managed/{slug}/versions": {
+      "get": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Get Versions",
+        "operationId": "get_versions_skills_managed__slug__versions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "title": "Response Get Versions Skills Managed  Slug  Versions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/skills/managed/check-conflict": {
+      "post": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Check Conflict",
+        "operationId": "check_conflict_skills_managed_check_conflict_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConflictRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Check Conflict Skills Managed Check Conflict Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/skills/managed/{slug}/check-conflict": {
+      "post": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Check Conflict For Slug",
+        "operationId": "check_conflict_for_slug_skills_managed__slug__check_conflict_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillContentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Check Conflict For Slug Skills Managed  Slug  Check Conflict Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/skills/managed/{slug}/download": {
+      "get": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Download Skill",
+        "operationId": "download_skill_skills_managed__slug__download_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "overwrite",
+                    "versioned"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mode"
+            }
+          },
+          {
+            "name": "live_url",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uri",
+                  "minLength": 1,
+                  "maxLength": 2083
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Live Url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/skills/managed/metrics/combined": {
+      "get": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Combined Metrics",
+        "description": "Combined benchmark: llm-redactor + jailbreak + NotInject \u2014 single macro-F1.",
+        "operationId": "combined_metrics_skills_managed_metrics_combined_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Combined Metrics Skills Managed Metrics Combined Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/skills/managed/metrics/export-pdf": {
+      "get": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Export Evidence Pdf",
+        "description": "Evidence pack PDF \u2014 no email in metadata, signed hash, reproducible.",
+        "operationId": "export_evidence_pdf_skills_managed_metrics_export_pdf_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/skills/managed/generate-tests": {
+      "post": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Generate Tests",
+        "description": "Generate test cases for content without saving \u2014 preview what will be tested.",
+        "operationId": "generate_tests_skills_managed_generate_tests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillContentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Generate Tests Skills Managed Generate Tests Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/skills/managed/test-new-block": {
+      "post": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Test New Block",
+        "description": "Leader clicks 'Test new block' after adding content \u2014 we generate cases and run them\nthrough the current guardrail to prove the block actually fires.\nReturns per-case PASS/FAIL + summary.",
+        "operationId": "test_new_block_skills_managed_test_new_block_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Test New Block Skills Managed Test New Block Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/skills/managed/{slug}/test-block": {
+      "post": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Test Existing Block",
+        "description": "Test the stored managed skill's block \u2014 fetch content then generate + run.",
+        "operationId": "test_existing_block_skills_managed__slug__test_block_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Test Existing Block Skills Managed  Slug  Test Block Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/skills/managed/check-identical-block": {
+      "post": {
+        "tags": [
+          "Managed Skills"
+        ],
+        "summary": "Check Identical Block",
+        "description": "Compare finding categories without treating history as enforcement.\n\nThis read-only check reports the default skill scanner's decision and\nconfigured input-policy coverage. It neither evaluates the complete chat\nruntime nor consumes an exact-content approval.",
+        "operationId": "check_identical_block_skills_managed_check_identical_block_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillContentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Check Identical Block Skills Managed Check Identical Block Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/skills/live/{slug}": {
+      "get": {
+        "tags": [
+          "Managed Skills Live"
+        ],
+        "summary": "Live Skill",
+        "operationId": "live_skill_skills_live__slug__get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "raw",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Raw"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "overwrite",
+                    "versioned"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mode"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback": {
+      "post": {
+        "tags": [
+          "Feedback"
+        ],
+        "summary": "Submit Feedback",
+        "operationId": "submit_feedback_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mandate": {
+      "post": {
+        "tags": [
+          "MandateFlow"
+        ],
+        "summary": "Create Mandate Ep",
+        "operationId": "create_mandate_ep_mandate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MandateCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/mandate/{mandate_id}/revoke": {
+      "post": {
+        "tags": [
+          "MandateFlow"
+        ],
+        "summary": "Revoke Ep",
+        "operationId": "revoke_ep_mandate__mandate_id__revoke_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mandate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mandate/{mandate_id}": {
+      "get": {
+        "tags": [
+          "MandateFlow"
+        ],
+        "summary": "Get Mandate",
+        "operationId": "get_mandate_mandate__mandate_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mandate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/references/mint": {
+      "post": {
+        "tags": [
+          "MandateFlow"
+        ],
+        "summary": "Mint Ref",
+        "operationId": "mint_ref_references_mint_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceMintIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/runs": {
+      "post": {
+        "tags": [
+          "MandateFlow"
+        ],
+        "summary": "Create Run Ep",
+        "operationId": "create_run_ep_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/runs/{run_id}/retry": {
+      "post": {
+        "tags": [
+          "MandateFlow"
+        ],
+        "summary": "Retry Run",
+        "operationId": "retry_run_runs__run_id__retry_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/gateway/call": {
+      "post": {
+        "tags": [
+          "MandateFlow"
+        ],
+        "summary": "Gateway Call",
+        "operationId": "gateway_call_gateway_call_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayCallIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/evidence": {
+      "get": {
+        "tags": [
+          "MandateFlow"
+        ],
+        "summary": "Evidence",
+        "operationId": "evidence_runs__run_id__evidence_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mandate/{mandate_id}/evidence": {
+      "get": {
+        "tags": [
+          "MandateFlow"
+        ],
+        "summary": "Mandate Evidence",
+        "operationId": "mandate_evidence_mandate__mandate_id__evidence_get",
+        "parameters": [
+          {
+            "name": "mandate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mandate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mandate/bench": {
+      "post": {
+        "tags": [
+          "MandateFlow"
+        ],
+        "summary": "Bench",
+        "description": "Run N gateway calls through Go (if up) vs Python directly, measure latency.\n\nCreates an isolated mandate/run/capability + two provenance handles\n(Support ALLOWED, Payment DENY) and times the pinned policy path.\nReturns avg/p50/p95 + speedup + crmCounter invariant.",
+        "operationId": "bench_mandate_bench_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BenchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "tags": [
+          "OpenAI Compatible"
+        ],
+        "summary": "List Models",
+        "description": "Otari-style model catalog \u2014 static list of routed backends.",
+        "operationId": "list_models_v1_models_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Api-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "tags": [
+          "OpenAI Compatible"
+        ],
+        "summary": "Chat Completions",
+        "operationId": "chat_completions_v1_chat_completions_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Api-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/billing/config": {
@@ -1871,6 +3908,51 @@
           }
         ]
       },
+      "post": {
+        "tags": [
+          "Organisation"
+        ],
+        "summary": "Create Org",
+        "description": "Create a new team/project. Defaults to Team 1, Team 2 if name omitted. Creator becomes admin and is switched to it. Caps: 500 teams per user, 500 members per team.",
+        "operationId": "create_org_org_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
       "patch": {
         "tags": [
           "Organisation"
@@ -1904,6 +3986,219 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/org/list": {
+      "get": {
+        "tags": [
+          "Organisation"
+        ],
+        "summary": "List Orgs",
+        "description": "All teams/projects the current user belongs to \u2014 for team selector. Leader can be in many.",
+        "operationId": "list_orgs_org_list_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Orgs Org List Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/org/switch": {
+      "post": {
+        "tags": [
+          "Organisation"
+        ],
+        "summary": "Switch Org",
+        "description": "Switch working team \u2014 leader can be in many teams, click Team 1/Team 2 to work there. Updates User.org_id.",
+        "operationId": "switch_org_org_switch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgSwitch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/org/{org_id}": {
+      "patch": {
+        "tags": [
+          "Organisation"
+        ],
+        "summary": "Rename Org By Id",
+        "description": "Rename any team you are admin of \u2014 easy rename for Team 1 \u2192 My Project.",
+        "operationId": "rename_org_by_id_org__org_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Org Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Organisation"
+        ],
+        "summary": "Delete Org",
+        "description": "Delete project \u2014 last button, leader only, must sign full name exactly.",
+        "operationId": "delete_org_org__org_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Org Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgDeleteConfirm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/org/leave": {
+      "post": {
+        "tags": [
+          "Organisation"
+        ],
+        "summary": "Leave Current Team",
+        "description": "Leave current team. If you are the only leader, you must assign another first \u2014 else auto-promote previous leader or random member.",
+        "operationId": "leave_current_team_org_leave_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Leave Current Team Org Leave Post"
                 }
               }
             }
@@ -2142,6 +4437,561 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/memories": {
+      "get": {
+        "tags": [
+          "Memories"
+        ],
+        "summary": "List Mem",
+        "operationId": "list_mem_memories_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "pinned_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Pinned Only"
+            }
+          },
+          {
+            "name": "archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Archived"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryOut"
+                  },
+                  "title": "Response List Mem Memories Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Memories"
+        ],
+        "summary": "Create Mem",
+        "operationId": "create_mem_memories_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memories/stats": {
+      "get": {
+        "tags": [
+          "Memories"
+        ],
+        "summary": "Stats",
+        "operationId": "stats_memories_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/memories/{memory_id}": {
+      "get": {
+        "tags": [
+          "Memories"
+        ],
+        "summary": "Get Mem",
+        "operationId": "get_mem_memories__memory_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Memory Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Memories"
+        ],
+        "summary": "Update Mem",
+        "operationId": "update_mem_memories__memory_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Memory Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Memories"
+        ],
+        "summary": "Delete Mem",
+        "operationId": "delete_mem_memories__memory_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Memory Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memories/recall": {
+      "post": {
+        "tags": [
+          "Memories"
+        ],
+        "summary": "Recall",
+        "operationId": "recall_memories_recall_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryRecallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryRecallOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/memories/extract/preview": {
+      "post": {
+        "tags": [
+          "Memories"
+        ],
+        "summary": "Extract Preview",
+        "operationId": "extract_preview_memories_extract_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/memories/extract/confirm": {
+      "post": {
+        "tags": [
+          "Memories"
+        ],
+        "summary": "Extract Confirm",
+        "operationId": "extract_confirm_memories_extract_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryOut"
+                  },
+                  "type": "array",
+                  "title": "Response Extract Confirm Memories Extract Confirm Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/graphql": {
+      "get": {
+        "summary": "Handle Http Get",
+        "operationId": "handle_http_get_graphql_get",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "title": "Request"
+            }
+          },
+          {
+            "name": "response",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "title": "Response"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The GraphiQL integrated development environment.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Not found if GraphiQL or query via GET are not enabled."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Handle Http Post",
+        "operationId": "handle_http_post_graphql_post",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "title": "Request"
+            }
+          },
+          {
+            "name": "response",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "title": "Response"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/health": {
@@ -2521,7 +5371,6 @@
           },
           "recent_suspicious": {
             "items": {
-              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
@@ -2530,7 +5379,6 @@
           },
           "recent_logs": {
             "items": {
-              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
@@ -2545,6 +5393,22 @@
           "recent_logs"
         ],
         "title": "AnalyticsDashboard"
+      },
+      "BenchIn": {
+        "properties": {
+          "iterations": {
+            "type": "integer",
+            "title": "Iterations",
+            "default": 100
+          },
+          "tool": {
+            "type": "string",
+            "title": "Tool",
+            "default": "crm.resolve_customer"
+          }
+        },
+        "type": "object",
+        "title": "BenchIn"
       },
       "BillingCheckoutRequest": {
         "properties": {
@@ -2772,6 +5636,29 @@
         ],
         "title": "BillingWalletOut"
       },
+      "BlockTestRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "maxLength": 256000,
+            "minLength": 1,
+            "title": "Content"
+          },
+          "max_total": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Max Total",
+            "default": 500
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "BlockTestRequest"
+      },
       "BulkUserAction": {
         "properties": {
           "action": {
@@ -2795,6 +5682,28 @@
           "user_ids"
         ],
         "title": "BulkUserAction"
+      },
+      "ChangePasswordRequest": {
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Current Password"
+          },
+          "new_password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 8,
+            "title": "New Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "ChangePasswordRequest"
       },
       "ChatRequest": {
         "properties": {
@@ -2919,6 +5828,147 @@
         ],
         "title": "ChatResponse"
       },
+      "ConflictRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "maxLength": 256000,
+            "minLength": 1,
+            "title": "Content"
+          },
+          "exclude_slug": {
+            "type": "string",
+            "maxLength": 80,
+            "title": "Exclude Slug",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "ConflictRequest"
+      },
+      "CreateSkillRequest": {
+        "properties": {
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Description",
+            "default": ""
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 256000,
+            "minLength": 1,
+            "title": "Content"
+          },
+          "update_mode": {
+            "type": "string",
+            "enum": [
+              "overwrite",
+              "versioned"
+            ],
+            "title": "Update Mode",
+            "default": "overwrite"
+          },
+          "block_on_conflict": {
+            "type": "boolean",
+            "title": "Block On Conflict",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "CreateSkillRequest"
+      },
+      "FeedbackIn": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 10,
+            "title": "Message",
+            "description": "Feedback message"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category",
+            "description": "Optional category"
+          },
+          "website": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "FeedbackIn"
+      },
+      "FeedbackOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "Thanks for your feedback!"
+          }
+        },
+        "type": "object",
+        "title": "FeedbackOut"
+      },
       "FeedbackRequest": {
         "properties": {
           "rating": {
@@ -2947,6 +5997,74 @@
           "rating"
         ],
         "title": "FeedbackRequest"
+      },
+      "GatewayCallIn": {
+        "properties": {
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "inputs": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inputs"
+          },
+          "handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handle"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "aud": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aud"
+          },
+          "aud_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aud Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool"
+        ],
+        "title": "GatewayCallIn"
       },
       "GuardrailResult": {
         "properties": {
@@ -2994,6 +6112,365 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 8,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest"
+      },
+      "MandateCreateIn": {
+        "properties": {
+          "scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopes"
+          },
+          "ttl": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttl"
+          }
+        },
+        "type": "object",
+        "title": "MandateCreateIn"
+      },
+      "MemoryCreate": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Content"
+          },
+          "category": {
+            "type": "string",
+            "pattern": "^(fact|preference|procedure|persona|goal|skill)$",
+            "title": "Category",
+            "default": "fact"
+          },
+          "kind": {
+            "type": "string",
+            "pattern": "^(user|org|agent)$",
+            "title": "Kind",
+            "default": "user"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "importance": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
+          "pinned": {
+            "type": "boolean",
+            "title": "Pinned",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "MemoryCreate"
+      },
+      "MemoryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "importance": {
+            "type": "integer",
+            "title": "Importance"
+          },
+          "pinned": {
+            "type": "boolean",
+            "title": "Pinned"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "last_accessed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Accessed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "content",
+          "category",
+          "kind",
+          "confidence",
+          "importance",
+          "pinned",
+          "archived",
+          "source_type",
+          "source_id",
+          "created_at",
+          "updated_at",
+          "last_accessed"
+        ],
+        "title": "MemoryOut"
+      },
+      "MemoryRecallOut": {
+        "properties": {
+          "memories": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryOut"
+            },
+            "type": "array",
+            "title": "Memories"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          }
+        },
+        "type": "object",
+        "required": [
+          "memories",
+          "query"
+        ],
+        "title": "MemoryRecallOut"
+      },
+      "MemoryRecallRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Query"
+          },
+          "top_k": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "default": 5
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "MemoryRecallRequest"
+      },
+      "MemoryUpdate": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(fact|preference|procedure|persona|goal|skill)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "pinned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinned"
+          },
+          "archived": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived"
+          },
+          "importance": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MemoryUpdate"
+      },
       "MessageResponse": {
         "properties": {
           "message": {
@@ -3006,6 +6483,43 @@
           "message"
         ],
         "title": "MessageResponse"
+      },
+      "OrgCreate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "Optional, defaults to Team 1, Team 2"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "OrgCreate"
+      },
+      "OrgDeleteConfirm": {
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 2,
+            "title": "Full Name",
+            "description": "Must match your full name to confirm delete"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "full_name"
+        ],
+        "title": "OrgDeleteConfirm"
       },
       "OrgOut": {
         "properties": {
@@ -3035,6 +6549,21 @@
           "created_at"
         ],
         "title": "OrgOut"
+      },
+      "OrgSwitch": {
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "title": "Org Id",
+            "description": "Org to switch to"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "org_id"
+        ],
+        "title": "OrgSwitch"
       },
       "OrgUpdate": {
         "properties": {
@@ -3086,12 +6615,10 @@
       "PolicyDiffRequest": {
         "properties": {
           "policy_a": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Policy A"
           },
           "policy_b": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Policy B"
           }
@@ -3109,7 +6636,6 @@
           "input_rules": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -3121,7 +6647,6 @@
           "output_rules": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -3133,7 +6658,6 @@
           "topic_policy": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -3145,7 +6669,6 @@
           "compliance_rules": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -3198,6 +6721,43 @@
             ],
             "title": "Rate Limit Rpd"
           },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier",
+            "description": "1=draft fail-open, 2=productivity, 3=customer-facing fail-closed"
+          },
+          "opa_fail_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(open|closed)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opa Fail Mode"
+          },
+          "custom_rule_rego": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Rule Rego"
+          },
           "org_id": {
             "type": "string",
             "title": "Org Id"
@@ -3206,6 +6766,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 1
           }
         },
         "additionalProperties": false,
@@ -3221,7 +6786,6 @@
           "input_rules": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -3233,7 +6797,6 @@
           "output_rules": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -3245,7 +6808,6 @@
           "topic_policy": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -3257,7 +6819,6 @@
           "compliance_rules": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -3309,6 +6870,43 @@
               }
             ],
             "title": "Rate Limit Rpd"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier",
+            "description": "1=draft fail-open, 2=productivity, 3=customer-facing fail-closed"
+          },
+          "opa_fail_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(open|closed)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opa Fail Mode"
+          },
+          "custom_rule_rego": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Rule Rego"
           }
         },
         "additionalProperties": false,
@@ -3343,6 +6941,95 @@
           "tokens"
         ],
         "title": "ProviderUsage"
+      },
+      "ReferenceMintIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance"
+          },
+          "parent_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Handle"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "ReferenceMintIn"
+      },
+      "RefreshRequest": {
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest"
+      },
+      "RegoValidateRequest": {
+        "properties": {
+          "rego": {
+            "type": "string",
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Rego"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rego"
+        ],
+        "title": "RegoValidateRequest",
+        "description": "Rego source to compile-check against the OPA sidecar (no save)."
+      },
+      "RegoValidateResponse": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "valid"
+        ],
+        "title": "RegoValidateResponse"
       },
       "ReplayCurrentVerdict": {
         "properties": {
@@ -3443,6 +7130,26 @@
         ],
         "title": "ReplayResponse"
       },
+      "ResetPasswordRequest": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "new_password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 8,
+            "title": "New Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "new_password"
+        ],
+        "title": "ResetPasswordRequest"
+      },
       "RotatedWebhookSecret": {
         "properties": {
           "webhook_secret": {
@@ -3462,6 +7169,33 @@
         ],
         "title": "RotatedWebhookSecret",
         "description": "New webhook signing secret \u2014 only ever returned to the caller once."
+      },
+      "RunCreateIn": {
+        "properties": {
+          "mandate_id": {
+            "type": "string",
+            "title": "Mandate Id"
+          },
+          "scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mandate_id"
+        ],
+        "title": "RunCreateIn"
       },
       "SeedPatternsRequest": {
         "properties": {
@@ -3500,6 +7234,46 @@
         ],
         "title": "SeedPatternsResponse"
       },
+      "SignupRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 8,
+            "title": "Password"
+          },
+          "full_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Full Name"
+          },
+          "org_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password",
+          "full_name"
+        ],
+        "title": "SignupRequest"
+      },
       "SimilarityQuery": {
         "properties": {
           "text": {
@@ -3519,6 +7293,22 @@
           "text"
         ],
         "title": "SimilarityQuery"
+      },
+      "SkillContentRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "maxLength": 256000,
+            "minLength": 1,
+            "title": "Content"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "SkillContentRequest"
       },
       "SkillFindingOut": {
         "properties": {
@@ -3701,7 +7491,6 @@
           },
           "findings": {
             "items": {
-              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
@@ -3819,6 +7608,19 @@
               }
             ],
             "title": "Content Preview"
+          },
+          "content_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256",
+            "description": "Client-attested SHA-256 of the complete scanned content; required for exact review approvals"
           },
           "findings": {
             "items": {
@@ -3952,6 +7754,12 @@
             "title": "Agent Status",
             "default": "ok"
           },
+          "runtime_enforced": {
+            "type": "boolean",
+            "title": "Runtime Enforced",
+            "description": "This endpoint returns a scan decision; the integrating agent must enforce it. No external process is paused or resumed.",
+            "default": false
+          },
           "rejection_summary": {
             "anyOf": [
               {
@@ -4027,6 +7835,19 @@
         ],
         "title": "TimeSeriesPoint"
       },
+      "TokenRequest": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "TokenRequest"
+      },
       "TopBlockedReason": {
         "properties": {
           "fired_rule": {
@@ -4088,6 +7909,95 @@
         "additionalProperties": false,
         "type": "object",
         "title": "UpdateProfileRequest"
+      },
+      "UpdateSkillRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "update_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "overwrite",
+                  "versioned"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Mode"
+          },
+          "block_on_conflict": {
+            "type": "boolean",
+            "title": "Block On Conflict",
+            "default": false
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UpdateSkillRequest"
       },
       "UsageSummary": {
         "properties": {
@@ -4226,13 +8136,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",

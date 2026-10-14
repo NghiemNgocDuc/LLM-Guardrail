@@ -184,15 +184,15 @@ def test_null_bytes_and_special_chars():
 
 def test_build_md_frontmatter_invariants():
     md = build_skill_md("my-agent", "My Agent", "desc", "hello", version=5, update_mode="overwrite", live_url="https://x/live/my-agent")
-    assert "name: my-agent" in md
+    assert 'name: "my-agent"' in md
     assert "version: 5" in md
     assert "update_mode: overwrite" in md
     assert "managed_by: llm-guardrails" in md
-    assert "live_url: https://x/live/my-agent" in md
+    assert 'live_url: "https://x/live/my-agent"' in md
     # hash is first 12 of sha256
     h = hashlib.sha256(b"hello").hexdigest()[:12]
-    assert f"hash: {h}" in md
-    assert f"full_hash: {hashlib.sha256(b'hello').hexdigest()}" in md
+    assert f'hash: "{h}"' in md
+    assert f'full_hash: "{hashlib.sha256(b"hello").hexdigest()}"' in md
 
 def test_build_md_invalid_mode_falls_back_to_overwrite():
     md = build_skill_md("s", "s", "d", "c", version=1, update_mode="bogus")
@@ -201,16 +201,16 @@ def test_build_md_invalid_mode_falls_back_to_overwrite():
 def test_build_md_versioned_uses_vN():
     md = build_skill_md("agent_b", "agent_b", "d", "c", version=9, update_mode="versioned")
     assert "SKILL.v9.md" in md
-    assert "Versioned skill" in md
+    assert "Versioned installation" in md
 
 def test_build_md_overwrite_uses_skill_md():
     md = build_skill_md("agent_b", "agent_b", "d", "c", version=9, update_mode="overwrite")
     assert ".cursor/skills/agent_b/SKILL.md" in md
-    assert "Auto-overwrite" in md
+    assert "Overwrite installation" in md
 
 def test_build_md_with_explicit_hash():
     md = build_skill_md("s", "s", "d", "hello", version=1, content_hash="abc123"*10, update_mode="overwrite")
-    assert "hash: abc123" in md  # prefix of provided hash
+    assert 'hash: "abc123' in md  # quoted prefix of provided hash
 
 def test_build_md_long_content_and_emoji():
     long_c = "# Title\n" + "A"*5000 + "\n🚀 " + fake_key("sk-", 24)

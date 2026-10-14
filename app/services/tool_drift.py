@@ -80,7 +80,9 @@ def detect_poisoning(description: str) -> tuple[bool, str]:
         if not res.allowed:
             return True, res.reason or res.reason_code
     except Exception:
-        pass
+        # Tool descriptions are executable planning input. An unavailable
+        # security check must not authorize them as clean.
+        return True, "tool description security check unavailable"
     return False, ""
 
 

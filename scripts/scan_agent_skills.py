@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from guardrails.skill import SkillGuardrail  # noqa: E402
+from app.utils.secret_redaction import scrub_text  # noqa: E402
 from guardrails.skill_messages import explain_finding  # noqa: E402
 from guardrails.skill_agent_packet import finding_to_dict, format_chat_control_prompt  # noqa: E402
 from guardrails.skill_overrides import SkillOverrides, apply_overrides, finding_key  # noqa: E402
@@ -48,60 +50,97 @@ def _collect_files(root: Path, patterns: tuple[str, ...]) -> list[Path]:
     return sorted(files)
 
 
-def _git_diff_skill_files(root: Path, rev_range: str) -> list[Path]:
-    proc = subprocess.run(
-        [
-            "git",
-            "diff",
-            "--name-only",
-            "--diff-filter=ACMR",
-            rev_range,
-            "--",
-            ".cursor/skills/",
-        ],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+class GitScanError(RuntimeError):
+    """The published skill contents could not be verified."""
+
+
+def _git(root: Path, *arguments: str) -> bytes:
+    try:
+        proc = subprocess.run(["git", *arguments], cwd=root, capture_output=True, check=False)
+    except OSError as exc:
+        raise GitScanError("Git could not be run; push contents were not verified.") from exc
     if proc.returncode != 0:
-        return []
-    files: list[Path] = []
-    for line in proc.stdout.splitlines():
-        rel = line.strip()
-        if not rel:
-            continue
-        path = (root / rel).resolve()
-        if path.is_file():
-            files.append(path)
-    return sorted(set(files))
+        # Git stderr can include arbitrary ref/path text. Do not echo it.
+        raise GitScanError("Git could not resolve or read outgoing commits. Fetch the remote history and retry.")
+    return proc.stdout
 
 
-def _collect_files_for_pre_push(root: Path) -> list[Path] | None:
+def _git_committed_skill_documents(root: Path, revisions: list[str]) -> list[tuple[Path, str, str]]:
+    """Read committed blobs, including intermediate outgoing versions.
+
+    Checking each commit tree also catches skill content inherited by an
+    outgoing commit. Identical blobs are scanned once across all pushed refs.
     """
-    Read git pre-push hook stdin. Return file list to scan, or None if no skill paths changed.
-    """
+    commits: list[str] = []
+    seen_commits: set[str] = set()
+    for revision in revisions:
+        raw = _git(root, "rev-list", "--reverse", "--end-of-options", revision, "--")
+        for commit in raw.decode("ascii").splitlines():
+            if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit):
+                raise GitScanError("Git returned an invalid commit identifier.")
+            if commit not in seen_commits:
+                seen_commits.add(commit)
+                commits.append(commit)
+
+    documents: list[tuple[Path, str, str]] = []
+    seen_blobs: set[str] = set()
+    for commit in commits:
+        tree = _git(root, "ls-tree", "-r", "-z", commit, "--", ".cursor/skills/")
+        for entry in tree.split(b"\0"):
+            if not entry:
+                continue
+            try:
+                metadata, raw_path = entry.split(b"\t", 1)
+                mode, kind, raw_oid = metadata.decode("ascii").split()
+                relative = raw_path.decode("utf-8")
+                oid = raw_oid
+            except (ValueError, UnicodeDecodeError) as exc:
+                raise GitScanError("Git returned an unreadable skill tree entry.") from exc
+            if not relative.startswith(".cursor/skills/") or not relative.lower().endswith(".md"):
+                continue
+            if kind != "blob" or mode not in {"100644", "100755"}:
+                raise GitScanError("A committed Markdown skill is a link or unsupported file type; its content cannot be verified.")
+            if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", oid):
+                raise GitScanError("Git returned an invalid blob identifier.")
+            if oid in seen_blobs:
+                continue
+            seen_blobs.add(oid)
+            try:
+                content = _git(root, "cat-file", "blob", oid).decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise GitScanError("A committed Markdown skill is not UTF-8; its content cannot be verified.") from exc
+            documents.append((root / relative, content, commit[:12]))
+    return documents
+
+
+def _git_range_skill_documents(root: Path, rev_range: str) -> list[tuple[Path, str, str]]:
+    return _git_committed_skill_documents(root, [rev_range])
+
+
+def _collect_documents_for_pre_push(root: Path) -> list[tuple[Path, str, str]]:
+    """Read Git's pre-push refs; never substitute working-tree contents."""
     if sys.stdin.isatty():
-        return _collect_files(root, DEFAULT_GLOBS)
-
-    lines = [ln for ln in sys.stdin.read().splitlines() if ln.strip()]
-    if not lines:
-        return _collect_files(root, DEFAULT_GLOBS)
-
-    to_scan: set[Path] = set()
-    for line in lines:
-        parts = line.split()
-        if len(parts) < 4:
+        raise GitScanError("Pre-push mode requires Git's ref updates on stdin. Use paths for a working-tree scan.")
+    revisions: list[str] = []
+    for line in sys.stdin.read().splitlines():
+        if not line.strip():
             continue
-        local_sha = parts[1]
-        remote_sha = parts[3]
+        parts = line.split()
+        if len(parts) != 4:
+            raise GitScanError("Malformed pre-push ref update; push contents were not verified.")
+        local_sha, remote_sha = parts[1].lower(), parts[3].lower()
+        if any(not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", sha) for sha in (local_sha, remote_sha)):
+            raise GitScanError("Invalid pre-push commit identifier; push contents were not verified.")
+        if set(local_sha) == {"0"}:
+            continue  # A deleted remote ref publishes no local objects.
+        # Resolve the tip as a commit even when rev-list would otherwise be empty.
+        _git(root, "rev-parse", "--verify", f"{local_sha}^{{commit}}")
         if set(remote_sha) == {"0"}:
-            return _collect_files(root, DEFAULT_GLOBS)
-        to_scan.update(_git_diff_skill_files(root, f"{remote_sha}..{local_sha}"))
-
-    if not to_scan:
-        return None
-    return sorted(to_scan)
+            revisions.append(local_sha)  # New branch: inspect all reachable history.
+        else:
+            _git(root, "rev-parse", "--verify", f"{remote_sha}^{{commit}}")
+            revisions.append(f"{remote_sha}..{local_sha}")
+    return _git_committed_skill_documents(root, revisions)
 
 
 def _overrides_path(root: Path) -> Path:
@@ -241,15 +280,7 @@ def _scan_files(
     github_actions: bool,
     interactive: bool,
 ) -> int:
-    if not files:
-        print("Skill Guard: no files matched .cursor/skills/** — nothing to scan.")
-        return 0
-
-    guard = SkillGuardrail()
-    overrides = _load_overrides(root)
-    any_blocking = False
-    pause_entries: list[tuple[str, object]] = []
-
+    documents: list[tuple[Path, str, str | None]] = []
     for path in files:
         try:
             content = path.read_text(encoding="utf-8")
@@ -258,9 +289,29 @@ def _scan_files(
                 display = path.relative_to(root)
             except ValueError:
                 display = path
-            print(f"Skill Guard: skip binary or non-UTF-8 file: {display}")
+            print(f"Skill Guard: skip binary or non-UTF-8 file: {scrub_text(str(display))}")
             continue
+        documents.append((path, content, None))
+    return _scan_documents(root, documents, min_rank, github_actions, interactive)
 
+
+def _scan_documents(
+    root: Path,
+    documents: list[tuple[Path, str, str | None]],
+    min_rank: int,
+    github_actions: bool,
+    interactive: bool,
+) -> int:
+    if not documents:
+        print("Skill Guard: no files matched .cursor/skills/** — nothing to scan.")
+        return 0
+
+    guard = SkillGuardrail()
+    overrides = _load_overrides(root)
+    any_blocking = False
+    pause_entries: list[tuple[str, object]] = []
+
+    for path, content, revision in documents:
         result = guard.scan(content)
         decision = apply_overrides(result, overrides)
         blocking = [
@@ -273,6 +324,9 @@ def _scan_files(
             display = path.relative_to(root)
         except ValueError:
             display = path
+        if revision:
+            display = f"{display} @ {revision}"
+        display = scrub_text(str(display))
 
         if interactive and blocking and sys.stdin.isatty():
             overrides = _interactive_resolve(root, blocking, overrides)
@@ -311,12 +365,18 @@ def _scan_files(
             )
         return 1
 
-    print(f"\nSkill Guard: {len(files)} file(s) passed — agent may continue.")
+    print(f"\nSkill Guard: {len(documents)} skill document(s) passed — agent may continue.")
     return 0
 
 
 def _github_annotation(path: Path, line: int | None, title: str, message: str) -> None:
-    rel = path.as_posix()
+    def escape(value: str, *, property: bool = False) -> str:
+        value = value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        return value.replace(":", "%3A").replace(",", "%2C") if property else value
+
+    rel = escape(scrub_text(path.as_posix()), property=True)
+    title = escape(title, property=True)
+    message = escape(message)
     if line:
         print(f"::error file={rel},line={line},title={title}::{message}")
     else:
@@ -356,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--git-range",
         metavar="REV",
-        help="Only scan skill files changed in a git revision range (e.g. origin/main..HEAD)",
+        help="Scan committed skill blobs throughout a git revision range (e.g. origin/main..HEAD)",
     )
     parser.add_argument(
         "--interactive",
@@ -368,17 +428,16 @@ def main(argv: list[str] | None = None) -> int:
     root = args.root.resolve()
     min_rank = _SEVERITY_RANK[args.min_severity]
 
-    if args.pre_push:
-        files = _collect_files_for_pre_push(root)
-        if files is None:
-            print("Skill Guard: no .cursor/skills/ changes in this push — OK.")
-            return 0
-    elif args.git_range:
-        files = _git_diff_skill_files(root, args.git_range)
-        if not files:
-            print(f"Skill Guard: no skill files in git range {args.git_range!r}.")
-            return 0
-    elif args.paths:
+    if args.pre_push or args.git_range is not None:
+        if args.pre_push and args.git_range is not None:
+            parser.error("Choose either --pre-push or --git-range.")
+        try:
+            documents = _collect_documents_for_pre_push(root) if args.pre_push else _git_range_skill_documents(root, args.git_range)
+        except GitScanError as exc:
+            print(f"Skill Guard: push blocked. {exc}")
+            return 1
+        return _scan_documents(root, documents, min_rank, args.github_actions, args.interactive and sys.stdin.isatty())
+    if args.paths:
         files = [p.resolve() for p in args.paths if p.is_file()]
     else:
         files = _collect_files(root, DEFAULT_GLOBS)

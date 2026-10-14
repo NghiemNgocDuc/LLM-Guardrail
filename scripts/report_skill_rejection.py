@@ -10,6 +10,7 @@ Report a Skill Guard rejection to the dashboard (requires login token).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -19,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from guardrails.skill import SkillGuardrail  # noqa: E402
+from guardrails.skill import SkillGuardrail, redact_skill_excerpt  # noqa: E402
 from guardrails.skill_overrides import apply_overrides, finding_key  # noqa: E402
 
 
@@ -70,7 +71,8 @@ def main(argv: list[str] | None = None) -> int:
             "filename": path.name,
             "source": args.source,
             "rejection_summary": decision.rejection_summary,
-            "content_preview": content[:500],
+            "content_preview": redact_skill_excerpt(content, max_length=500),
+            "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
             "findings": findings,
         },
         timeout=30,
