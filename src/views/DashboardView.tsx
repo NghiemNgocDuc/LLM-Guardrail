@@ -104,7 +104,7 @@ export default function DashboardView() {
   const recentLogs = data?.recent_logs ?? [];
   const timeSeries = data?.time_series ?? [];
   const gridStyle = { stroke: "var(--gr-border)", strokeDasharray: "3 5", vertical: false };
-  const tickStyle = { fontSize: 11, fill: "var(--gr-muted)", fontFamily: "var(--gr-mono)" };
+  const tickStyle = { fontSize: 11, fill: "var(--gr-muted)", fontFamily: "var(--gr-font)" };
 
   return <div className="gr-dashboard">
     <header className="gr-dash-header">
