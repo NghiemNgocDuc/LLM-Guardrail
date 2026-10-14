@@ -5,6 +5,7 @@ Uses the same Redis backend when available; falls back to in-memory.
 """
 
 import time
+import uuid
 from collections import defaultdict, deque
 
 from fastapi import Request
@@ -20,16 +21,21 @@ _redis: Redis | None = None
 _ip_windows: dict[str, deque] = defaultdict(deque)
 _WINDOW = 60.0
 _DEFAULT_RPM = 200
+_SENSITIVE_MUTATION_RPM = 30
+_SENSITIVE_PREFIXES = ("/auth/clerk-webhook", "/admin", "/billing", "/api-keys")
 _global_rate_sha: str | None = None
 
 _GLOBAL_RATE_LUA = """
 local key   = KEYS[1]
 local now   = tonumber(ARGV[1])
 local member = ARGV[2]
+local limit = tonumber(ARGV[3])
 
 redis.call('ZREMRANGEBYSCORE', key, 0, now - 60)
 local count = redis.call('ZCARD', key)
-redis.call('ZADD', key, now, member)
+if count < limit then
+    redis.call('ZADD', key, now, member)
+end
 redis.call('EXPIRE', key, 65)
 return count
 """
@@ -77,9 +83,16 @@ async def _check_redis(redis: Redis, ip: str, rpm: int) -> None:
     if _global_rate_sha is None:
         _global_rate_sha = await redis.script_load(_GLOBAL_RATE_LUA)
 
-    count = await redis.evalsha(_global_rate_sha, 1, key, str(now), str(now))
+    member = f"{now}:{uuid.uuid4().hex}"
+    count = await redis.evalsha(_global_rate_sha, 1, key, str(now), member, str(rpm))
     if int(count) >= rpm:
         raise ValueError("rate_exceeded")
+
+
+def _sensitive_mutation_group(path: str, method: str) -> str | None:
+    if method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+    return next((prefix for prefix in _SENSITIVE_PREFIXES if path == prefix or path.startswith(prefix + "/")), None)
 
 
 class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
@@ -91,17 +104,19 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
 
         ip = _ip_key(request)
 
-        if path.startswith(("/auth/clerk-webhook", "/admin", "/billing", "/api-keys")):
-            rpm = 30
-        else:
-            rpm = _DEFAULT_RPM
-
+        sensitive_group = _sensitive_mutation_group(path, request.method)
         redis = await _get_redis()
         try:
             if redis:
-                await _check_redis(redis, ip, rpm)
+                await _check_redis(redis, ip, _DEFAULT_RPM)
             else:
-                _check_memory(ip, rpm)
+                _check_memory(ip, _DEFAULT_RPM)
+            if sensitive_group:
+                bucket = f"mutation:{sensitive_group}:{ip}"
+                if redis:
+                    await _check_redis(redis, bucket, _SENSITIVE_MUTATION_RPM)
+                else:
+                    _check_memory(bucket, _SENSITIVE_MUTATION_RPM)
         except ValueError:
             return JSONResponse(
                 status_code=429,
