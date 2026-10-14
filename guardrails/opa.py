@@ -100,7 +100,7 @@ def _client() -> httpx.Client:
     is a short bounded HTTP hop, see the timeout contract above)."""
     global _CLIENT
     if _CLIENT is None:
-        _CLIENT = httpx.Client(base_url=_default_url(), timeout=_timeout())
+        _CLIENT = httpx.Client(base_url=_default_url(), timeout=_timeout(), trust_env=not get_settings().PRIVATE_MODE)
     return _CLIENT
 
 

@@ -6,6 +6,7 @@ from app.services.llm.groq import GroqAdapter
 
 def test_default_backend_resolves_to_groq(monkeypatch):
     monkeypatch.setattr(llm.settings, "DEFAULT_LLM_BACKEND", "groq")
+    monkeypatch.setattr(llm.settings, "DEFAULT_MODEL", "openai/gpt-oss-20b")
 
     adapter, backend, model = llm.resolve_adapter(None, None, None, None)
 

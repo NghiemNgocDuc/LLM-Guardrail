@@ -1,11 +1,11 @@
 """
-Optional at-rest encryption for the full_prompt audit column.
+At-rest encryption for the optional full_prompt audit column.
 
 When ENCRYPTION_KEY is set (Fernet key, `python -c "from cryptography.fernet
 import Fernet; print(Fernet.generate_key().decode())"`), stored full prompts are
-AES-GCM encrypted; the admin replay endpoint decrypts them on the fly. Without
-the key, prompts are stored as plain text (previous behaviour) and this module
-is a no-op passthrough.
+encrypted with Fernet's authenticated AES-CBC format; the admin replay endpoint
+decrypts them on the fly. Without a key, full prompts are omitted from storage.
+Malformed configured keys fail closed instead of storing plaintext.
 """
 from __future__ import annotations
 
@@ -16,25 +16,35 @@ from app.config import get_settings
 _PREFIX = "enc:v1:"
 
 _fernet: Fernet | None = None
+_fernet_key: str | None = None
+
+
+class PromptEncryptionError(ValueError):
+    """Encryption is configured incorrectly or encrypted evidence is unreadable."""
 
 
 def _client() -> Fernet | None:
-    global _fernet
-    if _fernet is None:
-        key = get_settings().ENCRYPTION_KEY or ""
-        if not key:
-            return None
+    global _fernet, _fernet_key
+    key = get_settings().ENCRYPTION_KEY or ""
+    if not key:
+        _fernet = None
+        _fernet_key = None
+        return None
+    if _fernet is None or _fernet_key != key:
         try:
             _fernet = Fernet(key.encode())
         except (ValueError, TypeError):
             _fernet = None
+            _fernet_key = None
+            raise PromptEncryptionError("ENCRYPTION_KEY must be a valid Fernet key") from None
+        _fernet_key = key
     return _fernet
 
 
-def encrypt_prompt(text: str) -> str:
+def encrypt_prompt(text: str) -> str | None:
     client = _client()
     if client is None:
-        return text
+        return None
     return _PREFIX + client.encrypt(text.encode()).decode()
 
 
@@ -43,8 +53,8 @@ def decrypt_prompt(text: str) -> str:
         return text
     client = _client()
     if client is None:
-        return text
+        raise PromptEncryptionError("The encryption key is required to read encrypted audit evidence")
     try:
         return client.decrypt(text[len(_PREFIX):].encode()).decode()
     except (InvalidToken, ValueError):
-        return text
+        raise PromptEncryptionError("Encrypted audit evidence could not be decrypted") from None

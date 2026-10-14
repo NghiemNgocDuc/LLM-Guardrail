@@ -20,9 +20,12 @@ def _get_embedding_model():
 
 def init() -> None:
     global _pinecone_initialized
+    settings = get_settings()
+    if settings.PRIVATE_MODE:
+        _pinecone_initialized = False
+        return
     if _pinecone_initialized:
         return
-    settings = get_settings()
     if not settings.PINECONE_API_KEY:
         logger.info("vectorstore.not_configured — skipping Pinecone init")
         return
@@ -43,7 +46,7 @@ def init() -> None:
 
 
 def _index():
-    if not _pinecone_initialized:
+    if get_settings().PRIVATE_MODE or not _pinecone_initialized:
         return None
     from pinecone import Pinecone
     settings = get_settings()
@@ -62,6 +65,8 @@ async def upsert_conversation(
     status: str,
     metadata: dict[str, Any] | None = None,
 ) -> None:
+    if get_settings().PRIVATE_MODE:
+        return
     idx = _index()
     if idx is None:
         return
@@ -91,6 +96,8 @@ async def upsert_conversation(
 
 
 async def upsert_memory(memory_id: str, content: str, metadata: dict[str, Any] | None = None) -> None:
+    if get_settings().PRIVATE_MODE:
+        return
     idx = _index()
     if idx is None:
         return
@@ -109,6 +116,8 @@ async def upsert_memory(memory_id: str, content: str, metadata: dict[str, Any] |
 
 
 async def query_memories(query: str, user_id: str | None = None, top_k: int = 5) -> list[dict]:
+    if get_settings().PRIVATE_MODE:
+        return []
     idx = _index()
     if idx is None:
         return []
@@ -130,6 +139,8 @@ async def query_memories(query: str, user_id: str | None = None, top_k: int = 5)
 
 
 async def semantic_similarity(text: str, top_k: int = 3) -> list[dict]:
+    if get_settings().PRIVATE_MODE:
+        return []
     idx = _index()
     if idx is None:
         return []

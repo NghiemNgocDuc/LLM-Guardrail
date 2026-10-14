@@ -484,7 +484,7 @@ async def replay_request(
             detail=_t("admin.replay_no_full_prompt"),
         )
 
-    # full_prompt is AES-GCM encrypted at rest when ENCRYPTION_KEY is set
+    # full_prompt uses Fernet authenticated encryption when ENCRYPTION_KEY is set
     prompt = decrypt_prompt(log.full_prompt)
 
     # Current policy for the log's org (system defaults if none — mirrors /chat)

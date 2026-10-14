@@ -1,4 +1,4 @@
-from app.config import get_settings
+from app.config import enforce_private_llm, get_settings
 from app.http_client import get_http_client
 from app.services.llm.base import BaseLLMAdapter, LLMResponse
 
@@ -7,6 +7,7 @@ settings = get_settings()
 
 class OpenAICompatibleAdapter(BaseLLMAdapter):
     async def complete(self, prompt: str, model: str, temperature: float, max_tokens: int) -> LLMResponse:
+        enforce_private_llm("openai_compatible", model, settings=settings)
         if not settings.OPENAI_COMPATIBLE_BASE_URL:
             raise ValueError("OPENAI_COMPATIBLE_BASE_URL is not configured")
         if not settings.OPENAI_COMPATIBLE_API_KEY:

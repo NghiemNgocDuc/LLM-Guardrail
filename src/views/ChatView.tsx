@@ -50,6 +50,7 @@ function MarkdownResponse({ text }: { text: string }) {
 }
 
 const HISTORY_KEY = "guardrails_chat_history";
+const PRIVATE_MODE = import.meta.env.VITE_PRIVATE_MODE === "true";
 const MAX_HISTORY = 50;
 const SAMPLE_PROMPTS = [
   { label: "Everyday request", kind: "safe", text: "Explain how an LLM guardrail protects an application in three short bullet points." },
@@ -57,6 +58,7 @@ const SAMPLE_PROMPTS = [
   { label: "Sensitive data", kind: "pii", text: "Summarize this fictional record: SSN 123-45-6789." },
 ];
 function loadHistory(): HistoryMessage[] {
+  if (PRIVATE_MODE) return [];
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
     return Array.isArray(parsed) ? parsed.filter((item): item is HistoryMessage => {
@@ -74,6 +76,7 @@ function loadHistory(): HistoryMessage[] {
   } catch { return []; }
 }
 function saveHistory(history: HistoryMessage[]) {
+  if (PRIVATE_MODE) return;
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-MAX_HISTORY))); } catch { /* Storage may be unavailable. */ }
 }
 
@@ -192,7 +195,7 @@ export default function ChatView() {
     setMessages((current) => { const next = current.map((message) => "status" in message.result && message.result.request_id === feedback.request_id ? { ...message, feedback } : message); saveHistory(next); return next; });
   }
   async function clearHistory() {
-    if (!await confirm({ title: "Clear conversation history?", description: "This removes saved playground runs from this browser. Your server audit logs stay available in Request logs.", confirmLabel: "Clear history", danger: true })) return;
+    if (!await confirm({ title: "Clear conversation history?", description: PRIVATE_MODE ? "This clears this tab's runs and any older saved playground history in this browser. Server audit records stay available in Request logs." : "This removes saved playground runs from this browser. Your server audit logs stay available in Request logs.", confirmLabel: "Clear history", danger: true })) return;
     try { localStorage.removeItem(HISTORY_KEY); } catch { /* The current session can still be cleared. */ }
     setMessages([]);
   }
@@ -233,10 +236,10 @@ export default function ChatView() {
         <button type="button" className="chat-run-button" onClick={() => void send()} disabled={loading || !prompt.trim()}>{loading ? <><span className="chat-loading-indicator" />Running request</> : <>{clientBlock ? "Test blocked prompt" : "Run prompt"}<AppIcon name="arrow" size={17} /></>}</button>
         <div className="chat-composer-shortcut">Keyboard shortcut <kbd>Ctrl / ⌘</kbd><kbd>Enter</kbd></div>
         <div className="chat-examples"><div className="chat-examples-heading"><span className="chat-small-label">Start with an example</span><span>Fills your draft</span></div>{SAMPLE_PROMPTS.map((sample) => <button type="button" className="chat-sample" key={sample.kind} onClick={() => setDraft(sample.text)}><span className={`chat-sample-dot is-${sample.kind}`} /><span>{sample.label}</span><AppIcon name="arrow" size={14} /></button>)}</div>
-        <p className="chat-composer-note">Requests use your organization's configured provider and policy.</p>
+        <p className="chat-composer-note">{PRIVATE_MODE ? "Requests use the self-hosted model. Conversation history stays in this tab and is cleared when you reload." : "Requests use your organization's configured provider and policy."}</p>
       </section>
       <section className="chat-output" aria-labelledby="chat-output-title" aria-busy={loading}>
-        <div className="chat-output-heading"><div><h2 id="chat-output-title">Response inspector</h2><p>{messages.length ? `${messages.length} ${messages.length === 1 ? "run" : "runs"} in this browser` : "Your next request starts here"}</p></div>{messages.length > 0 && <button type="button" className="chat-text-button chat-clear-button" onClick={clearHistory} disabled={loading}>Clear history</button>}</div>
+        <div className="chat-output-heading"><div><h2 id="chat-output-title">Response inspector</h2><p>{messages.length ? `${messages.length} ${messages.length === 1 ? "run" : "runs"} ${PRIVATE_MODE ? "in this tab" : "in this browser"}` : "Your next request starts here"}</p></div>{(messages.length > 0 || PRIVATE_MODE) && <button type="button" className="chat-text-button chat-clear-button" onClick={clearHistory} disabled={loading}>Clear history</button>}</div>
         {tokensRemaining != null && <div className="chat-wallet"><span>Last reported balance</span><strong>{Number(tokensRemaining).toLocaleString()} <span>tokens</span></strong></div>}
         <div className="chat-output-body" ref={outputRef}>
           {!messages.length && !loading && <div className="chat-empty"><div className="chat-empty-symbol"><AppIcon name="shield" size={28} /></div><span className="chat-eyebrow">READY WHEN YOU ARE</span><h3>See your guardrails in action.</h3><p>Run a prompt to inspect the response, policy decisions, and request details in one place.</p><div className="chat-empty-flow"><span>Prompt</span><AppIcon name="arrow" size={14} /><span className="chat-empty-flow-guard">Guardrails</span><AppIcon name="arrow" size={14} /><span>Response</span></div><button type="button" className="chat-text-button" onClick={() => setDraft(SAMPLE_PROMPTS[0].text)}>Try an everyday request <AppIcon name="arrow" size={15} /></button></div>}

@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.config import get_settings
 from app.deps import CurrentUser
 from app.models import Mandate, MandateRun, MandateReceipt, Capability, ProvenanceReference
 from app.services.mandate_service import (
@@ -145,6 +146,8 @@ async def retry_run(run_id: str, request: Request, user: CurrentUser, db: AsyncS
 GO_GATEWAY_URL = None  # lazy from env
 
 async def _try_go_gateway(body: GatewayCallIn, authorization: str | None):
+    if get_settings().PRIVATE_MODE:
+        return None
     import os
     url = os.getenv("MANDATE_GATEWAY_URL", "http://mandate-gateway:8182")
     if not url:
@@ -353,6 +356,8 @@ async def bench(body: BenchIn, user: CurrentUser, db: AsyncSession = Depends(get
         return times
 
     async def time_go(handle: str) -> list[float] | None:
+        if get_settings().PRIVATE_MODE:
+            return None
         import os
         url = os.getenv("MANDATE_GATEWAY_URL", "http://mandate-gateway:8182")
         if not url:

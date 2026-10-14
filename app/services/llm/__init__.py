@@ -20,7 +20,7 @@ from app.services.llm.openai import OpenAIAdapter
 from app.services.llm.openai_compatible import OpenAICompatibleAdapter
 from app.services.llm.ollama import OllamaAdapter
 from app.services.llm.mock import MockAdapter
-from app.config import get_settings
+from app.config import enforce_private_llm, get_settings
 
 settings = get_settings()
 
@@ -52,6 +52,11 @@ _DEFAULT_MODELS: dict[str, str] = {
 }
 
 
+def get_available_backends() -> list[str]:
+    """Do not advertise hosted providers on a private deployment."""
+    return ["ollama"] if settings.PRIVATE_MODE else list(_ADAPTERS)
+
+
 def resolve_adapter(
     request_backend: str | None,
     org_backend: str | None,
@@ -63,7 +68,12 @@ def resolve_adapter(
     Priority: request override → org policy → global default.
     """
     backend = request_backend or org_backend or settings.DEFAULT_LLM_BACKEND
-    model   = request_model   or org_model   or _DEFAULT_MODELS.get(backend, settings.DEFAULT_MODEL)
+    default_model = (
+        settings.DEFAULT_MODEL if backend == settings.DEFAULT_LLM_BACKEND
+        else _DEFAULT_MODELS.get(backend, settings.DEFAULT_MODEL)
+    )
+    model = request_model or org_model or default_model
+    enforce_private_llm(backend, model, settings=settings)
 
     adapter = _ADAPTERS.get(backend)
     if not adapter:
@@ -79,6 +89,21 @@ def _candidate_chain(backend: str, model: str, fallbacks: list[str] | None) -> l
     "backend/model" entries), then the gateway-level LLM_FAILOVER_BACKENDS
     list. Duplicate backends are skipped.
     """
+    enforce_private_llm(backend, model, settings=settings)
+    if settings.PRIVATE_MODE:
+        # Validate the entire policy before calling even the first candidate.
+        # A forbidden fallback is a configuration error, not permission to send
+        # the prompt to a hosted model if local inference later fails.
+        for entry in fallbacks or []:
+            cand_backend, _, cand_model = entry.partition("/")
+            enforce_private_llm(
+                cand_backend.strip(), cand_model.strip() or settings.DEFAULT_MODEL,
+                settings=settings,
+            )
+        for candidate in (settings.LLM_FAILOVER_BACKENDS or "").split(","):
+            if candidate.strip():
+                enforce_private_llm(candidate.strip(), model, settings=settings)
+        return [(backend, model)]
     chain: list[tuple[str, str]] = [(backend, model)]
     existing = {backend}
     for entry in fallbacks or []:

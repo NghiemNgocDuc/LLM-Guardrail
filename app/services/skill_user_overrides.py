@@ -40,6 +40,21 @@ def approval_key(filename: str | None, digest: str, finding: SkillFinding | dict
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
+def stored_approval_key(filename: str | None, finding: dict) -> str:
+    """Read identity only from a server-persisted rejection, never scan input.
+
+    Private records omit filenames and snippets after the server computes this
+    key. Keeping it separate from approval_key prevents reported JSON from
+    injecting a precomputed approval into normal enforcement.
+    """
+    if finding.get("private_identity_version") == 1:
+        key = finding.get("server_approval_key")
+        if not isinstance(key, str) or not _DIGEST.fullmatch(key):
+            raise ValueError("private rejection identity is missing")
+        return key
+    return approval_key(filename, finding.get("content_sha256"), finding)
+
+
 def _store(raw: object) -> dict:
     if not isinstance(raw, dict) or raw.get("version") != APPROVAL_VERSION or not isinstance(raw.get("org_scopes"), dict):
         return {"version": APPROVAL_VERSION, "org_scopes": {}}

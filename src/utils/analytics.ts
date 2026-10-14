@@ -3,9 +3,10 @@ import type { components } from "../api-types";
 
 type UserOut = components["schemas"]["UserOut"];
 type ChatResponse = components["schemas"]["ChatResponse"];
+const PRIVATE_MODE = import.meta.env.VITE_PRIVATE_MODE === "true";
 
 export function identifyUser(user: UserOut | null): void {
-  if (!posthog || !posthog.isFeatureEnabled) return;
+  if (PRIVATE_MODE || !posthog || !posthog.isFeatureEnabled) return;
   if (!user) { posthog.reset(); return; }
   posthog.identify(user.id, {
     email: user.email,
@@ -16,7 +17,7 @@ export function identifyUser(user: UserOut | null): void {
 }
 
 export function trackEvent(name: string, props?: Record<string, unknown>): void {
-  if (!posthog || !posthog.isFeatureEnabled) return;
+  if (PRIVATE_MODE || !posthog || !posthog.isFeatureEnabled) return;
   if (typeof posthog.capture === "function") {
     posthog.capture(name, props);
   }

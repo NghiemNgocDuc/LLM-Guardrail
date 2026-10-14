@@ -1,0 +1,25 @@
+{
+    admin off
+    log {
+        level ERROR
+    }
+}
+
+{$PRIVATE_HOSTNAME} {
+    encode zstd gzip
+    request_body {
+        max_size 2MB
+    }
+    header {
+        -Server
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+        Strict-Transport-Security "max-age=31536000"
+    }
+    reverse_proxy api:8000 {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    # Access logging is intentionally disabled: URLs may contain private data.
+}

@@ -13,6 +13,7 @@ Flow:
 """
 import asyncio
 import hashlib
+import json as json_lib
 import time
 import uuid
 from datetime import datetime, timezone
@@ -32,6 +33,7 @@ from app.models import ChatFeedback, OrgPolicy, RequestLog, User
 from app.schemas import ChatRequest, ChatResponse, FeedbackOut, FeedbackRequest, GuardrailResult
 from app.services.llm import LLMResponse, call_llm, stream_llm
 from app.services.prompt_crypto import encrypt_prompt
+from app.services.private_audit import PRIVATE_PREVIEW, private_reason_code
 from app.services.response_cache import get_cached, set_cached
 from app.services.webhook_deliveries import record_delivery
 from app.services.token_wallet import (
@@ -117,6 +119,8 @@ async def _fire_webhook(
       X-Guardrail-Timestamp: <unix seconds>
     Receivers should reject unsigned webhooks unless org-level signing is off.
     """
+    if settings.PRIVATE_MODE:
+        return
     headers = {"Content-Type": "application/json"}
     if webhook_secret:
         signature, timestamp = sign_payload(payload, webhook_secret)
@@ -148,10 +152,14 @@ async def _fire_webhook(
 
 def _safe_preview(prompt: str, pii_found: bool) -> str:
     """First 120 chars; redact if PII was detected, always scrub secrets."""
-    preview = prompt[:120]
+    if getattr(settings, "PRIVATE_MODE", False):
+        return PRIVATE_PREVIEW
     if pii_found:
         return "[REDACTED — PII detected]"
-    return scrub_text(preview)
+    # Redact the complete value first: shortening a credential/PII value
+    # before matching can otherwise turn it into an unrecognizable fragment.
+    redacted = PIIRedactor().redact(prompt).redacted_text
+    return scrub_text(redacted)[:120]
 
 
 def _sha256(text: str) -> str:
@@ -395,7 +403,7 @@ async def chat(
     # ── 10. Call LLM (with redacted prompt if applicable) ─────────────────
     llm_backend = body.backend or org_backend or settings.DEFAULT_LLM_BACKEND
     llm_model   = body.model   or org_model   or settings.DEFAULT_MODEL
-    use_cache = settings.RESPONSE_CACHE_ENABLED and bool(output_rules.get("response_cache"))
+    use_cache = not settings.PRIVATE_MODE and settings.RESPONSE_CACHE_ENABLED and bool(output_rules.get("response_cache"))
     fallbacks = compliance_rules.get("llm_fallbacks")  # litellm provider failover
     try:
         cached_text = None
@@ -513,7 +521,7 @@ async def chat(
         metadata={"org_id": api_key.org_id, "backend": llm_resp.backend, "model": llm_resp.model},
     )
     # ── Memory auto-extract (Mem0 style, best-effort, non-blocking) ──────
-    if status_str == "delivered" and llm_resp.text:
+    if not settings.PRIVATE_MODE and status_str == "delivered" and llm_resp.text:
         try:
             from app.services.memory import llm_extract_memories, create_memory
             candidates = await llm_extract_memories(body.prompt, llm_resp.text, api_key.owner_id)
@@ -663,7 +671,11 @@ async def chat_stream(
     guardrail_rules = dict(input_rules)
     if pii_mode == "redact":
         guardrail_rules["block_pii"] = False
-    in_guard  = InputGuardrail(guardrail_rules)
+    in_guard  = InputGuardrail(
+        guardrail_rules,
+        custom_rule_rego=policy.custom_rule_rego if policy else None,
+        org_id=api_key.org_id,
+    )
     in_result = in_guard.check(prompt_for_llm)
     pii_found = redaction_result is not None and redaction_result.pii_found
 
@@ -746,6 +758,10 @@ async def chat_stream(
                 input_tokens = output_tokens = 0
                 llm_model   = body.model   or org_model   or settings.DEFAULT_MODEL
                 llm_backend = body.backend or org_backend or settings.DEFAULT_LLM_BACKEND
+                private_stream = settings.PRIVATE_MODE
+                completed = False
+                pending_chunk = None
+                stream_iter = None
 
                 try:
                     stream_iter = stream_llm(
@@ -758,21 +774,33 @@ async def chat_stream(
                     ).__aiter__()
                     while True:
                         try:
-                            chunk = await asyncio.wait_for(anext(stream_iter), timeout=_SSE_KEEPALIVE_S)
+                            if private_stream:
+                                # A keepalive must not cancel the model iterator:
+                                # CPU inference may need longer than one interval.
+                                if pending_chunk is None:
+                                    pending_chunk = asyncio.create_task(anext(stream_iter))
+                                chunk = await asyncio.wait_for(asyncio.shield(pending_chunk), timeout=_SSE_KEEPALIVE_S)
+                                pending_chunk = None
+                            else:
+                                chunk = await asyncio.wait_for(anext(stream_iter), timeout=_SSE_KEEPALIVE_S)
                         except asyncio.TimeoutError:
                             # keep the SSE connection alive during long generations
                             yield _sse({"type": "ping"})
                             continue
+                        except StopAsyncIteration:
+                            break
                         if chunk.done:
+                            completed = True
                             input_tokens = chunk.input_tokens
                             output_tokens = chunk.output_tokens
                             llm_model   = chunk.model
                             llm_backend = chunk.backend
                         else:
                             accumulated.append(chunk.token)
-                            yield _sse({"type": "token", "content": chunk.token})
-                except StopAsyncIteration:
-                    pass
+                            if not private_stream:
+                                yield _sse({"type": "token", "content": chunk.token})
+                    if private_stream and not completed:
+                        raise ValueError("Private model stream ended without a completion marker")
                 except Exception as e:
                     latency_ms = int((time.monotonic() - start) * 1000)
                     await _log_request(
@@ -789,6 +817,15 @@ async def chat_stream(
                     await stream_db.commit()
                     yield _sse({"type": "error", "status": "error", "detail": _t("chat.llm_error")})
                     return
+                finally:
+                    if pending_chunk is not None:
+                        pending_chunk.cancel()
+                        try:
+                            await pending_chunk
+                        except (asyncio.CancelledError, Exception):
+                            pass
+                    if stream_iter is not None and hasattr(stream_iter, "aclose"):
+                        await stream_iter.aclose()
 
                 # ── Output guardrail (on full accumulated text) ───────────────────
                 full_response = "".join(accumulated)
@@ -850,6 +887,13 @@ async def chat_stream(
         else:
             in_reason = in_result.reason or ""
 
+        if private_stream and out_result.allowed:
+            # Emit only the final checked/restored/sanitized response. No raw
+            # model token crosses the boundary while the verdict is pending.
+            delivered = out_result.sanitized_output if out_result.sanitized_output is not None else full_response
+            for offset in range(0, len(delivered), 512):
+                yield _sse({"type": "token", "content": delivered[offset:offset + 512]})
+
         yield _sse({
             "type": "output_blocked" if not out_result.allowed else "done",
             "request_id": request_id,
@@ -901,6 +945,13 @@ async def _log_request(
     safe_output_reason = scrub_text(output_block_reason) if output_block_reason else output_block_reason
     # full_prompt is encrypted at rest, but also scrub before encrypt
     safe_full_prompt = scrub_text(full_prompt) if full_prompt else None
+    if getattr(settings, "PRIVATE_MODE", False):
+        safe_preview = PRIVATE_PREVIEW
+        safe_full_prompt = None
+        fired_rule = private_reason_code(fired_rule)
+        safe_input_reason = (fired_rule or "guardrail_event") if input_block_reason is not None else None
+        safe_output_reason = (fired_rule or "guardrail_event") if output_block_reason is not None else None
+        model, backend = "private-local", "local"
     log = RequestLog(
         api_key_id=api_key.id,
         org_id=api_key.org_id,

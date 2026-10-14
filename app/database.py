@@ -39,7 +39,8 @@ def get_engine():
 
         engine = create_async_engine(
             settings.DATABASE_URL,
-            echo=settings.DEBUG,
+            echo=settings.DEBUG and not settings.PRIVATE_MODE,
+            hide_parameters=True,
             pool_pre_ping=True,
             pool_size=10,
             max_overflow=20,

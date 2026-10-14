@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.config import get_settings, enforce_private_llm
 from app.deps import CurrentUser
 from app.i18n import _t
 from app.models import OrgPolicy
@@ -53,6 +54,13 @@ async def update_policy(
     if not current_user.org_id:
         raise HTTPException(status_code=404, detail=_t("policy.no_org"))
 
+    cfg = get_settings()
+    if cfg.PRIVATE_MODE:
+        try:
+            enforce_private_llm(body.llm_backend or "ollama", body.llm_model or cfg.DEFAULT_MODEL, settings=cfg)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     result = await db.execute(select(OrgPolicy).where(OrgPolicy.org_id == current_user.org_id))
     policy = result.scalar_one_or_none()
     if not policy:
@@ -93,6 +101,9 @@ async def update_policy(
 
     # Only update fields that were explicitly sent
     payload = body.model_dump(exclude_none=True)
+    for field in ("llm_backend", "llm_model"):
+        if field in body.model_fields_set:
+            payload[field] = getattr(body, field)
     if "custom_rule_rego" in body.model_fields_set:
         payload["custom_rule_rego"] = rego_value
     for field, value in payload.items():

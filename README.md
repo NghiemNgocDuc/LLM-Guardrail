@@ -18,6 +18,8 @@ FastAPI backend, React dashboard, and Docker deployment:
 Start with [Docker](#docker-quickstart) or [local development](#local-development).
 For hosting, see [Render deployment](DEPLOYMENT_RENDER.md); for availability
 alerts, see [UptimeRobot monitoring](#uptimerobot-monitoring).
+For self-hosted inference with no hosted AI providers or raw blocked audit
+content, see [Private self-hosting](docs/PRIVATE_SELF_HOSTING.md).
 
 ## Architecture
 

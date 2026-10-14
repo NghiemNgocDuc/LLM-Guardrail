@@ -21,7 +21,7 @@ from __future__ import annotations
 import os
 from typing import Any, AsyncIterator
 
-from app.config import get_settings
+from app.config import enforce_private_llm, get_settings
 from app.services.llm.base import BaseLLMAdapter, LLMResponse, LLMStreamChunk
 
 settings = get_settings()
@@ -61,6 +61,7 @@ class LitellmAdapter(BaseLLMAdapter):
         fallbacks: list[str] | None = None,
         cache: bool = False,
     ) -> LLMResponse:
+        enforce_private_llm("litellm", model, settings=settings)
         if litellm is None:
             raise RuntimeError(
                 "litellm backend requested but 'litellm' is not installed — run: pip install litellm"
@@ -101,6 +102,7 @@ class LitellmAdapter(BaseLLMAdapter):
         fallbacks: list[str] | None = None,
         cache: bool = False,
     ) -> AsyncIterator[LLMStreamChunk]:
+        enforce_private_llm("litellm", model, settings=settings)
         if litellm is None:
             raise RuntimeError(
                 "litellm backend requested but 'litellm' is not installed — run: pip install litellm"

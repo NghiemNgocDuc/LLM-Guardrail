@@ -1,7 +1,7 @@
 import json
 from app.http_client import get_http_client
 from app.services.llm.base import BaseLLMAdapter, LLMResponse, LLMStreamChunk
-from app.config import get_settings
+from app.config import enforce_private_llm, get_settings
 
 settings = get_settings()
 
@@ -14,6 +14,7 @@ class AnthropicAdapter(BaseLLMAdapter):
         return {**self._HEADERS_BASE, "x-api-key": settings.ANTHROPIC_API_KEY}
 
     async def complete(self, prompt: str, model: str, temperature: float, max_tokens: int) -> LLMResponse:
+        enforce_private_llm("anthropic", model, settings=settings)
         if not settings.ANTHROPIC_API_KEY:
             raise ValueError("ANTHROPIC_API_KEY is not configured")
 
@@ -40,6 +41,7 @@ class AnthropicAdapter(BaseLLMAdapter):
         )
 
     async def stream(self, prompt: str, model: str, temperature: float, max_tokens: int):
+        enforce_private_llm("anthropic", model, settings=settings)
         if not settings.ANTHROPIC_API_KEY:
             raise ValueError("ANTHROPIC_API_KEY is not configured")
 

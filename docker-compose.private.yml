@@ -1,0 +1,253 @@
+# Standalone private deployment. Do not merge this with docker-compose.yml.
+name: llm-guardrails-private
+
+x-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.fullstack
+      args:
+        VITE_PRIVATE_MODE: "true"
+        VITE_API_BASE_URL: ""
+        VITE_CLERK_PUBLISHABLE_KEY: ""
+        VITE_POSTHOG_API_KEY: ""
+        VITE_POSTHOG_HOST: ""
+        VITE_SENTRY_DSN: ""
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:noexec,nosuid,size=128M
+    environment:
+      APP_ENV: production
+      PRIVATE_MODE: "true"
+      DEBUG: "false"
+      LOG_LEVEL: WARNING
+      PYTHONDONTWRITEBYTECODE: "1"
+      WEB_CONCURRENCY: "1"
+      PORT: "8000"
+      SECRET_KEY: ${SECRET_KEY:?Set a strong SECRET_KEY in .env.private}
+      POSTGRES_USER: guardrails
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env.private}
+      POSTGRES_DB: guardrails
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      DATABASE_URL: ""
+      RATE_LIMIT_REDIS_URL: redis://:${REDIS_PASSWORD:?Set a strong REDIS_PASSWORD in .env.private}@redis:6379/0
+      PUBLIC_APP_URL: https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME to your DNS hostname}
+      ALLOWED_ORIGINS: https://${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME to your DNS hostname}
+      COOKIES_SECURE: "true"
+      DEFAULT_LLM_BACKEND: ollama
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-qwen3:1.7b}
+      OLLAMA_BASE_URL: http://ollama:11434
+      LLM_FAILOVER_BACKENDS: ""
+      OPA_URL: http://opa:8181
+      BILLING_ENABLED: "false"
+      FREE_SIGNUP_TOKENS: "0"
+      DAILY_TOKEN_BUDGET: "0"
+      DEMO_MODE: "false"
+      REQUIRE_EMAIL_VERIFICATION: "false"
+      RESPONSE_CACHE_ENABLED: "false"
+      ENCRYPTION_KEY: ""
+      GROQ_API_KEY: ""
+      OPENAI_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      GEMINI_API_KEY: ""
+      XAI_API_KEY: ""
+      GROK_API_KEY: ""
+      OPENAI_COMPATIBLE_API_KEY: ""
+      OPENAI_COMPATIBLE_BASE_URL: ""
+      PINECONE_API_KEY: ""
+      PINECONE_STORE_CONVERSATIONS: "false"
+      SENTRY_DSN: ""
+      POSTHOG_API_KEY: ""
+      PRODUCTBRIDGE_API_KEY: ""
+      CLERK_SECRET_KEY: ""
+      CLERK_JWKS_URL: ""
+      CLERK_JWT_KEY: ""
+      CLERK_WEBHOOK_SECRET: ""
+      SMTP_HOST: ""
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      SMTP_FROM: ""
+      RESEND_API_KEY: ""
+      RESEND_FROM: ""
+      STRIPE_SECRET_KEY: ""
+      STRIPE_WEBHOOK_SECRET: ""
+      STRIPE_PUBLISHABLE_KEY: ""
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      opa:
+        condition: service_started
+    networks: [private]
+    mem_limit: 768m
+    cpus: "0.5"
+    logging: *bounded-logging
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
+    security_opt: [no-new-privileges:true]
+    environment:
+      POSTGRES_USER: guardrails
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env.private}
+      POSTGRES_DB: guardrails
+    volumes:
+      - private_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [private]
+    mem_limit: 512m
+    cpus: "0.25"
+    logging: *bounded-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
+    security_opt: [no-new-privileges:true]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?Set a strong REDIS_PASSWORD in .env.private}
+    command: [redis-server, --appendonly, "yes", --requirepass, "${REDIS_PASSWORD:?Set a strong REDIS_PASSWORD in .env.private}"]
+    volumes:
+      - private_redisdata:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [private]
+    mem_limit: 128m
+    cpus: "0.1"
+    logging: *bounded-logging
+
+  opa:
+    image: openpolicyagent/opa:1.18.2
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:noexec,nosuid,size=32M
+    command: [run, --server, --addr=0.0.0.0:8181, --log-level=error]
+    networks: [private]
+    mem_limit: 128m
+    cpus: "0.1"
+    logging: *bounded-logging
+
+  ollama:
+    image: ollama/ollama:0.40.4
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:nosuid,nodev,size=256M
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_CONTEXT_LENGTH: "2048"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_MAX_QUEUE: "16"
+      OLLAMA_KEEP_ALIVE: 15m
+      OLLAMA_DEBUG: "false"
+    volumes:
+      - private_models:/root/.ollama
+    healthcheck:
+      test: [CMD, /bin/ollama, list]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks: [private]
+    mem_limit: 6g
+    cpus: "1.5"
+    logging: *bounded-logging
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    environment:
+      PRIVATE_HOSTNAME: ${PRIVATE_HOSTNAME:?Set PRIVATE_HOSTNAME to your DNS hostname}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile.private:/etc/caddy/Caddyfile:ro
+      - private_caddydata:/data
+      - private_caddyconfig:/config
+    tmpfs:
+      - /tmp:noexec,nosuid,size=32M
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [private, public]
+    mem_limit: 128m
+    cpus: "0.1"
+    logging: *bounded-logging
+
+  # Only setup downloads model weights. This disposable container has no DB,
+  # Redis, app secrets, or connection to the private runtime network.
+  model-pull:
+    image: ollama/ollama:0.40.4
+    profiles: [setup]
+    entrypoint: [/bin/sh, -ec]
+    environment:
+      MODEL: ${DEFAULT_MODEL:-qwen3:1.7b}
+      OLLAMA_HOST: 127.0.0.1:11434
+      OLLAMA_NO_CLOUD: "1"
+    command:
+      - |
+        /bin/ollama serve >/dev/null 2>&1 &
+        server_pid=$$!
+        trap 'kill "$$server_pid" 2>/dev/null || true' EXIT
+        attempts=0
+        until /bin/ollama list >/dev/null 2>&1; do
+          attempts=$$((attempts + 1))
+          if [ "$$attempts" -ge 30 ]; then exit 1; fi
+          sleep 1
+        done
+        /bin/ollama pull "$$MODEL"
+    volumes:
+      - private_models:/root/.ollama
+    networks: [setup_egress]
+    mem_limit: 512m
+    logging: *bounded-logging
+
+networks:
+  private:
+    internal: true
+  public:
+  setup_egress:
+
+volumes:
+  private_pgdata:
+  private_redisdata:
+  private_models:
+  private_caddydata:
+  private_caddyconfig:

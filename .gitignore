@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.private.example
 
 # Python
 __pycache__/
@@ -18,6 +19,7 @@ wheels/
 # Node / frontend
 node_modules/
 dist/
+dist-private/
 test-results/
 playwright-report/
 npm-debug.log*

@@ -1,5 +1,5 @@
 import json
-from app.config import get_settings
+from app.config import enforce_private_llm, get_settings
 from app.http_client import get_http_client
 from app.services.llm.base import BaseLLMAdapter, LLMResponse, LLMStreamChunk
 
@@ -8,6 +8,7 @@ settings = get_settings()
 
 class GroqAdapter(BaseLLMAdapter):
     async def complete(self, prompt: str, model: str, temperature: float, max_tokens: int) -> LLMResponse:
+        enforce_private_llm("groq", model, settings=settings)
         if not settings.GROQ_API_KEY:
             raise ValueError("GROQ_API_KEY is not configured")
 
@@ -37,6 +38,7 @@ class GroqAdapter(BaseLLMAdapter):
         )
 
     async def stream(self, prompt: str, model: str, temperature: float, max_tokens: int):
+        enforce_private_llm("groq", model, settings=settings)
         if not settings.GROQ_API_KEY:
             raise ValueError("GROQ_API_KEY is not configured")
 

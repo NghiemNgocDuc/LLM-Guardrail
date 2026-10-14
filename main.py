@@ -147,7 +147,10 @@ app = FastAPI(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logging.getLogger("app.error").exception("Unhandled exception: %s", _scrub_value(str(exc)))
+    if settings.PRIVATE_MODE:
+        logging.getLogger("app.error").error("Unhandled private request error (%s)", type(exc).__name__)
+    else:
+        logging.getLogger("app.error").exception("Unhandled exception: %s", _scrub_value(str(exc)))
     if settings.APP_ENV == "production":
         return JSONResponse(
             status_code=500,
@@ -170,6 +173,13 @@ async def add_security_headers(request, call_next):
         response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    if settings.PRIVATE_MODE:
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; connect-src 'self'; font-src 'self'; "
+            "img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        )
     return response
 
 app.add_middleware(

@@ -4,6 +4,7 @@ Uses the same wire as OpenAI (chat completions) at https://api.x.ai/v1.
 Set XAI_API_KEY (or GROK_API_KEY alias) in .env. Works with Grok-4, Grok-3, etc.
 """
 from app.services.llm.openai import OpenAIAdapter
+from app.config import enforce_private_llm
 
 class XAIAdapter(OpenAIAdapter):
     """Grok adapter — inherits OpenAI wire, just different env keys + base URL."""
@@ -15,6 +16,7 @@ class XAIAdapter(OpenAIAdapter):
     async def complete(self, prompt: str, model: str, temperature: float, max_tokens: int):
         from app.config import get_settings
         settings = get_settings()
+        enforce_private_llm("xai", model, settings=settings)
         # allow explicit model or default
         api_key = settings.XAI_API_KEY or settings.GROK_API_KEY or settings.OPENAI_COMPATIBLE_API_KEY
         base_url = settings.XAI_BASE_URL or settings.GROK_BASE_URL or "https://api.x.ai/v1"
@@ -32,6 +34,7 @@ class XAIAdapter(OpenAIAdapter):
     async def stream(self, prompt: str, model: str, temperature: float, max_tokens: int):
         from app.config import get_settings
         settings = get_settings()
+        enforce_private_llm("xai", model, settings=settings)
         api_key = settings.XAI_API_KEY or settings.GROK_API_KEY or settings.OPENAI_COMPATIBLE_API_KEY
         base_url = settings.XAI_BASE_URL or settings.GROK_BASE_URL or "https://api.x.ai/v1"
         if not api_key:

@@ -49,6 +49,8 @@ def _groq_implicit_judge(text: str) -> tuple[bool, str]:
     try:
         from app.config import get_settings
         settings = get_settings()
+        if settings.PRIVATE_MODE:
+            return False, ""
         key = (settings.GROQ_API_KEY or os.getenv("GROQ_API_KEY") or "").strip()
         if not key or len(key) < 20:
             return False, ""
@@ -81,6 +83,11 @@ def is_implicit(text: str, use_llm: bool = False) -> tuple[bool, str]:
     if hit:
         return True, ev
     if use_llm:
+        from app.config import get_settings
+        # The heuristic is fully local. Never consult hosted judges in a
+        # private deployment, even when SDK keys remain in the OS environment.
+        if get_settings().PRIVATE_MODE:
+            return False, ""
         # Try Groq first, then OpenAI
         g_hit, g_ev = _groq_implicit_judge(text)
         if g_hit:

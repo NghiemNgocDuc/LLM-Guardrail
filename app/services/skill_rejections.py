@@ -4,16 +4,20 @@ Persist and resolve Skill Guard rejected access for the web review queue.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import SkillAccessRejection, User
+from app.config import get_settings
 from app.i18n import _t
-from app.services.skill_user_overrides import approval_key, lock_approval_owner, revoke_user_overrides, save_user_overrides
+from app.services.skill_user_overrides import approval_key, stored_approval_key, lock_approval_owner, revoke_user_overrides, save_user_overrides
+from app.services.private_audit import PRIVATE_FILENAME, private_reason_code
 from guardrails.skill import SkillFinding, redact_skill_excerpt
 from guardrails.skill_overrides import finding_key
+from guardrails.skill_messages import explain_finding
 
 RESOLVE_ACTIONS = frozenset({"allow_once", "allow_always", "keep_rejected"})
 
@@ -36,6 +40,10 @@ async def record_rejection(
     if not findings:
         raise ValueError("findings required to record rejection")
 
+    private = getattr(get_settings(), "PRIVATE_MODE", False)
+    if private and (not isinstance(content_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", content_sha256)):
+        content_sha256 = None
+
     rows: list[dict] = []
     for f in findings:
         if isinstance(f, SkillFinding):
@@ -52,6 +60,29 @@ async def record_rejection(
             rows.append(dict(f))
 
     for finding in rows:
+        # Reported keys are untrusted. Every private identity is calculated
+        # here before evidence and the original filename are discarded.
+        finding.pop("server_approval_key", None)
+        finding.pop("private_identity_version", None)
+        if private:
+            try:
+                key = approval_key(filename, content_sha256, finding)
+            except (ValueError, TypeError):
+                key = None
+            code = private_reason_code(finding.get("reason_code")) or "guardrail_event"
+            severity = finding.get("severity")
+            line = finding.get("line_number")
+            finding.clear()
+            finding.update(
+                reason_code=code,
+                severity=severity if isinstance(severity, str) and severity in {"low", "medium", "high", "critical"} else "high",
+                check="Skill Guard",
+                line_number=line if isinstance(line, int) and not isinstance(line, bool) and line > 0 else None,
+                snippet="",
+                explanation=explain_finding(code, "Skill Guard"),
+                private_identity_version=1,
+                server_approval_key=key,
+            )
         # Persist immutable identity with each finding in the existing JSON
         # column. A reported CLI digest is client-attested; scan/create derive
         # their digest on the server. Both require an explicit own-user review.
@@ -63,7 +94,7 @@ async def record_rejection(
 
     await lock_approval_owner(db, user.id, user.org_id, require_current_org=False)
     try:
-        identities = {approval_key(filename, finding.get("content_sha256"), finding) for finding in rows}
+        identities = {stored_approval_key(PRIVATE_FILENAME if private else filename, finding) for finding in rows}
     except (ValueError, TypeError):
         identities = set()
     if identities:
@@ -73,14 +104,14 @@ async def record_rejection(
         candidates = (await db.execute(select(SkillAccessRejection).where(
             SkillAccessRejection.user_id == user.id,
             SkillAccessRejection.org_id == user.org_id,
-            SkillAccessRejection.filename == filename,
+            SkillAccessRejection.filename == (PRIVATE_FILENAME if private else filename),
             SkillAccessRejection.status == "pending",
             SkillAccessRejection.findings[0]["content_sha256"].as_string() == content_sha256,
         ))).scalars().all()
         for candidate in candidates:
             previous = findings_from_json(candidate.findings)
             try:
-                prior_identities = {approval_key(candidate.filename, finding.get("content_sha256"), finding) for finding in previous}
+                prior_identities = {stored_approval_key(candidate.filename, finding) for finding in previous}
             except (ValueError, TypeError):
                 continue
             if identities == prior_identities:
@@ -89,12 +120,12 @@ async def record_rejection(
     row = SkillAccessRejection(
         user_id=user.id,
         org_id=user.org_id,
-        filename=filename,
-        source=source,
+        filename=PRIVATE_FILENAME if private else filename,
+        source=source if not private or source in {"api_scan", "managed_download", "managed_write", "git_push", "cli", "report"} else "report",
         status="pending",
         findings=rows,
-        rejection_summary=redact_skill_excerpt(summary or f"Rejected access: {len(rows)} issue(s)", max_length=2000),
-        content_preview=redact_skill_excerpt(content_preview or "", max_length=500) or None,
+        rejection_summary=f"Rejected access: {len(rows)} issue(s). Content omitted in private mode." if private else redact_skill_excerpt(summary or f"Rejected access: {len(rows)} issue(s)", max_length=2000),
+        content_preview=None if private else (redact_skill_excerpt(content_preview or "", max_length=500) or None),
     )
     db.add(row)
     await db.flush()
@@ -145,7 +176,7 @@ async def resolve_rejection(
         try:
             if not findings or any("approval_org_id" not in finding or finding["approval_org_id"] != user.org_id for finding in findings):
                 raise ValueError("workspace identity is missing")
-            keys = {approval_key(row.filename, finding.get("content_sha256"), finding) for finding in findings}
+            keys = {stored_approval_key(row.filename, finding) for finding in findings}
         except (ValueError, TypeError):
             raise HTTPException(status_code=409, detail="This rejection has no exact content identity. Re-scan or re-report the file before approving it.") from None
         await save_user_overrides(db, user.id, org_id=user.org_id, keys=keys, action=action)
@@ -156,14 +187,14 @@ async def resolve_rejection(
             if "approval_org_id" not in finding or finding["approval_org_id"] != user.org_id:
                 continue
             try:
-                keys.add(approval_key(row.filename, finding.get("content_sha256"), finding))
+                keys.add(stored_approval_key(row.filename, finding))
             except (ValueError, TypeError):
                 continue
         await revoke_user_overrides(db, user.id, org_id=user.org_id, keys=keys)
         row.status = "kept_rejected"
 
     row.resolved_action = action
-    row.resolver_note = redact_skill_excerpt((note or "").strip(), max_length=2000) or None
+    row.resolver_note = None if getattr(get_settings(), "PRIVATE_MODE", False) else (redact_skill_excerpt((note or "").strip(), max_length=2000) or None)
     row.resolved_at = datetime.now(timezone.utc)
     await db.flush()
     return row

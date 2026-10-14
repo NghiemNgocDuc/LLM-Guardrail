@@ -1,4 +1,5 @@
 import asyncio
+from app.config import enforce_private_llm
 from app.services.llm.base import BaseLLMAdapter, LLMResponse, LLMStreamChunk
 
 
@@ -9,6 +10,7 @@ class MockAdapter(BaseLLMAdapter):
     )
 
     async def complete(self, prompt: str, model: str, temperature: float, max_tokens: int) -> LLMResponse:
+        enforce_private_llm("mock", model)
         return LLMResponse(
             text=self._TEXT,
             input_tokens=max(1, len(prompt.split())),
@@ -18,6 +20,7 @@ class MockAdapter(BaseLLMAdapter):
         )
 
     async def stream(self, prompt: str, model: str, temperature: float, max_tokens: int):
+        enforce_private_llm("mock", model)
         words = self._TEXT.split()
         for i, word in enumerate(words):
             token = word if i == 0 else " " + word

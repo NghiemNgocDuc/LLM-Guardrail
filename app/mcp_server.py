@@ -47,6 +47,8 @@ from guardrails.output import OutputGuardrail
 from guardrails.pii_redactor import PIIRedactor
 from guardrails.skill import SkillGuardrail, redact_skill_excerpt
 from app.utils.secret_redaction import scrub_text
+from app.config import get_settings
+from app.services.private_audit import PRIVATE_PREVIEW, private_reason_code
 
 logger = logging.getLogger(__name__)
 
@@ -622,15 +624,14 @@ def redact_pii(text: str) -> str:
     ),
 )
 def get_default_policy() -> str:
+    from app.services.llm import get_available_backends
+
     return json.dumps({
         "input_rules": INPUT_RULES,
         "output_rules": OUTPUT_RULES,
         "topic_policy": TOPIC_POLICY,
         "compliance_rules": COMPLIANCE,
-        "available_backends": [
-            "groq", "openai", "anthropic", "gemini", "ollama",
-            "openai_compatible", "mock",
-        ],
+        "available_backends": get_available_backends(),
     })
 
 
@@ -981,14 +982,14 @@ async def _audit_log(auth: MCPAuthContext, tool_name: str, args: dict, status: s
                 api_key_id=auth.key_id,
                 org_id=auth.org_id,
                 prompt_hash=hashlib.sha256(prompt_str.encode()).hexdigest(),
-                prompt_preview=redact_skill_excerpt(prompt_str, max_length=120),
+                prompt_preview=PRIVATE_PREVIEW if get_settings().PRIVATE_MODE else redact_skill_excerpt(prompt_str, max_length=120),
                 model="mcp:" + tool_name,
                 backend="mcp",
                 input_passed=status in ("ok", "delivered"),
                 input_block_reason=None,
                 output_passed=True if status == "delivered" else (None if status in ("input_blocked", "error") else False),
-                output_block_reason=None if status in ("ok", "delivered") else status,
-                fired_rule=status if status not in ("ok", "delivered") else None,
+                output_block_reason=None if status in ("ok", "delivered") else (private_reason_code(status) if get_settings().PRIVATE_MODE else status),
+                fired_rule=(private_reason_code(status) if get_settings().PRIVATE_MODE else status) if status not in ("ok", "delivered") else None,
                 status=status,
                 latency_ms=0,
                 input_tokens=0,
@@ -997,7 +998,10 @@ async def _audit_log(auth: MCPAuthContext, tool_name: str, args: dict, status: s
             db.add(log)
             await db.commit()
     except Exception:
-        logger.exception("audit log failed")
+        if get_settings().PRIVATE_MODE:
+            logger.error("Private MCP audit write failed")
+        else:
+            logger.exception("audit log failed")
 
 
 # ─── SSE transport (mounted into FastAPI at /mcp) ────────────────────────────

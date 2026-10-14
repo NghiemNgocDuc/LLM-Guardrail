@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.deps import CurrentUser, get_current_user, resolve_api_key
-from app.models import OrgMembership, OrgPolicy, User
+from app.models import ManagedSkill, OrgMembership, OrgPolicy, User
 from app.services.skill_store import (
     create_managed_skill,
     delete_managed_skill,
@@ -171,6 +171,32 @@ async def _authorize_distribution(db: AsyncSession, actor, row, response: PlainT
     await db.commit()
 
 
+async def _require_private_safe_draft(db: AsyncSession, actor, *, slug: str, name: str, description: str, content: str) -> None:
+    """Private storage accepts no flagged source, even after an approval.
+
+    Scan raw authored fields rather than an escaped Markdown wrapper. The
+    private rejection service retains only static labels and opaque identity;
+    rejected text never enters the managed skill or its version history.
+    """
+    if not getattr(get_settings(), "PRIVATE_MODE", False):
+        return
+    authored_context = "\n".join((name, description, "", content))
+    result = SkillGuardrail().scan(authored_context)
+    if result.safe:
+        return
+    identity = json.dumps({"name": name, "description": description, "content": content}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    rejection = await record_rejection(
+        db, user=actor, filename=f"{slug}.md", source="managed_write",
+        findings=result.findings, summary="Managed skill draft rejected in private mode.",
+        content_sha256=content_digest(identity),
+    )
+    await db.commit()
+    raise HTTPException(status_code=422, detail={
+        "message": "Private mode cannot store flagged skill content. Redact or remove the flagged instructions before saving. Approval does not permit unsafe drafts to be stored.",
+        "rejection_id": rejection.id, "blocked": True, "private_mode": True,
+    })
+
+
 def _require_admin(user):
     if not user.is_admin:
         from fastapi import HTTPException, status
@@ -233,6 +259,8 @@ async def create_skill(
     description = body.description
     content = body.content
     update_mode = body.update_mode
+
+    await _require_private_safe_draft(db, current_user, slug=slug, name=name, description=description, content=content)
 
     # conflict check before write (advisory — still allow creation but return conflicts)
     existing = await _existing_as_dicts(db, current_user.org_id)
@@ -297,6 +325,23 @@ async def update_skill(slug: str, body: UpdateSkillRequest, current_user: Curren
     _require_admin(current_user)
     _require_org(current_user)
     new_content = body.content
+    if getattr(get_settings(), "PRIVATE_MODE", False):
+        # Hold the same row lock used by the store through scan and write, so
+        # the effective unchanged fields cannot change between those steps.
+        stored = (await db.execute(select(ManagedSkill).where(
+            ManagedSkill.org_id == current_user.org_id,
+            ManagedSkill.slug == slug.strip().lower(),
+        ).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
+        if stored is None:
+            raise HTTPException(status_code=404, detail="Skill not found")
+        if (body.expected_version is not None and body.expected_version != stored.version) or (body.expected_revision is not None and body.expected_revision != skill_revision(stored)):
+            raise HTTPException(status_code=409, detail="This skill changed since you opened it. Reload the latest version before saving your draft.")
+        await _require_private_safe_draft(
+            db, current_user, slug=stored.slug,
+            name=body.name.strip() if body.name is not None else stored.name,
+            description=body.description if body.description is not None else stored.description,
+            content=new_content if new_content is not None else stored.content,
+        )
     # conflict check if content is being changed
     conflicts = None
     if new_content is not None:
@@ -305,7 +350,6 @@ async def update_skill(slug: str, body: UpdateSkillRequest, current_user: Curren
         policy = await _org_policy_dict(db, current_user.org_id)
         conflicts = check_skill_conflicts(new_content, existing_skills=existing, org_policy=policy, org_id=current_user.org_id)
         if body.block_on_conflict and conflicts.blocked_by_policy:
-            from fastapi import HTTPException
             raise HTTPException(status_code=422, detail={
                 "message": "Update conflicts with current API-key leak protection",
                 "conflicts": [c.__dict__ for c in conflicts.conflicts],

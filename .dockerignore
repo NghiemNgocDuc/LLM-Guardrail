@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-private
 test-results
 playwright-report
 .git

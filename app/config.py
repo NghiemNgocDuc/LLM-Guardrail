@@ -1,5 +1,7 @@
 from functools import lru_cache
+from ipaddress import ip_address
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,6 +13,9 @@ class Settings(BaseSettings):
     APP_NAME: str = "LLM Guardrails Gateway"
     APP_ENV: str = "development"
     DEBUG: bool = True
+    # Private deployments run inference on this host/container network and
+    # disable hosted AI providers, remote vectors, and backend telemetry.
+    PRIVATE_MODE: bool = False
     LOG_LEVEL: str = "INFO"
     SENTRY_DSN: str = ""
 
@@ -160,6 +165,17 @@ class Settings(BaseSettings):
     # Dedup abuse: same prompt hash retried this many times in 5 min
     EXPLOIT_DEDUP_THRESHOLD: int = 6
 
+    @field_validator("ENCRYPTION_KEY")
+    @classmethod
+    def validate_encryption_key(cls, value: str) -> str:
+        if value:
+            from cryptography.fernet import Fernet
+            try:
+                Fernet(value.encode())
+            except (ValueError, TypeError):
+                raise ValueError("ENCRYPTION_KEY must be a valid Fernet key") from None
+        return value
+
     @field_validator("DEBUG", mode="before")
     @classmethod
     def parse_debug(cls, value: Any) -> Any:
@@ -202,6 +218,43 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def apply_private_profile(self) -> "Settings":
+        if not self.PRIVATE_MODE:
+            return self
+        self.DEBUG = False
+        self.SENTRY_DSN = ""
+        self.POSTHOG_API_KEY = ""
+        self.PINECONE_API_KEY = ""
+        self.PINECONE_STORE_CONVERSATIONS = False
+        self.BILLING_ENABLED = False
+        self.REQUIRE_EMAIL_VERIFICATION = False
+        self.DEFAULT_LLM_BACKEND = "ollama"
+        if "DEFAULT_MODEL" not in self.model_fields_set:
+            self.DEFAULT_MODEL = "qwen3:1.7b"
+        self.LLM_FAILOVER_BACKENDS = ""
+        # Clearing configuration is defense in depth. Runtime adapter guards
+        # remain necessary because SDKs can read process environment variables.
+        for name in (
+            "GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+            "GEMINI_API_KEY", "XAI_API_KEY", "GROK_API_KEY",
+            "OPENAI_COMPATIBLE_API_KEY",
+            "CLERK_SECRET_KEY", "CLERK_JWKS_URL", "CLERK_JWT_KEY", "CLERK_WEBHOOK_SECRET",
+            "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
+            "RESEND_API_KEY", "RESEND_FROM", "FEEDBACK_RECIPIENT", "PRODUCTBRIDGE_API_KEY",
+            "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PUBLISHABLE_KEY",
+            "STRIPE_PRICE_STARTER", "STRIPE_PRICE_GROWTH", "STRIPE_PRICE_SCALE", "STRIPE_PRICE_ENTERPRISE",
+        ):
+            setattr(self, name, "")
+        self.OLLAMA_BASE_URL = validate_private_ollama_url(self.OLLAMA_BASE_URL)
+        validate_private_model(self.DEFAULT_MODEL)
+        if self.DATABASE_URL and not self.DATABASE_URL.startswith(("sqlite+aiosqlite:///", "sqlite:///")):
+            validate_private_service_url(self.DATABASE_URL, "db", allow_credentials=True)
+        if self.RATE_LIMIT_REDIS_URL:
+            validate_private_service_url(self.RATE_LIMIT_REDIS_URL, "redis", allow_credentials=True)
+        validate_private_service_url(self.OPA_URL, "opa")
+        return self
+
+    @model_validator(mode="after")
     def validate_production_config(self) -> "Settings":
         if self.APP_ENV != "production":
             return self
@@ -234,6 +287,89 @@ class Settings(BaseSettings):
         if self.COOKIES_SECURE is False:  # type: ignore[attr-defined]
             raise ValueError("Cookies must be Secure in production")
         return self
+
+
+def _is_private_service_host(hostname: str | None, service: str) -> bool:
+    if hostname in {"localhost", service}:
+        return True
+    try:
+        return bool(hostname and ip_address(hostname).is_loopback)
+    except ValueError:
+        return False
+
+
+def validate_private_ollama_url(value: str) -> str:
+    """Only literal loopback or the deployment's internal Ollama service.
+
+    Do not resolve arbitrary DNS names to decide whether an endpoint is local:
+    a later resolution could send private data to a different host.
+    """
+    try:
+        parsed = urlsplit(value)
+        valid = (
+            parsed.scheme in {"http", "https"}
+            and _is_private_service_host(parsed.hostname, "ollama")
+            and parsed.username is None
+            and parsed.password is None
+            and not parsed.query
+            and not parsed.fragment
+            and parsed.path in {"", "/"}
+        )
+        # Accessing port also validates malformed/non-numeric port numbers.
+        parsed.port
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError(
+            "PRIVATE_MODE requires OLLAMA_BASE_URL to use localhost, a loopback "
+            "IP, or the internal 'ollama' service, without credentials or a path/query"
+        )
+    return value.rstrip("/")
+
+
+def validate_private_service_url(value: str, service: str, *, allow_credentials: bool = False) -> None:
+    schemes = {
+        "db": {"postgres", "postgresql", "postgresql+asyncpg"},
+        "redis": {"redis", "rediss"},
+        "opa": {"http", "https"},
+    }
+    try:
+        parsed = urlsplit(value)
+        valid = (
+            parsed.scheme in schemes[service]
+            and _is_private_service_host(parsed.hostname, service)
+            and (allow_credentials or (parsed.username is None and parsed.password is None))
+            and not parsed.fragment
+            # Query parameters such as PostgreSQL ?host= can override the
+            # validated URL host; private container endpoints need none.
+            and not parsed.query
+        )
+        parsed.port
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError(
+            f"PRIVATE_MODE requires the {service} endpoint to use localhost, "
+            f"a loopback IP, or the internal '{service}' service"
+        )
+
+
+def validate_private_model(model: str) -> None:
+    if not model or not model.strip() or "cloud" in model.lower():
+        raise ValueError("PRIVATE_MODE requires a downloaded local Ollama model, not a cloud model")
+
+
+def enforce_private_llm(backend: str, model: str, *, settings: "Settings | None" = None) -> None:
+    """Enforce the same boundary for routed and directly invoked adapters."""
+    cfg = settings if settings is not None else get_settings()
+    if not cfg.PRIVATE_MODE:
+        return
+    if backend != "ollama":
+        raise ValueError("PRIVATE_MODE permits only the self-hosted Ollama backend")
+    validate_private_ollama_url(cfg.OLLAMA_BASE_URL)
+    validate_private_model(model)
+    if model != cfg.DEFAULT_MODEL:
+        raise ValueError("PRIVATE_MODE permits only the configured local DEFAULT_MODEL")
 
 
 @lru_cache

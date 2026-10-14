@@ -6,6 +6,7 @@ Usage:
 """
 
 import httpx
+from app.config import get_settings
 
 _http_client: httpx.AsyncClient | None = None
 
@@ -22,6 +23,8 @@ def get_http_client() -> httpx.AsyncClient:
             timeout=httpx.Timeout(120.0),
             limits=limits,
             follow_redirects=False,
+            # Environment proxies must not reroute local/private prompts.
+            trust_env=not get_settings().PRIVATE_MODE,
         )
     return _http_client
 
