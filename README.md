@@ -20,6 +20,8 @@ For hosting, see [Render deployment](DEPLOYMENT_RENDER.md); for availability
 alerts, see [UptimeRobot monitoring](#uptimerobot-monitoring).
 For self-hosted inference with no hosted AI providers or raw blocked audit
 content, see [Private self-hosting](docs/PRIVATE_SELF_HOSTING.md).
+The [Cloud Run deployment review](docs/CLOUD_RUN_PLAN.md) explains the changes
+and storage costs required for a serverless deployment.
 
 ## Architecture
 

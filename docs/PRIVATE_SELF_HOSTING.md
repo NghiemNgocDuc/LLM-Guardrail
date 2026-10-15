@@ -37,6 +37,8 @@ storage, builds, and traffic can incur charges beyond applicable free limits.
 It needs a separate deployment and persistent audit-storage design: this
 Compose file targets a VM and cannot be deployed unchanged to Cloud Run.
 [Google free tier](https://docs.cloud.google.com/free/docs/free-cloud-features)
+See the [Cloud Run deployment review](CLOUD_RUN_PLAN.md) for storage,
+configuration changes, and cost-control requirements.
 
 Hugging Face currently requires a paid plan to create Docker/CPU compute
 Spaces, despite CPU Basic having no hourly hardware charge. Eligible free
