@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-from app.billing.plans import TokenPlan, plan_by_slug
+from app.billing.plans import TokenPlan
 from app.config import get_settings
 from app.i18n import _t
 

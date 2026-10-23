@@ -1,47 +1,68 @@
-# Security Policy
+# Security policy
 
-## Secrets
+## Credentials and configuration
 
-Never commit `.env` or provider API keys. The repository includes `.env.example` only.
+Keep `.env`, provider credentials, raw gateway keys, database passwords, and
+signing keys out of Git, screenshots, and shared logs. The tracked example
+environments contain configuration names and empty values.
 
-Required production secrets:
+Production requires a strong `SECRET_KEY`, PostgreSQL, Redis, explicit allowed
+origins, an HTTPS application URL, and credentials for the chosen hosted model
+provider. Configure `REDIS_PASSWORD` for Compose and a separate `SECRET_KEY_BASE`
+when running the Phoenix live feed. Provider keys belong on the API server;
+applications authenticate with scoped gateway keys.
 
-- `SECRET_KEY`
-- `POSTGRES_PASSWORD`
-- `GROQ_API_KEY` or the key for your selected LLM backend
+Local JWT sessions and Clerk RSA signatures use PyJWT with explicitly allowed
+algorithms. The Clerk verification path accepts a configured PEM public key or
+JWKS. Local sessions retain the configured signing key and expiry behavior.
 
-**Groq / provider key guarantee — no leakage path:**
+## Guardrail boundaries
 
-Provider keys (`GROQ_API_KEY=gsk_…`, `OPENAI_API_KEY=sk-…`, `ANTHROPIC_API_KEY=sk-ant-…`) are
-*server-only* and never leave the gateway:
+The gateway has several layers of credential detection and redaction:
 
-1. **Not in the frontend** — No endpoint returns `GROQ_API_KEY` (grep `app/routers` — zero hits).
-   Billing `/config` exposes only `STRIPE_PUBLISHABLE_KEY`. Frontend `src/utils/api.ts` validates
-   `grg_`-only gateway keys and rejects `gsk_`/`sk-` pasted into the browser with an explicit
-   warning (“Provider keys must stay server-side as env”).
-2. **Input blocked** — `guardrails/input.py` blocks any prompt containing `gsk_…`/`sk-…`/`AKIA…`
-   and blocks env-exfiltration probes (`what is GROQ_API_KEY?`, `print(os.environ)`, `process.env`).
-3. **Output blocked** — `guardrails/output.py` blocks any LLM response containing a provider key
-   (regex + verbatim `settings.GROQ_API_KEY` match).
-4. **Storage scrubbed** — `app/routers/chat.py:_log_request` scrubs `prompt_preview`, `input_block_reason`,
-   `output_block_reason` and `full_prompt` (pre-encrypt) via `scrub_text`.
-5. **Logs scrubbed** — `main.py:SecretScrubFilter` + `JSONFormatter` and
-   `app/middleware/request_logging.py` scrub every log line; `Sentry before_send` scrubs
-   exceptions/breadcrumbs.
-6. **Egress scrubbed** — `app/middleware/secret_scrub.py:SecretScrubMiddleware` is the last line of
-   defense: any JSON response that somehow contains `gsk_…`/`grg_…` is redacted to
-   `[REDACTED:SECRET]` before it hits the wire.
-7. **Central redaction** — `app/utils/secret_redaction.py` is the single source of truth
-   (regexes + verbatim configured key). `contains_secret` / `scrub_text` used everywhere.
+- Input checks can reject detected credentials and environment-disclosure probes.
+- Output checks detect credential leakage in model responses.
+- Audit handling scrubs detected credentials before storing prompt previews and
+  retained prompts; optional full-prompt storage supports Fernet encryption.
+- Logging filters, error handling, and response middleware scrub detected values.
+- Skill findings redact credentials and personal data before shortening excerpts.
 
-Rotate any secret that has been pasted into logs, screenshots, chat, or a public repository.
+These are heuristic controls, not a guarantee that every sensitive value will
+be detected. Standard SSE streaming can deliver tokens before the final output
+check. [Private mode](docs/PRIVATE_SELF_HOSTING.md) buffers model output until
+checks pass, uses local inference, and omits raw blocked content from audits.
+External agents must enforce skill scan decisions in their own loading flow.
+See the [skill logic contract](docs/SKILL_LOGIC.md).
 
-## Deployment
+Rotate any credential exposed in source, logs, screenshots, chat, or a public
+repository. A redacted preview does not revoke the original credential.
 
-Use the Docker `web` service as the public entrypoint. Keep `api`, `db`, and `redis` private.
+## Deployment and dependency checks
 
-Production startup fails if required secrets, Postgres, Redis, or the configured Groq key are missing.
+Use TLS at the public ingress. Keep database, Redis, model inference, gRPC, and
+other internal service ports private. See [deployment](DEPLOYMENT.md) and
+[hardening](docs/SECURITY_HARDENING.md).
 
-## Reporting Issues
+Check dependencies after installation and whenever changing pinned versions:
 
-Report security issues privately to the repository owner. Do not open public issues with exploit details or secrets.
+```bash
+npm audit --audit-level=high
+python -m pip install pip-audit
+python -m pip_audit -r requirements.txt
+```
+
+CI also runs dependency checks and the canonical committed-skill scanner.
+An audit reports known advisories at the time it runs; passing does not prove
+that the application has no vulnerabilities.
+
+`python scripts/check_repository_secrets.py` checks tracked files for common
+credential formats without printing their values. Intentional examples in
+`scripts/secret-scan-allowlist.json` are approved by an exact normalized file
+digest. Any edit invalidates the approval. Review all findings before updating
+a digest; do not add real credentials to this allowlist.
+
+## Reporting issues
+
+Report security issues privately to the repository owner. Include the affected
+version, reproduction steps, and impact. Do not publish credentials or exploit
+details in a public issue.

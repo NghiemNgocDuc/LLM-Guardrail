@@ -45,7 +45,7 @@ def _try_load():
         pass
     # Try privacy-filter (openai) if installed
     try:
-        import privacy_filter  # type: ignore
+        import privacy_filter  # type: ignore  # noqa: F401 - optional dependency probe
         _ner_available = "privacy_filter"
         return _ner_available
     except Exception:

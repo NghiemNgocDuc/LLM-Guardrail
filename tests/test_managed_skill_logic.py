@@ -122,9 +122,15 @@ def test_corrupt_stored_hash_is_not_distributed(live_client):
     assert "integrity" in response.json()["detail"]
 
 
-def test_credential_bearing_custom_live_url_returns_validation_error(live_client):
+@pytest.mark.parametrize("live_url", [
+    "https://example.com/skill?client_secret=private",
+    "https://example.com/skill?access_token=private",
+    "https://example.com/skill?API_KEY=private",
+    "https://reader:private@example.com/skill",
+])
+def test_credential_bearing_custom_live_url_returns_validation_error(live_client, live_url):
     client, _, _, _, _ = live_client
-    response = client.get("/skills/managed/docs/download", params={"live_url": "https://example.com/skill?client_secret=private"})
+    response = client.get("/skills/managed/docs/download", params={"live_url": live_url})
     assert response.status_code == 400
     assert "credential" in response.json()["detail"]
 

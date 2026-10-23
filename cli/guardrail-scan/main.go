@@ -13,8 +13,8 @@ import (
 	"unicode/utf8"
 )
 
-// Standalone Go port of scripts/scan_agent_skills.py. Drop-in replacement:
-// same flags, same output, same exit codes.
+// Standalone Go companion to scripts/scan_agent_skills.py.
+// The canonical Python scanner is required for repository push gates.
 
 var defaultGlobs = []string{
 	".cursor/skills/**/SKILL.md",
@@ -196,11 +196,14 @@ func printRejection(f SkillFinding, githubActions bool, absPath string) {
 	fmt.Printf("  Why: %s\n", explainFinding(f.ReasonCode, f.Check))
 	fmt.Printf("  Snippet: %s\n", f.Snippet)
 	if githubActions && absPath != "" {
-		rel := filepath.ToSlash(absPath)
+		escapeProperty := strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A", ":", "%3A", ",", "%2C")
+		escapeData := strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A")
+		rel := escapeProperty.Replace(filepath.ToSlash(absPath))
+		message := escapeData.Replace(explainFinding(f.ReasonCode, f.Check))
 		if f.LineNumber != nil {
-			fmt.Printf("::error file=%s,line=%d,title=Skill Guard::%s\n", rel, *f.LineNumber, explainFinding(f.ReasonCode, f.Check))
+			fmt.Printf("::error file=%s,line=%d,title=Skill Guard::%s\n", rel, *f.LineNumber, message)
 		} else {
-			fmt.Printf("::error file=%s,title=Skill Guard::%s\n", rel, explainFinding(f.ReasonCode, f.Check))
+			fmt.Printf("::error file=%s,title=Skill Guard::%s\n", rel, message)
 		}
 	}
 }
@@ -367,7 +370,7 @@ func scanFiles(root string, files []string, minRank int, githubActions, interact
 		return 1
 	}
 
-	fmt.Printf("\nSkill Guard: %d file(s) passed — agent may continue.\n", len(files))
+	fmt.Printf("\nSkill Guard: %d skill document(s) passed — agent may continue.\n", len(files))
 	return 0
 }
 
@@ -398,12 +401,12 @@ func run(args []string) int {
 	fs := flag.NewFlagSet("guardrail-scan", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var (
-		rootFlag       = fs.String("root", "", "repository root")
-		minSeverity    = fs.String("min-severity", "medium", "minimum severity that fails the run")
-		githubActions  = fs.Bool("github-actions", false, "emit GitHub Actions workflow commands")
-		prePush        = fs.Bool("pre-push", false, "git pre-push mode (read refs from stdin)")
-		gitRange       = fs.String("git-range", "", "only scan skill files changed in a git revision range")
-		interactiveFl  = fs.Bool("interactive", false, "prompt per blocking finding (TTY only)")
+		rootFlag      = fs.String("root", "", "repository root")
+		minSeverity   = fs.String("min-severity", "medium", "minimum severity that fails the run")
+		githubActions = fs.Bool("github-actions", false, "emit GitHub Actions workflow commands")
+		prePush       = fs.Bool("pre-push", false, "git pre-push mode (read refs from stdin)")
+		gitRange      = fs.String("git-range", "", "only scan skill files changed in a git revision range")
+		interactiveFl = fs.Bool("interactive", false, "prompt per blocking finding (TTY only)")
 	)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usageText()) }
 	if err := fs.Parse(args); err != nil {

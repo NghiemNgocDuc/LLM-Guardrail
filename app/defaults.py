@@ -44,6 +44,10 @@ DEFAULT_OUTPUT_RULES = {
     "required_fields": [],
 }
 
+# Requests without a stored workspace policy keep the gateway's strict PII
+# behavior. New workspace policies use the configurable warning mode above.
+DEFAULT_GATEWAY_INPUT_RULES = {**DEFAULT_INPUT_RULES, "pii_redaction_mode": "block"}
+
 DEFAULT_TOPIC_POLICY = {"blocked_topics": ["competitor products", "medical advice"]}
 
 DEFAULT_COMPLIANCE = {"block_medical_advice": True, "never_discuss_competitors": True}

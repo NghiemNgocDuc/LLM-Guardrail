@@ -18,7 +18,6 @@ a clear error when it is missing.
 """
 from __future__ import annotations
 
-import os
 from typing import Any, AsyncIterator
 
 from app.config import enforce_private_llm, get_settings

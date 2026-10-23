@@ -3,7 +3,7 @@ Pydantic v2 schemas — request/response shapes for every router.
 """
 from datetime import datetime
 from typing import Any
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────

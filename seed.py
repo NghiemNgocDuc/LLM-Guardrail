@@ -1,16 +1,23 @@
-import asyncio, sys, os
+"""Create a development account with one-time, randomly generated credentials."""
+import asyncio
+import os
+import secrets
+import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from sqlalchemy import select
-from app.database import AsyncSessionLocal
+from app.config import get_settings
+from app.database import get_sessionmaker
 from app.models import Organization, OrgPolicy, User, APIKey
 from app.deps import hash_password, hash_api_key
 
 SEED_EMAIL    = "test@guardrails.dev"
-SEED_PASSWORD = "testpass123"
-SEED_RAW_KEY  = "grg_testkey_dev_000000000000000000000000"
+SEED_PASSWORD = os.environ.get("SEED_PASSWORD") or secrets.token_urlsafe(24)
+SEED_RAW_KEY  = APIKey.generate_raw_key()
 
 async def seed():
-    async with AsyncSessionLocal() as db:
+    if get_settings().APP_ENV != "development":
+        raise RuntimeError("The seed account can only be created in development.")
+    async with get_sessionmaker()() as db:
         existing = await db.execute(select(User).where(User.email == SEED_EMAIL))
         if existing.scalar_one_or_none():
             print("Seed account already exists — nothing to do.")
@@ -27,6 +34,7 @@ async def seed():
         db.add(APIKey(name="dev-key", key_prefix=SEED_RAW_KEY[:12],
                       key_hash=hash_api_key(SEED_RAW_KEY), owner_id=user.id, org_id=org.id))
         await db.commit()
-    print("Done! Email: test@guardrails.dev | Password: testpass123 | Key: " + SEED_RAW_KEY)
+    print(f"Development account created. Email: {SEED_EMAIL} | Password: {SEED_PASSWORD} | Key: {SEED_RAW_KEY}")
 
-asyncio.run(seed())
+if __name__ == "__main__":
+    asyncio.run(seed())

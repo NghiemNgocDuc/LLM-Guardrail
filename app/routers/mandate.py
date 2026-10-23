@@ -11,8 +11,6 @@ Endpoints:
   POST /references/mint       → server-minted provenance handle
 """
 import time
-import hashlib
-import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
@@ -22,13 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.config import get_settings
 from app.deps import CurrentUser
-from app.models import Mandate, MandateRun, MandateReceipt, Capability, ProvenanceReference
+from app.models import Mandate, MandateRun, MandateReceipt, Capability
 from app.services.mandate_service import (
     create_mandate, revoke_mandate, mint_capability, verify_capability,
     create_run, mint_reference, resolve_provenance_ancestry, evaluate_pinned_policy,
 )
 from app.services.mandate_fixtures import invoke_fixture, get_counters
-import statistics
 
 router = APIRouter(prefix="", tags=["MandateFlow"])
 

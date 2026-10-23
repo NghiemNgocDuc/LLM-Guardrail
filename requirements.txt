@@ -1,5 +1,6 @@
 # Web framework
-fastapi==0.115.6
+fastapi==0.161.1
+starlette==1.9.0
 uvicorn[standard]==0.34.0
 
 # Database
@@ -8,7 +9,7 @@ asyncpg==0.30.0
 alembic==1.14.0
 
 # Auth
-python-jose[cryptography]==3.3.0
+PyJWT[crypto]==2.15.1
 passlib[bcrypt]==1.7.4
 bcrypt<4                     # passlib compat, not 4.x
 
@@ -31,7 +32,7 @@ redis==5.2.1
 # Billing (optional — set STRIPE_* in .env)
 stripe==11.4.1
 
-# Clerk (auth replacement — verify JWTs via python-jose/JWKS in app/deps.py;
+# Clerk (auth replacement — verify JWTs via PyJWT/JWKS in app/deps.py;
 # user lifecycle via /auth/clerk-webhook HMAC signature verification in
 # app/routers/auth.py). Deliberately NO clerk SDK dependency: the only PyPI
 # package named clerk-sdk-python (0.1.0) is an unofficial REST client that
@@ -55,7 +56,7 @@ pinecone==5.4.1
 #   gateway uses the built-in heuristic fallback (fail-open, zero extra deps).
 
 # GraphQL analytics layer (read-only mirror of /analytics REST routes)
-strawberry-graphql==0.324.0
+strawberry-graphql==0.327.2
 
 # gRPC input-guard service (grpc_gateway/) — same InputGuardrail engine as
 # /chat, exposed for high-throughput streaming check clients.

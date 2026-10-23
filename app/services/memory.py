@@ -50,9 +50,7 @@ async def llm_extract_memories(prompt: str, response: str | None, user_id: str) 
     """Try LLM extraction; fall back to heuristic."""
     heuristics = _heuristic_extract(prompt, response)
     try:
-        from app.config import get_settings
         from app.services.llm import call_llm  # lazy
-        settings = get_settings()
         # only call LLM if we have a key and the prompt looked memorable
         if not heuristics and len(prompt) < 40:
             return []

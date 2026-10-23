@@ -1,32 +1,27 @@
 # Git hooks
 
-## Pre-push — Skill Guard
+## Pre-push: canonical Skill Guard
 
-Runs before `git push` and scans `.cursor/skills/**` files included in the outgoing commits.
+The hook runs `scripts/scan_agent_skills.py --pre-push` with Python. It reads
+committed Markdown under `.cursor/skills/` throughout outgoing commit history,
+including intermediate versions later reverted, and checks identical blobs once.
+Local working files cannot hide unsafe committed content. New branches check
+all reachable skill history. Missing Git objects, unreadable skills, and skill
+symlinks block verification.
 
-Blocks the push when the scanner finds secrets, PII, or destructive shell/SQL commands.
+The standalone Go companion and `SKILL_GUARD_BIN` do not replace this gate.
+The hook searches `.venv`, `venv312`, then `python3` / `python`; set `PYTHON` to
+a working interpreter if needed. Install the repository's Python dependencies.
 
-The hook prefers the compiled Go binary (`cli/guardrail-scan/guardrail-scan`) and falls back to the
-Python script when it is not built. `SKILL_GUARD_BIN=/path/to/binary` overrides the location explicitly.
+## Install once per clone
 
-If the push touches skills and issues are found, the hook accepts **chat-style commands** first:
-
-- Type **`always allow`** or **`always allow all`** once (no per-issue key presses)
-- Or press Enter and choose per issue: **Run once**, **Always allow**, **Reject**
-
-From Cursor chat, say the same phrase — the agent updates `.cursor/skill-guard-overrides.json` or runs `python scripts/skill_guard_allow.py always --scan …`.
-
-Non-interactive CI uses `SKILL_GUARD_NON_INTERACTIVE=1` (no prompts).
-
-If the push does not touch `.cursor/skills/`, the hook exits immediately.
-
-## Install (once per clone)
+Run from the repository root:
 
 ```bash
 ./scripts/install-git-hooks.sh
 ```
 
-Windows (PowerShell):
+On PowerShell:
 
 ```powershell
 .\scripts\install-git-hooks.ps1
@@ -34,15 +29,19 @@ Windows (PowerShell):
 
 This sets `core.hooksPath` to `.githooks` for this repository only.
 
-## Manual scan
+## Review and manual scans
 
 ```bash
 python scripts/scan_agent_skills.py
 python scripts/scan_agent_skills.py --git-range origin/main..HEAD
-
-# Same checks, no Python needed (static Go binary — see cli/guardrail-scan/README.md):
-guardrail-scan
-guardrail-scan --git-range origin/main..HEAD
+python scripts/scan_agent_skills.py --interactive path/to/SKILL.md
 ```
 
-GitHub Actions also runs the same scanner on pull requests and pushes (see `.github/workflows/scan-agent-skills.yml`).
+A blocked scan prints redacted findings and records a local review request.
+An integration must honor that decision; the message does not pause an external
+agent process. Review the exact content before granting a local override.
+Repository-local overrides are separate from hosted workspace approvals.
+See [skill logic](../docs/SKILL_LOGIC.md) for the distinction.
+
+[GitHub Actions](../.github/workflows/scan-agent-skills.yml) also checks committed
+skills on pull requests and relevant pushes using the canonical Python scanner.

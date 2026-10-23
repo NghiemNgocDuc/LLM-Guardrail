@@ -1,12 +1,14 @@
 FROM golang:1.22-alpine AS build
 WORKDIR /app
-COPY go.mod ./
+RUN apk add --no-cache build-base
+COPY go.mod go.sum ./
 RUN go mod download
 COPY main.go ./
 RUN CGO_ENABLED=1 go build -o /mandate-gateway -ldflags="-s -w" .
 
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates sqlite
+RUN apk add --no-cache ca-certificates sqlite \
+    && mkdir -p /data && chown 1000:1000 /data
 COPY --from=build /mandate-gateway /mandate-gateway
 EXPOSE 8182
 ENV PORT=8182 MANDATEFLOW_DB=/data/mandateflow.db

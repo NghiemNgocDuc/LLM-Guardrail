@@ -9,7 +9,6 @@ Falls back to "en" if the locale file doesn't exist or the key is missing.
 """
 
 import json
-import os
 import re
 from contextvars import ContextVar
 from pathlib import Path

@@ -102,6 +102,21 @@ func severity(score float64) string {
 }
 
 func redactSnippet(text string) string {
+	// Redact before truncating so even credentials crossing the excerpt
+	// boundary cannot leak through console output or pause files.
+	for _, p := range secretLinePatterns {
+		text = p.re.ReplaceAllString(text, "[REDACTED:SECRET]")
+	}
+	for _, p := range skillPatterns {
+		replacement := "[REDACTED:SECRET]"
+		if p.reasonCode == "private_ip" || p.reasonCode == "internal_path" {
+			replacement = "[REDACTED:CONTEXT]"
+		}
+		text = p.re.ReplaceAllString(text, replacement)
+	}
+	for _, p := range piiPatterns {
+		text = p.re.ReplaceAllString(text, "[REDACTED:PII]")
+	}
 	s := strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
 	rs := []rune(s)
 	if len(rs) <= snippetMax {

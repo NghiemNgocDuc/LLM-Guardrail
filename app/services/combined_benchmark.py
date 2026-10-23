@@ -94,11 +94,9 @@ def compute_combined(org_policy: dict | None = None, sample_per: int = 200) -> D
         wl1 = groups.get("wl1_pii", [])[:sample_per]
         wl2 = groups.get("wl2_secrets", [])[:sample_per]
         wl4 = groups.get("wl4_code", [])[:sample_per]
-        # wl3 is Tier2 separate
-        wl3_rows = load_dataset("jayluxferro/llm-redactor-leak-benchmark", "wl3_implicit")["train"]
-        wl3 = [r["text"] for r in wl3_rows][:sample_per] if wl3_rows else []
+        # The implicit-leak workload (wl3) is evaluated separately in Tier 2.
     except Exception:
-        wl1=wl2=wl4=wl3=[]
+        wl1=wl2=wl4=[]
 
     # Load jailbreak
     jb_rows = _load("JailbreakBench/JBB-Behaviors", sample=sample_per)

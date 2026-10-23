@@ -3,7 +3,6 @@ Input Guardrails — 2026 control-plane: tiered, sampled, 4-way (block/redact/wa
 """
 import random
 import re
-import time
 from dataclasses import dataclass, field
 from typing import Optional
 

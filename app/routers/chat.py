@@ -47,6 +47,7 @@ from app.services.token_wallet import (
     user_has_unlimited_tokens,
 )
 from app.config import get_settings
+from app.defaults import DEFAULT_GATEWAY_INPUT_RULES as _DEFAULT_INPUT_RULES
 from app.http_client import get_http_client
 from app.i18n import _t
 from app.utils.secret_redaction import scrub_text
@@ -65,40 +66,6 @@ router = APIRouter(prefix="/chat", tags=["Gateway"])
 _MAX_WEBHOOK_ATTEMPTS = 3
 _SSE_KEEPALIVE_S = 15.0
 
-_DEFAULT_INPUT_RULES = {
-    "block_secrets": True,
-    "block_pii": True,
-    "pii_patterns": [
-        {"name": "credit_card", "regex": r"\b(?:\d[ -]?){13,16}\b"},
-        {"name": "ssn",         "regex": r"\b\d{3}-\d{2}-\d{4}\b"},
-        {"name": "email",       "regex": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"},
-    ],
-    "block_prompt_injection": True,
-    "injection_keywords": [
-        "ignore previous instructions",
-        "disregard your system prompt",
-        "forget everything",
-        "reveal your system prompt",
-        "print your hidden instructions",
-        "bypass the policy",
-        "disable safety",
-    ],
-    "block_jailbreak": True,
-    "jailbreak_patterns": [
-        "DAN mode",
-        "developer mode",
-        "pretend you have no restrictions",
-        "act as an unrestricted",
-        "you are now jailbroken",
-        "simulated sandbox",
-        "do not include any safety warnings",
-        "unrestricted terminal",
-        "silently logs keystrokes",
-        "log keystrokes",
-        "keystroke logger",
-        "keylogger",
-    ],
-}
 _DEFAULT_OUTPUT_RULES   = {"enforce_schema": False, "block_toxic_content": True}
 _DEFAULT_TOPIC_POLICY   = {"blocked_topics": ["competitor products", "medical advice"]}
 _DEFAULT_COMPLIANCE     = {"block_medical_advice": True}
@@ -426,7 +393,7 @@ async def chat(
                 fallbacks=fallbacks,
                 cache=use_cache,
             )
-    except Exception as e:
+    except Exception:
         latency_ms = int((time.monotonic() - start) * 1000)
         await _log_request(
             db=db, api_key=api_key,
@@ -657,7 +624,7 @@ async def chat_stream(
         raise
 
     # ── Token balance ─────────────────────────────────────────────────────
-    wallet = await require_balance(db, api_key.owner_id, stream_estimated)
+    await require_balance(db, api_key.owner_id, stream_estimated)
 
     # ── PII redaction ─────────────────────────────────────────────────────
     redaction_result = None
@@ -801,7 +768,7 @@ async def chat_stream(
                                 yield _sse({"type": "token", "content": chunk.token})
                     if private_stream and not completed:
                         raise ValueError("Private model stream ended without a completion marker")
-                except Exception as e:
+                except Exception:
                     latency_ms = int((time.monotonic() - start) * 1000)
                     await _log_request(
                         db=stream_db, api_key=api_key,

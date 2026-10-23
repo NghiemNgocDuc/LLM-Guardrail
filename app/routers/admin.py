@@ -445,7 +445,6 @@ async def unban(
     if api_key_id and not user_id:
         # best-effort: lookup owner
         from app.database import get_sessionmaker  # noqa: PLC0415
-        from sqlalchemy import select  # noqa: PLC0415
         try:
             sm = get_sessionmaker()
             async with sm() as db:

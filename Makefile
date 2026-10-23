@@ -1,4 +1,4 @@
-.PHONY: audit backup lint docker-build docker-up security-check
+.PHONY: audit backup lint test docker-build docker-up docker-logs docker-clean security-check db-migrate db-rollback dev-api dev-web help
 
 # ── Security ──────────────────────────────────────────────────────────────────
 
@@ -12,9 +12,12 @@ backup:  ## Backup database + config
 
 # ── Lint ──────────────────────────────────────────────────────────────────────
 
-lint:  ## Ruff lint + type check
-	ruff check . --fix
-	pyright .
+lint:  ## Check Python application code and frontend types
+	python -m ruff check app guardrails main.py grpc_gateway/server.py sdk/python examples
+	npm run typecheck
+
+test:  ## Run the backend test suite
+	python -m pytest -q
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 

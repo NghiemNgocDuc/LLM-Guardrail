@@ -1,167 +1,158 @@
-# AI Guardrails Platform
+# LLM Guardrail
 
-A multi-tenant **LLM safety gateway** and **agent skill leak scanner** with a
-FastAPI backend, React dashboard, and Docker deployment:
+A safety gateway for LLM requests and agent instructions. Route model traffic
+through configurable input and output checks, review blocked requests, and scan
+skills before agents load them.
 
-- FastAPI API gateway
-- React dashboard
-- PostgreSQL audit log
-- Redis-backed rate limiting
-- Per-organization guardrail policy
-- Groq, OpenAI, Anthropic, Gemini, Grok (xAI), Ollama, and OpenAI-compatible backends
-- Agent skill / instruction scanner (`POST /skills/scan`) for Cursor skills, MCP rules, and system prompts
+The platform combines a **FastAPI API**, a **React dashboard**, **PostgreSQL**
+storage, and **Redis** rate limiting. It supports hosted model providers and
+self-hosted Ollama inference.
 
-**Live demo:** [https://llm-guardrail.onrender.com](https://llm-guardrail.onrender.com)
+[Live demo](https://llm-guardrail.onrender.com) ·
+[Quickstart](#quickstart-with-docker) ·
+[Local development](#local-development) ·
+[API guide](docs/API_GUIDE.md) ·
+[Private self-hosting](docs/PRIVATE_SELF_HOSTING.md)
 
-**Health:** [https://llm-guardrail.onrender.com/health](https://llm-guardrail.onrender.com/health)
+![LLM Guardrail dashboard showing request totals, blocked traffic, latency, and policy signals](docs/images/dashboard.png)
 
-Start with [Docker](#docker-quickstart) or [local development](#local-development).
-For hosting, see [Render deployment](DEPLOYMENT_RENDER.md); for availability
-alerts, see [UptimeRobot monitoring](#uptimerobot-monitoring).
-For self-hosted inference with no hosted AI providers or raw blocked audit
-content, see [Private self-hosting](docs/PRIVATE_SELF_HOSTING.md).
-The [Cloud Run deployment review](docs/CLOUD_RUN_PLAN.md) explains the changes
-and storage costs required for a serverless deployment.
+*The actual web app rendered locally with synthetic test data. More views and
+capture instructions are in the [screenshot guide](docs/SCREENSHOTS.md).*
 
-## Architecture
+## What it does
 
-```text
-Client app or dashboard
-        |
-        v
-FastAPI Guardrail Gateway
-  | auth + API keys
-  | rate limits + demo limits
-  | input guardrails
-  | provider routing
-  | output guardrails
-        |
-        v
-Groq / OpenAI / Anthropic / Gemini / Grok / Ollama
+| Area | Capabilities |
+| --- | --- |
+| LLM gateway | REST, OpenAI-compatible chat, and SSE streaming; provider routing, failover, and circuit breakers |
+| Input and output checks | Credential detection, configurable PII handling, injection and jailbreak checks, output rules, and custom OPA/Rego policies |
+| Skill Guard | Scan instruction files; manage drafts and versions; review exact findings before distribution |
+| Workspace management | Organization policies, scoped gateway keys, teams, request limits, and optional token billing |
+| Observability | Request logs, blocked-rule analytics, provider usage, health checks, exports, and signed webhooks |
+| Agent integrations | MCP tools, client SDKs, a canonical Python scanner, and a Git pre-push gate |
 
-PostgreSQL stores users, policies, API keys, and audit logs.
-Redis stores shared rate-limit windows.
+The scanner uses heuristic checks. Its verdict is evidence for review, not a
+guarantee that arbitrary instructions are safe. An integrating agent must honor
+the scan decision before loading content.
+
+## How it works
+
+```mermaid
+flowchart LR
+    Client[Application or dashboard] --> API[FastAPI gateway]
+    API --> Access[Authentication, scopes, limits, and budget]
+    Access --> Input[Input guardrails and workspace policy]
+    Input -->|Allowed| Model[LLM provider or local Ollama]
+    Model --> Output[Output guardrails]
+    Output --> Result[Response and audit record]
+    Input -->|Blocked| Block[Block decision and audit record]
+    API --- DB[(PostgreSQL)]
+    API --- Redis[(Redis)]
+    Input -. Custom Rego rule .-> OPA[Open Policy Agent]
 ```
 
-## Nix Quickstart (Linux)
+1. Authenticate the session or gateway key and resolve its workspace and scopes.
+2. Apply request limits, payload limits, and token-budget checks.
+3. Evaluate the prompt against the workspace policy. Depending on the rule and
+   mode, block, redact, warn, or continue.
+4. Route allowed input to the selected provider, with configured failover.
+5. Evaluate the output, record the decision and usage, and return the result.
 
-A reproducible dev shell is provided by [`flake.nix`](flake.nix) — versions
-pinned to match CI and `docker-compose.yml` (Python 3.12, Node 22, Go
-1.22.12, Rust stable, OPA 1.18.2, Postgres 16 / Redis 7 clients, maturin).
-The first run records the nixpkgs pin in `flake.lock` — commit it:
+Standard streaming can emit tokens before the final output verdict. Private
+mode buffers output until checks pass. See [private self-hosting](docs/PRIVATE_SELF_HOSTING.md)
+for its inference, network, and audit boundaries.
+
+Skill delivery follows a separate path: **draft → scan → review any blocked
+findings → authenticated download or live fetch**. Saving a draft does not
+approve its distribution. Hosted approvals bind the reviewed user, workspace,
+content, and delivery revision; external agents still control their own runtime.
+See the [skill logic contract](docs/SKILL_LOGIC.md).
+
+## Quickstart with Docker
+
+Requires Docker Engine or Docker Desktop with Compose v2 and Linux containers.
 
 ```bash
-nix develop                 # first run: creates flake.lock + .venv, installs Python deps
-. .venv/bin/activate        # already active inside the shell
-python -m pytest -q         # backend tests
-npm ci && npm run dev       # frontend
-```
-
-> On Windows, use WSL2 for the Nix shell, or follow the local development
-> instructions below. The current flake defines Linux development shells.
-
-## Docker Quickstart
-
-Create `.env` from the example and fill in real secrets:
-
-```bash
+git clone https://github.com/NghiemNgocDuc/LLM-Guardrail.git
+cd LLM-Guardrail
 cp .env.example .env
 ```
 
-For a local Docker stack, set these values in `.env`:
+On PowerShell, use `Copy-Item .env.example .env` for the last step. Edit `.env`
+and set the following values. Use a different random value for each secret;
+hexadecimal passwords avoid connection-URL escaping issues.
 
 ```env
-APP_ENV=development
-DEBUG=false
-SECRET_KEY=<long-random-secret>
-POSTGRES_PASSWORD=<strong-db-password>
-REDIS_PASSWORD=<strong-redis-password>
-DEFAULT_LLM_BACKEND=groq
-DEFAULT_MODEL=openai/gpt-oss-20b
-GROQ_API_KEY=<your-groq-key>
+SECRET_KEY=<at-least-32-random-characters>
+POSTGRES_PASSWORD=<random-hex-password>
+REDIS_PASSWORD=<different-random-hex-password>
+DEFAULT_LLM_BACKEND=mock
+DEFAULT_MODEL=mock-local
+BILLING_ENABLED=false
 ```
 
-The example environment selects Ollama; choosing Groq also requires changing
-`DEFAULT_LLM_BACKEND` and `DEFAULT_MODEL` as shown above. For self-hosted Ollama,
-set `OLLAMA_BASE_URL` to an address reachable from the API container.
-
-Start the stack:
+`mock` exercises the UI and gateway without a model API key. The development
+override supplies the local URLs and enables API documentation. Start the six
+core services:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build db redis opa mandate-gateway api web
 ```
 
-Open:
-
-- Dashboard: http://localhost:8080
-- API docs: http://localhost:8080/docs
-- Health: http://localhost:8080/health
-
-The development override enables localhost URLs and API docs. For production,
-use `docker compose up -d --build` without the override, configure
-`PUBLIC_APP_URL` and `ALLOWED_ORIGINS` for your public HTTPS origin, and put TLS
-in front of `web`. Production disables `/docs`, `/redoc`, and `/openapi.json`.
-
-For hosted deployment with Supabase, Upstash, Render, or Koyeb, see [DEPLOYMENT.md](DEPLOYMENT.md).
-
-Single-container cloud deploys can use `Dockerfile.fullstack`, which builds the React dashboard and serves it from FastAPI on the same port.
-
-Live demo checklist: [LIVE_DEMO.md](LIVE_DEMO.md)
-Operations and backup guide: [OPERATIONS.md](OPERATIONS.md)
-UptimeRobot monitoring setup: [OPERATIONS.md#uptimerobot-monitoring](OPERATIONS.md#uptimerobot-monitoring)
-Screenshot guide: [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)
-
-## Services
-
-| Service | Purpose |
+| Endpoint | Address |
 | --- | --- |
-| `web` | Nginx static frontend and API reverse proxy |
-| `api` | FastAPI gateway; runs Alembic migrations on startup |
-| `db` | PostgreSQL 16 |
-| `redis` | Shared rate-limit store for API workers |
-| `opa` | Open Policy Agent for custom Rego policy evaluation |
-| `mandate-gateway` | Go service for MandateFlow checks |
+| Dashboard | [localhost:8080](http://localhost:8080) |
+| Interactive API docs | [localhost:8080/docs](http://localhost:8080/docs) |
+| Health check | [localhost:8080/health](http://localhost:8080/health) |
 
-Scale API workers:
+Create an account from the dashboard, open the LLM Playground, and send a
+prompt. The API container runs migrations before starting. Data persists in
+Docker volumes across restarts.
 
-```bash
-docker compose up -d --scale api=3
-```
+To use a real model, set its backend, model, and credentials in `.env`, then
+recreate `api`. Supported backends are `groq`, `openai`, `anthropic`, `gemini`,
+`xai` / `grok`, `ollama`, `openai_compatible`, and optional `litellm`.
+The [configuration guide](docs/CONFIGURATION.md) lists the required variables.
+For Ollama, its URL must be reachable **from the API container**; container
+`localhost` is the container itself.
 
-The public entrypoint is `web` on port `8080`. Keep `api`, `db`, and `redis` private.
+The full Compose file also includes a Phoenix live feed, a gRPC input checker,
+and Watchtower. The live feed needs a separate `SECRET_KEY_BASE` of at least 64
+characters. See [operations](OPERATIONS.md) before enabling companion services.
 
-## Local Development
+For public hosting, configure HTTPS, production secrets, explicit origins,
+PostgreSQL, and Redis, and use the production Compose configuration without the
+development override. Production disables `/docs`, `/redoc`, and `/openapi.json`.
+Follow [deployment](DEPLOYMENT.md) or [private self-hosting](docs/PRIVATE_SELF_HOSTING.md).
 
-Use Python 3.12 and Node.js 22, matching the Docker images and CI. Create a
-virtual environment and install the backend dependencies:
+## Local development
+
+Use **Python 3.12**, **Node.js 22**, and a reachable **PostgreSQL** database.
+Redis is optional in development; an empty Redis URL uses in-memory limits.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
+cp .env.example .env
 ```
 
-On Windows, activate it with `.\.venv\Scripts\Activate.ps1`.
-Copy `.env.example` to `.env` and configure a reachable PostgreSQL database:
+On PowerShell, activate with `.\.venv\Scripts\Activate.ps1` and copy the file
+with `Copy-Item`. Set these values in `.env`:
 
 ```env
 APP_ENV=development
 DEBUG=true
-SECRET_KEY=<local-development-secret>
-DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:5432/<database>
+SECRET_KEY=<local-random-secret>
+DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:5432/<database>
+RATE_LIMIT_REDIS_URL=
 PUBLIC_APP_URL=http://localhost:5173
 ALLOWED_ORIGINS=http://localhost:5173
 DEFAULT_LLM_BACKEND=mock
+DEFAULT_MODEL=mock-local
 BILLING_ENABLED=false
 ```
 
-`mock` lets you exercise the app without provider credentials. Set a real
-backend and its credentials when testing LLM calls. Set `RATE_LIMIT_REDIS_URL`
-to use Redis; leaving it empty uses in-memory limits for local development.
-Compose's database and Redis ports are private, so a host-run API needs a
-separately reachable database or an explicit local port mapping.
-
-Start the backend and frontend in separate terminals:
+Run the API and frontend in separate terminals:
 
 ```bash
 python -m uvicorn main:app --reload
@@ -172,425 +163,98 @@ npm ci
 npm run dev
 ```
 
-Open the dashboard at `http://localhost:5173`, API docs at
-`http://localhost:8000/docs`, and health at `http://localhost:8000/health`.
-Development startup creates database tables; deployed containers run Alembic
-migrations through `docker-entrypoint.sh`.
+Open [localhost:5173](http://localhost:5173). The frontend defaults to the API at
+`http://localhost:8000` in development; override it with `VITE_API_BASE_URL` if
+needed. Development startup creates tables. Deployment uses Alembic migrations.
+The standard Compose database has no published host port, so a host-run API
+needs its own reachable database or an explicit local port mapping.
 
-## UptimeRobot Monitoring
+Linux users can alternatively enter the [Nix development shell](flake.nix)
+with `nix develop`. Its first run creates `.venv`; commit the generated
+`flake.lock` if adopting that workflow.
 
-Use **`https://llm-guardrail.onrender.com/health`** for the deployed app's
-HTTP(s) monitor. `/health` accepts GET and HEAD, returns 200 when the API and
-database respond, and returns 503 on database failure or a five-second timeout.
-Checks do not call an LLM or use gateway tokens.
+## Use the API
 
-Preview the monitor configuration without an API key or network calls:
-
-```bash
-python scripts/setup_uptimerobot.py --url https://llm-guardrail.onrender.com --dry-run
-```
-
-To create the monitor, configure `UPTIMEROBOT_API_KEY` and
-`UPTIMEROBOT_ALERT_CONTACTS` in your local `.env`, then rerun without
-`--dry-run`. The default interval is five minutes; rerunning reuses an existing
-HTTP monitor at the same URL. See [OPERATIONS.md](OPERATIONS.md#uptimerobot-monitoring)
-for dashboard setup and alert-contact formatting. Monitoring must be activated
-in your own UptimeRobot account after deployment.
-
-## Repository Layout
-
-| Path | Contents |
-| --- | --- |
-| `app/`, `main.py` | API routes, middleware, services, configuration, and data models |
-| `guardrails/`, `guardrail_core/` | Python checks and optional Rust engine |
-| `src/` | React dashboard |
-| `alembic/` | Database migrations |
-| `scripts/`, `tests/` | Operations tools and backend tests |
-| `sdk/`, `examples/` | Client libraries and usage examples |
-| `terraform/`, `deploy/` | Infrastructure configuration and deployment helpers |
-| `cli/`, `middleware/`, `elixir/`, `haskell/`, `julia/`, `zig/`, `grpc_gateway/` | Companion services, analysis tools, and language-specific components |
-
-## API Flow
-
-Sign up and create an organization (complete email verification if configured):
+In the dashboard, open **API keys** and create a gateway key with the `chat`
+scope. Use that key for application calls:
 
 ```bash
-curl -X POST http://localhost:8080/auth/signup \
+curl http://localhost:8080/chat \
+  -H "X-Api-Key: <gateway-api-key>" \
   -H "Content-Type: application/json" \
-  -d '{"email":"you@co.com","password":"secret123","full_name":"Duc","org_name":"Acme"}'
+  -d '{"prompt":"Explain how input guardrails work."}'
 ```
 
-Log in:
+The response includes the request status, input and output verdicts, model,
+latency, and usage information. Provider credentials belong in server-side
+environment variables. Gateway keys and provider keys serve different purposes.
+
+Use `POST /skills/scan` with a signed-in Bearer session to scan a skill, and
+check `blocked` and `agent_may_continue` before loading it. The raw `safe` field
+does not account for explicit server approvals. See the [API guide](docs/API_GUIDE.md)
+for signup, authentication, MCP tools, webhooks, and worked examples, or
+[SDK.md](SDK.md) for Python, JavaScript, Kotlin, and Swift clients.
+
+## Checks and tests
+
+Run backend tests in the development environment above. The suite uses isolated
+fixtures; optional database and language-tool integrations skip when their
+prerequisites are unavailable.
 
 ```bash
-curl -X POST http://localhost:8080/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"you@co.com","password":"secret123"}'
+python -m ruff check app guardrails main.py grpc_gateway/server.py sdk/python examples
+python scripts/check_repository_secrets.py
+python -m pytest -q
+npm run typecheck
+npm run build
+npx playwright install chromium
+npm run test:frontend
+npm run test:frontend:private
 ```
 
-Create a gateway API key:
+Browser tests cover desktop and mobile layouts, both themes, accessibility,
+and fixture-backed workflows. They do not require a running API. On Windows,
+set `$env:PW_CHANNEL="msedge"` to use installed Edge. Screenshots and failure
+traces go to ignored `test-results/`.
 
-```bash
-curl -X POST http://localhost:8080/api-keys \
-  -H "Authorization: Bearer <access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"my-app-key"}'
-```
+The optional [Rust engine](guardrail_core/Cargo.toml) accelerates regex checks.
+Without a compiled extension, checks fall back to Python. Build instructions,
+golden verdict tests, and additional configuration are in the
+[configuration guide](docs/CONFIGURATION.md).
 
-Call the gateway:
-
-```bash
-curl -X POST http://localhost:8080/chat \
-  -H "X-Api-Key: grg_..." \
-  -H "Content-Type: application/json" \
-  -d '{"prompt":"What is the capital of France?"}'
-```
-
-Scan an agent skill or instruction file before publishing (dashboard: **Skill Guard**):
-
-```bash
-curl -X POST http://localhost:8080/skills/scan \
-  -H "Authorization: Bearer <access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"content":"---\nname: my-skill\n---\nDo not embed secrets here.","filename":"SKILL.md"}'
-```
-
-Returns `safe`, `risk_score`, and per-line `findings` (secrets, PII, DB URLs,
-environment exposure, internal paths, and destructive shell/SQL commands).
-`safe` describes the raw scan. Use `blocked` and `agent_may_continue` for the
-decision after explicit server approvals; `runtime_enforced` is `false`, so the
-integrating agent must honor that decision before loading the content.
-
-### Managed skills and review
-
-In **Skill Guard**, workspace admins can create and edit managed drafts. Saving
-a draft does not approve it for agent use: every download and live fetch runs a
-delivery scan, including authored metadata in wrapped Markdown. Blocked delivery
-returns HTTP 422 and a review-queue ID without returning the skill document.
-
-The review queue offers **Allow once**, **Always allow**, and **Keep blocked**.
-Hosted approvals belong to the reviewing user and workspace and match the exact
-content and findings. Delivery approvals also bind the revision, metadata,
-download mode, and raw/wrapped choice. Allow once is consumed by a matching
-scan or delivery attempt; changed content cannot reuse the previous approval.
-Client-supplied overrides and repository-local CLI override files cannot bypass
-hosted scans.
-
-`GET /skills/live/{slug}` requires a signed-in Bearer session or a gateway key
-with `skills:read`; it only reads that authenticated workspace. Send credentials
-in headers. Downloaded Markdown contains installation guidance and a live URL,
-but the consumer must fetch, install, and select versions explicitly.
-
-See [agent and skill logic](docs/SKILL_LOGIC.md) for the API contract,
-concurrency rules, integrity headers, and integration limits.
-
-### Dashboard utilities
-
-Policy change previews, replay, and blocked-rule analytics (all dashboard-authenticated, all read-only):
-
-```bash
-# Compare two policy blobs field by field (no DB write) — admin policy tooling
-curl -X POST http://localhost:8080/policy/diff \
-  -H "Authorization: Bearer <access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"policy_a": {"input_rules": {"block_jailbreak": true}}, "policy_b": {"input_rules": {"block_jailbreak": false}}}'
-
-# Dry-run a stored request against the CURRENT org policy (no LLM call, no tokens deducted)
-curl -X POST http://localhost:8080/admin/replay/<request_id> \
-  -H "Authorization: Bearer <access_token>"
-
-# Most frequent blocked-request rules in the last 7 days, with latest occurrence each
-curl -X GET "http://localhost:8080/analytics/top-blocked-reasons?days=7&limit=10" \
-  -H "Authorization: Bearer <access_token>"
-
-# Blocked requests that users later disputed (positive feedback or an admin
-# always-allow override) — grouped by fired rule to spot likely false positives
-curl -X GET "http://localhost:8080/analytics/false-positive-candidates?days=7&limit=50" \
-  -H "Authorization: Bearer <access_token>"
-
-# Org audit export (admins): paginated request logs with the owning user's
-# email. Raw prompts, passwords, and key hashes are never exported.
-curl -X GET "http://localhost:8080/org/export?days=30&page=1&page_size=100" \
-  -H "Authorization: Bearer <access_token>"
-
-# Rotate the HMAC secret used to sign guardrail webhooks (shown exactly once)
-curl -X POST "http://localhost:8080/org/rotate-webhook-secret" \
-  -H "Authorization: Bearer <access_token>"
-```
-
-Webhooks: when the org policy has a `webhook_secret` (set via the endpoint
-above), every `guardrail_fired` webhook is signed with HMAC-SHA256 over
-`"{timestamp}.{body}"` and delivered with:
-
-```
-X-Guardrail-Signature: v1,<hex digest>
-X-Guardrail-Timestamp: <unix seconds>
-```
-
-Verify in the receiver before trusting the event; unsigned submissions are an
-indication the sender isn't under your org's secret.
-
-### Before `git push` (local hook)
-
-Install once per clone to check skill content before pushing to GitHub:
+Install the canonical skill scan before pushing:
 
 ```bash
 ./scripts/install-git-hooks.sh
-```
-
-Windows:
-
-```powershell
-.\scripts\install-git-hooks.ps1
-```
-
-The **pre-push** hook reads committed Markdown under `.cursor/skills/` from the
-outgoing commit trees. Local edits cannot hide unsafe committed content, and a
-later revert cannot hide an unsafe intermediate version. Identical blobs are
-checked once. New branches conservatively check their reachable skill history;
-missing Git objects or unreadable skills block the push until they can be checked.
-
-The hook requires the canonical Python scanner, `scripts/scan_agent_skills.py`.
-It can use the compatible Rust acceleration path when installed. A prebuilt Go
-binary or `SKILL_GUARD_BIN` does not replace the canonical pre-push check.
-
-The standalone Go companion has no Python runtime dependency. Its independent
-implementation can differ from the canonical scanner; use Python for the current
-checks. Build instructions are in [cli/guardrail-scan/README.md](cli/guardrail-scan/README.md).
-
-### GitHub (pull requests and pushes)
-
-[`.github/workflows/scan-agent-skills.yml`](.github/workflows/scan-agent-skills.yml) runs on:
-
-- Every pull request to `main`
-- Every **push** that changes `.cursor/skills/**` (any branch) — backup if someone skips the local hook
-
-The CI skill check also uses the canonical Python scanner.
-
-Scan manually anytime:
-
-```bash
 python scripts/scan_agent_skills.py
-python scripts/scan_agent_skills.py --git-range origin/main..HEAD
 ```
 
-See [.githooks/README.md](.githooks/README.md) for details.
+On PowerShell, install with `.\scripts\install-git-hooks.ps1`. The hook checks
+committed skill content throughout outgoing history. See the
+[hook guide](.githooks/README.md); the Go companion does not replace this gate.
 
-Client examples:
+## Repository map
 
-- [Python](examples/python_client.py)
-- [JavaScript](examples/javascript_client.mjs)
-
-SDK helpers are documented in [SDK.md](SDK.md).
-
-### MCP server tools
-
-The MCP server (`GET /mcp/sse`, JSON-RPC over SSE, authenticated with a `grg_` gateway API key) exposes 8 tools:
-
-| Tool | Purpose |
+| Path | Purpose |
 | --- | --- |
-| `scan_skill` | Scan one skill / instruction file for secrets, PII, and destructive commands |
-| `scan_repo` | Scan a batch of files in one call (JSON array of `{filename, content}`), returns per-file results plus an aggregate summary |
-| `check_input` | Check a prompt against input guardrails (secrets, PII, injection, jailbreak) |
-| `check_output` | Check an LLM response against output guardrails (leaks, toxicity, topics, schema) |
-| `chat` | Route a prompt through the full guardrail gateway (requires a key with the `chat` scope) |
-| `redact_pii` | Redact PII from text with reversible placeholders |
-| `get_default_policy` | Return the default guardrail policy configuration |
-| `explain_policy` | Explain what a JSON guardrail policy actually enforces (no LLM call) |
+| `main.py`, `app/` | FastAPI entrypoint, routes, auth, services, models, and middleware |
+| `guardrails/`, `guardrail_core/` | Python checks and optional Rust acceleration |
+| `src/` | React dashboard, components, styles, and API types |
+| `alembic/` | PostgreSQL schema migrations |
+| `tests/`, `fixtures/` | Backend regressions, browser tests, and scanner fixtures |
+| `sdk/`, `examples/` | Client libraries and usage examples |
+| `scripts/`, `.githooks/` | Scanning, Git checks, operations, and maintenance |
+| `middleware/mandateflow/` | Go capability and provenance sidecar |
+| `grpc_gateway/`, `elixir/live_feed/` | Input-check service and realtime audit feed |
+| `cli/`, `zig/`, `haskell/`, `julia/` | Companion scanner, environment checker, Rego linting, and analytics |
+| `terraform/`, `deploy/` | Infrastructure and deployment configuration |
 
-Remote `chat` calls use the same workspace policy, billing, budgets, limits,
-and audit path as `POST /chat`; client policy overrides are rejected.
-`scan_skill` and `scan_repo` require `skills:read`. Explicit empty key scopes
-grant neither chat nor skill access; legacy null scopes retain chat access.
-Authenticated MCP utility tools without a required scope remain available.
-Local stdio mode is a separate integration and does not authenticate a hosted
-workspace. See [agent and skill logic](docs/SKILL_LOGIC.md).
+## Documentation
 
-## Configuration
-
-Set `DEFAULT_LLM_BACKEND` globally or `llm_backend` per organization policy.
-
-| Backend value | Required env vars |
-| --- | --- |
-| `groq` | `GROQ_API_KEY` |
-| `openai` | `OPENAI_API_KEY` |
-| `anthropic` | `ANTHROPIC_API_KEY` |
-| `gemini` | `GEMINI_API_KEY` |
-| `xai` / `grok` | `XAI_API_KEY` (or `GROK_API_KEY`) |
-| `ollama` | `OLLAMA_BASE_URL` |
-| `openai_compatible` | `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY` |
-| `litellm` | provider keys (optional backend, `pip install litellm`) |
-| `mock` | none; test-only backend |
-
-### Failover
-
-When a backend fails (timeout / 5xx), the gateway tries fallbacks in order:
-
-1. per-org policy `compliance_rules.llm_fallbacks` (e.g. `["openai/gpt-4o"]`),
-2. the global `LLM_FAILOVER_BACKENDS` list (comma-separated, e.g. `openai,gemini`).
-
-Each backend is individually circuit-broken; `/health/breakers` reports per-backend state.
-
-### Optional features
-
-| Feature | How to enable |
-| --- | --- |
-| Response cache (exact-hash) | `RESPONSE_CACHE_ENABLED=true` **and** per-policy `output_rules.response_cache` |
-| External output validators | Per-policy `output_rules.external_validators` (guardrails-ai-style: `ValidLength`, `RegexMatch`, `DenyList`, `AllowList`, `RequiredFields`, `CompetitorDetector`) |
-| At-rest prompt encryption | Set `ENCRYPTION_KEY` (Fernet) — full prompts are encrypted before storage; admin replay decrypts on the fly |
-| Webhook delivery tracking | `RATE_LIMIT_REDIS_URL` (Redis ring buffer, in-memory fallback) — see `GET /admin/webhook-deliveries` |
-| SSE keepalive | Always on — `/chat/stream` sends `{"type":"ping"}` during long generations |
-
-### guardrailctl (ops CLI)
-
-```bash
-python scripts/guardrailctl.py status         # adapters, breakers, feature flags
-python scripts/guardrailctl.py cost-anomaly   # flag org daily token-spend spikes
-```
-
-### Tests
-
-```bash
-python -m pytest -q                        # full suite
-python -m pytest tests/test_uptimerobot.py -q  # health and monitor setup
-GOLDEN_UPDATE=1 python -m pytest tests/test_golden.py -q   # regenerate golden verdicts
-npm run typecheck
-npm run build
-```
-
-The frontend uses a shared design system across every view, with light/dark
-themes, responsive navigation, keyboard-friendly dialogs, and reduced-motion
-support. The login preview keeps its word-by-word LLM output. See the
-[frontend design notes](docs/FRONTEND_DESIGN.md) for components and research.
-
-Frontend browser checks use isolated API fixtures to verify authentication,
-every workspace view, and key, policy, skill, memory, account, team, billing,
-analytics, log, health, export, and provenance workflows:
-
-```bash
-npx playwright install chromium
-npm run test:frontend
-```
-
-They run at desktop and 375px mobile widths, with automated accessibility checks
-in both themes. Tests never make real purchases or modify live accounts.
-On Windows with Edge already
-installed, set `$env:PW_CHANNEL="msedge"` in PowerShell to use it instead of
-downloading Chromium. Preview screenshots and failure traces are written to
-the ignored `test-results/` directory.
-
-Golden verdict fixtures (`tests/golden/cases.json`) pin input/output guardrail outcomes; CI runs them in a dedicated job.
-
-### Guardrail engine (Rust)
-
-The regex checks in `guardrails/` run through a compiled Rust extension
-(`guardrail_core`, a PyO3 module built with [maturin](https://www.maturin.rs)).
-The `regex` crate guarantees linear-time matching, so pathological inputs that
-could stall the Python `re` engine are safe. An extension import or runtime
-error falls back to the pure-Python implementation,
-so the app runs fine on machines without a Rust toolchain.
-
-Select the engine with `GUARDRAIL_ENGINE` (default `rust`). The current Docker
-images do not build the extension; they use the Python fallback unless you add
-the compiled extension to the image:
-
-```env
-GUARDRAIL_ENGINE=rust      # compiled extension when importable, else Python
-# GUARDRAIL_ENGINE=python  # always use the Python implementation
-```
-
-Build and install locally:
-
-```bash
-pip install -r requirements-dev.txt
-pip install maturin             # wheel builder (not in requirements-dev.txt)
-maturin build --release --interpreter python --out wheels
-pip install wheels/*.whl
-cargo test --release                  # Rust unit tests (working-directory: guardrail_core)
-```
-
-Engine-parity tests run twice per module — once per engine — via the
-`engine_mode` fixture (`tests/conftest.py`), and CI exercises both in the
-`rust-engine-tests` job.
-
-Groq default base URL:
-
-```env
-GROQ_BASE_URL=https://api.groq.com/openai/v1
-```
-
-## Migrations
-
-The API container runs migrations automatically on startup:
-
-```bash
-alembic upgrade head
-```
-
-For model changes, generate a migration locally:
-
-```bash
-alembic revision --autogenerate -m "describe change"
-```
-
-## Token billing (publish for paying users)
-
-Gateway `/chat` usage is metered in **tokens** (LLM input + output). Each new user gets a free wallet (`FREE_SIGNUP_TOKENS`, default 10,000). When balance is low, the API returns **402** with a link to buy more.
-
-| Plan | Tokens | Price (USD) |
-| --- | --- | --- |
-| Starter | 500K | $9 |
-| Growth | 2M | $29 |
-| Scale | 10M | $99 |
-| Enterprise | 50M | $399 |
-
-Dashboard: **Billing** in the sidebar — balance, buy packs, purchase history.
-
-### Stripe setup
-
-1. Create a [Stripe](https://stripe.com) account and add to `.env`:
-
-```env
-BILLING_ENABLED=true
-STRIPE_SECRET_KEY=sk_live_...
-STRIPE_PUBLISHABLE_KEY=pk_live_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-```
-
-2. Stripe Dashboard → **Webhooks** → add endpoint `https://YOUR_DOMAIN/billing/webhook` with event `checkout.session.completed`.
-
-3. Run migration: `alembic upgrade head` (adds `token_wallets` and `token_purchases`).
-
-4. Optional: create Products/Prices in Stripe and set `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_GROWTH`, etc.
-
-**Development:** without Stripe keys, **Buy tokens** still credits the pack instantly for local testing.
-
-Disable metering entirely: `BILLING_ENABLED=false`.
-
-## Production Notes
-
-- Rotate any API keys that were exposed during development.
-- Use strong `SECRET_KEY` and `POSTGRES_PASSWORD` values.
-- Put TLS in front of `web` for public deployment.
-- Keep `.env` out of source control.
-- Use `docker compose logs -f api web` for operational debugging.
-
-## Public Demo Mode
-
-Enable demo mode when hosting a public link that uses your provider quota:
-
-```env
-DEMO_MODE=true
-DEMO_RATE_LIMIT_RPM=5
-DEMO_RATE_LIMIT_RPD=25
-DEMO_IP_RATE_LIMIT_RPM=20
-DEMO_IP_RATE_LIMIT_RPD=100
-DEMO_MAX_PROMPT_CHARS=2000
-DEMO_MAX_OUTPUT_TOKENS=2048
-```
-
-Demo mode adds stricter per-API-key and per-IP limits on top of organization limits, rejects oversized prompts, and rejects requests asking for too many output tokens before calling the LLM. To run a fixed shared demo account, create the account yourself and set:
-
-```env
-DEMO_DISABLE_SIGNUPS=true
-```
+- [API and agent integrations](docs/API_GUIDE.md) · [SDKs](SDK.md) · [Skill logic](docs/SKILL_LOGIC.md)
+- [Configuration, providers, and billing](docs/CONFIGURATION.md)
+- [Deployment](DEPLOYMENT.md) · [Render](DEPLOYMENT_RENDER.md) · [Terraform](terraform/README.md)
+- [Private self-hosting](docs/PRIVATE_SELF_HOSTING.md) · [Cloud Run review](docs/CLOUD_RUN_PLAN.md)
+- [Operations, backups, and uptime monitoring](OPERATIONS.md) · [Live demo setup](LIVE_DEMO.md)
+- [Security policy](SECURITY.md) · [Hardening](docs/SECURITY_HARDENING.md)
+- [Frontend design](docs/FRONTEND_DESIGN.md) · [Screenshots](docs/SCREENSHOTS.md)

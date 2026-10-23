@@ -10,7 +10,7 @@ def build_evidence_pdf(metrics: dict, combined: dict, samples: list[dict]) -> by
     from reportlab.lib.colors import HexColor
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT, TA_CENTER
+    from reportlab.lib.enums import TA_CENTER
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18*mm, rightMargin=18*mm, topMargin=15*mm, bottomMargin=15*mm,
@@ -21,8 +21,6 @@ def build_evidence_pdf(metrics: dict, combined: dict, samples: list[dict]) -> by
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle('Title2', parent=styles['Title'], fontSize=18, textColor=HexColor("#0f766e"), alignment=TA_CENTER, spaceAfter=6)
     h2 = ParagraphStyle('H2', parent=styles['Heading2'], fontSize=12, textColor=HexColor("#102033"), spaceAfter=6, spaceBefore=12)
-    h3 = ParagraphStyle('H3', parent=styles['Heading3'], fontSize=10, textColor=HexColor("#0f766e"), spaceAfter=4)
-    body = ParagraphStyle('Body', parent=styles['Normal'], fontSize=9, leading=13, textColor=HexColor("#334155"))
     small = ParagraphStyle('Small', parent=styles['Normal'], fontSize=8, leading=11, textColor=HexColor("#64748b"))
     mono = ParagraphStyle('Mono', parent=styles['Normal'], fontSize=7, leading=10, fontName='Courier', textColor=HexColor("#475569"))
 
@@ -32,14 +30,14 @@ def build_evidence_pdf(metrics: dict, combined: dict, samples: list[dict]) -> by
     story.append(HRFlowable(width="100%", thickness=0.6, color=HexColor("#e2e8f0"), spaceAfter=8, spaceBefore=8))
 
     story.append(Paragraph("1. Fixture Metrics (9 fixtures — skill conflict)", h2))
-    story.append(Paragraph(f"Same set as <code>test_skill_guardrails_fixtures.py</code>. Scores via <code>guardrails/skill_conflict.py:136</code> live <code>GET /skills/managed/metrics</code>.", small))
+    story.append(Paragraph("Same set as <code>test_skill_guardrails_fixtures.py</code>. Scores via <code>guardrails/skill_conflict.py:136</code> live <code>GET /skills/managed/metrics</code>.", small))
     data = [
         ["Metric", "Score", "Target", "Status"],
         ["Recall (leak)", f"{metrics.get('recall_leak',0):.3f}", "≥0.98", "PASS" if metrics.get('recall_leak',0)>=0.98 else "FAIL"],
         ["Precision (safe)", f"{metrics.get('precision_safe',0):.3f}", "≥0.95", "PASS" if metrics.get('precision_safe',0)>=0.95 else "FAIL"],
         ["F1", f"{metrics.get('f1',0):.3f}", "≥0.96", "PASS" if metrics.get('f1',0)>=0.96 else "FAIL"],
         ["Severity", f"{metrics.get('severity_calibration',0):.3f}", "≥0.85", "PASS"],
-        [f"Latency p95", f"{metrics.get('latency_p95_ms',0):.1f}ms", "<200ms", "PASS" if metrics.get('latency_p95_ms',0)<200 else "FAIL"],
+        ["Latency p95", f"{metrics.get('latency_p95_ms',0):.1f}ms", "<200ms", "PASS" if metrics.get('latency_p95_ms',0)<200 else "FAIL"],
         ["Bump/Hash/Mode", "1.0/1.0/1.0", "1.0", "PASS"],
     ]
     t = Table(data, colWidths=[45*mm, 25*mm, 25*mm, 20*mm])
@@ -63,7 +61,7 @@ def build_evidence_pdf(metrics: dict, combined: dict, samples: list[dict]) -> by
     story.append(t2)
 
     story.append(Paragraph("3. Combined — llm-redactor + JailbreakBench + NotInject (live)", h2))
-    story.append(Paragraph(f"Single macro-F1 <code>avg(wl1,wl2,wl4, jailbreak recall, 1-FP)</code> via <code>GET /skills/managed/metrics/combined</code> <code>app/services/combined_benchmark.py:1</code> sampled 150 each. Last live: <code>wl1 1.0, wl2 1.0, wl4 1.0, jailbreak 1.0, NotInject FP 0.0, clean FP 0.0, macro-F1 1.0</code> (see below).", small))
+    story.append(Paragraph("Single macro-F1 <code>avg(wl1,wl2,wl4, jailbreak recall, 1-FP)</code> via <code>GET /skills/managed/metrics/combined</code> <code>app/services/combined_benchmark.py:1</code> sampled 150 each. Last live: <code>wl1 1.0, wl2 1.0, wl4 1.0, jailbreak 1.0, NotInject FP 0.0, clean FP 0.0, macro-F1 1.0</code> (see below).", small))
     comb_data = [
         ["Suite", "Recall / FP", "Status"],
         ["llm-redactor wl1/wl2/wl4", "1.0 / 0.0", "PASS"],

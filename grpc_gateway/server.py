@@ -14,7 +14,7 @@ from concurrent import futures
 
 import grpc
 
-from app.routers.chat import _DEFAULT_INPUT_RULES
+from app.defaults import DEFAULT_GATEWAY_INPUT_RULES
 from guardrails.input import InputGuardrail
 
 from . import chat_guardrail_pb2, chat_guardrail_pb2_grpc
@@ -22,7 +22,7 @@ from . import chat_guardrail_pb2, chat_guardrail_pb2_grpc
 
 class GuardrailService(chat_guardrail_pb2_grpc.GuardrailServiceServicer):
     def __init__(self) -> None:
-        self._guard = InputGuardrail(_DEFAULT_INPUT_RULES)
+        self._guard = InputGuardrail(DEFAULT_GATEWAY_INPUT_RULES)
 
     def Check(self, request, context) -> chat_guardrail_pb2.CheckResponse:
         return self._check(request)
@@ -54,5 +54,5 @@ def serve(port: int = 50051) -> grpc.Server:
 
 if __name__ == "__main__":
     server = serve()
-    print(f"guardrail gRPC listening on [::]:50051", flush=True)
+    print("guardrail gRPC listening on [::]:50051", flush=True)
     server.wait_for_termination()

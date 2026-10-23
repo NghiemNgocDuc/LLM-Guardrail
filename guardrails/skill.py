@@ -269,7 +269,13 @@ class SkillGuardrail:
                 )
             )
 
+        # Repeated safe lines need only one scan. Keep line-sensitive private
+        # key handling and the separate disclosure pass intact.
+        safe_lines: set[str] = set()
         for line_no, line in enumerate(lines, start=1):
+            if line in safe_lines and line_no not in private_key_lines:
+                continue
+            finding_count = len(findings)
             clauses = _CLAUSE_BOUNDARY_RE.split(line)
             for code, check_name, regex, score in DANGEROUS_COMMAND_PATTERNS:
                 if any(not is_prohibited_instruction(clause, match.start()) for clause in clauses for match in re.finditer(regex, clause)):
@@ -328,6 +334,9 @@ class SkillGuardrail:
                         line_no,
                         line,
                     )
+
+            if len(findings) == finding_count and line_no not in private_key_lines:
+                safe_lines.add(line)
 
         for line_number, evidence in disclosures:
             add("env_exfiltration", "Credential Disclosure Instruction", f"Credential disclosure instruction on line {line_number}", "env_exfiltration_probe", 0.95, line_number, evidence)

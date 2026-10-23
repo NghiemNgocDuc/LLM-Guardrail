@@ -4,8 +4,6 @@ Each Run gets its own runtime_id (rt_...), its own capability (env-style, never 
 and is isolated by construction. Retry = new Run + new runtime, same mandate.
 Mirrors Go disposable container boundary but as a cheap async context manager.
 """
-import uuid
-import asyncio
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +19,6 @@ class DisposableRuntime:
 
     async def call(self, tool: str, inputs: dict, db: AsyncSession):
         """Proxy to gateway/call — runtime never holds Payment/CRM creds."""
-        from app.services.mandate_service import verify_capability  # lazy
         # capability already bound to this run's env, no extra check needed here
         # actual gateway enforces provenance + scope
         # this method just marks runtime as active

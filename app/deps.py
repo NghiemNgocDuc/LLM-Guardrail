@@ -2,15 +2,15 @@
 FastAPI dependency injection.
 Resolves the current user from either a Clerk JWT, a local JWT, or an API key header.
 """
-import json
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
-from jose.jwk import construct
+import jwt
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from jwt import InvalidTokenError as JWTError
 from passlib.context import CryptContext
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,10 +46,20 @@ _jwks_cache_ts: float = 0
 _clerk_public_key: object | None = None
 
 
+def construct(key_data: str | dict) -> object:
+    """Load a Clerk RSA public key without trusting the token's algorithm."""
+    if isinstance(key_data, dict):
+        return jwt.PyJWK.from_dict(key_data, algorithm="RS256").key
+    return load_pem_public_key(key_data.encode())
+
+
 async def _verify_clerk_token(token: str) -> dict:
     global _clerk_public_key, _jwks_cache, _jwks_cache_ts
 
-    unverified = jwt.get_unverified_header(token)
+    try:
+        unverified = jwt.get_unverified_header(token)
+    except JWTError:
+        raise HTTPException(status_code=401, detail=_t("auth.clerk_invalid_jwt")) from None
     kid = unverified.get("kid")
     if not kid:
         raise HTTPException(status_code=401, detail=_t("auth.clerk_missing_kid"))

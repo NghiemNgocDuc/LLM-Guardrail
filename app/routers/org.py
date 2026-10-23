@@ -213,7 +213,7 @@ class OrgDeleteConfirm(BaseModel):
 @router.delete("/{org_id}", status_code=204)
 async def delete_org(org_id: str, body: OrgDeleteConfirm, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
     """Delete project — last button, leader only, must sign full name exactly."""
-    from app.models import OrgMembership, OrgPolicy, ManagedSkill
+    from app.models import OrgMembership, OrgPolicy
     org = await db.get(Organization, org_id)
     if not org:
         raise HTTPException(status_code=404, detail="Team not found")

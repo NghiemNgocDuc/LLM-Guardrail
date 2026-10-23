@@ -3,7 +3,7 @@
 Deterministic (no LLM) so the demo is falsifiable even when Groq 413s.
 Mirrors Go fixtures in MandateFlow demo.
 """
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import FixtureCounter

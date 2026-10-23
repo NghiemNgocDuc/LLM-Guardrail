@@ -8,12 +8,10 @@ All routes are user-scoped (CurrentUser). Org memories (kind=org) are
 visible to org members but only admins can create org kind.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import CurrentUser
-from app.i18n import _t
 from app.models import Memory
 from app.schemas import MemoryCreate, MemoryOut, MemoryRecallRequest, MemoryRecallOut, MemoryUpdate
 from app.services.memory import create_memory, list_memories, recall_memories, llm_extract_memories
@@ -27,7 +25,6 @@ async def list_mem(current_user: CurrentUser, q: str | None = None, category: st
 
 @router.get("/stats")
 async def stats(current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
-    from sqlalchemy import func
     # counts per category, pinned, total
     from app.services.memory import list_memories as lm
     items, total = await lm(db, current_user.id, current_user.org_id, limit=1000)

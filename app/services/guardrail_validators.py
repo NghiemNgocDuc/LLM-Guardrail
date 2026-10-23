@@ -68,7 +68,7 @@ class RegexMatchValidator(BaseValidator):
     def validate(self, value: str, metadata: dict | None = None) -> ValidationResult:
         if self.regex.search(value):
             return ValidationResult("pass")
-        return ValidationResult("fail", f"Response does not match required pattern")
+        return ValidationResult("fail", "Response does not match required pattern")
 
 
 class DenyListValidator(BaseValidator):

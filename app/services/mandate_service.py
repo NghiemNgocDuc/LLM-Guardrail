@@ -38,8 +38,8 @@ def attenuate(parent_scopes: list[str], requested: list[str]) -> list[str]:
         return list(parent_scopes or [])
     if not parent_scopes:
         return sorted(requested)
-    pset = set(parent_scopes)
-    return [x for x in parent_scopes if x in set(requested)]
+    requested_set = set(requested)
+    return [x for x in parent_scopes if x in requested_set]
 
 def _provenance_for_tool(tool: str, current_ref: ProvenanceReference | None) -> str | None:
     if current_ref:

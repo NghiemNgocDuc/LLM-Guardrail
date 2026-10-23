@@ -4,7 +4,6 @@ API Key management:
   GET    /api-keys          — list all keys for current user
   DELETE /api-keys/{id}     — revoke a key
 """
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select

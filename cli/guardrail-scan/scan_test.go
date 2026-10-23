@@ -221,6 +221,22 @@ func TestRedactSnippet(t *testing.T) {
 	}
 }
 
+func TestRedactSnippetRemovesSensitiveValuesBeforeTruncating(t *testing.T) {
+	for _, input := range []string{
+		"Gateway key: grg_" + strings.Repeat("a", 40),
+		"password=private-password-value",
+		"Contact reviewer@example.test",
+		strings.Repeat("x", 60) + " grg_" + strings.Repeat("b", 40),
+	} {
+		got := redactSnippet(input)
+		for _, secret := range []string{"grg_", "private-password-value", "reviewer@example.test"} {
+			if strings.Contains(got, secret) {
+				t.Errorf("excerpt exposed sensitive data: %q", got)
+			}
+		}
+	}
+}
+
 func TestFindingKey(t *testing.T) {
 	f := SkillFinding{ReasonCode: "drop_sql", LineNumber: intPtr(3)}
 	if got := findingKey(f); got != "drop_sql:3" {

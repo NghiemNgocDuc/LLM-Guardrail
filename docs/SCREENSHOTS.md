@@ -1,33 +1,41 @@
-# Screenshot Guide
+# Web app screenshots
 
-Add screenshots after the app is running locally or on the live demo.
+These images show the actual React dashboard rendered locally at 1440 × 1000
+using the synthetic workspace in `tests/frontend/fixtures.ts`. Names, usage
+figures, prompts, and identifiers are test data, not a live customer account.
 
-Recommended screenshots:
+## Overview
 
-1. Dashboard with total requests, blocked requests, provider usage, and suspicious prompts.
-2. Chat Tester showing a blocked prompt-injection request.
-3. API Keys page showing a created gateway key prefix.
-4. Policy Editor showing enabled guardrails.
-5. Admin page showing users and organization API keys.
+![Request overview with traffic and policy signals](images/dashboard.png)
 
-Suggested file names:
+## Skill Guard
 
-```text
-docs/images/dashboard.png
-docs/images/chat-blocked.png
-docs/images/api-keys.png
-docs/images/policy.png
-docs/images/admin.png
+![Skill Guard workspace with scanning and managed skill tools](images/skill-guard.png)
+
+## Policies
+
+![Workspace policy editor and guardrail controls](images/policy.png)
+
+## Refresh the images
+
+From the repository root, install Node.js 22 and the frontend dependencies:
+
+```bash
+npm ci
+npx playwright install chromium
+npm run test:frontend -- tests/frontend/all-views.spec.ts --project=desktop --workers=1
 ```
 
-Suggested README section:
+No API server or real credentials are needed. On Windows with Edge installed,
+set `$env:PW_CHANNEL="msedge"` before running the tests.
 
-```md
-## Screenshots
+After the tests pass, copy these generated files:
 
-![Dashboard](docs/images/dashboard.png)
-![Blocked prompt](docs/images/chat-blocked.png)
-![Policy editor](docs/images/policy.png)
-```
+| Generated file | Committed image |
+| --- | --- |
+| `test-results/previews/dashboard-light-desktop.png` | `docs/images/dashboard.png` |
+| `test-results/previews/skills-light-desktop.png` | `docs/images/skill-guard.png` |
+| `test-results/previews/policy-light-desktop.png` | `docs/images/policy.png` |
 
-Do not include raw API keys, provider keys, private emails, or real user prompts in screenshots.
+Inspect every image before committing it. Use synthetic data and keep raw keys,
+private email addresses, real prompts, and browser account details out of images.

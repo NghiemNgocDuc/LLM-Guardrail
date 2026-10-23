@@ -12,3 +12,12 @@ license = { text = "MIT" }
 [tool.maturin]
 module-name = "guardrail_core"
 manifest-path = "guardrail_core/Cargo.toml"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["F"]

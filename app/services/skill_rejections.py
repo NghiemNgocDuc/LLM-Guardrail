@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import re
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

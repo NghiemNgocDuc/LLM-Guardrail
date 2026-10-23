@@ -307,7 +307,6 @@ async def get_skill(slug: str, current_user: CurrentUser, db: AsyncSession = Dep
     _require_org(current_user)
     row = await get_managed_skill(db, current_user.org_id, slug)
     if not row:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"Skill '{slug}' not found")
     return {
         "slug": row.slug, "name": row.name, "description": row.description,
@@ -465,7 +464,6 @@ async def download_skill(
             raise HTTPException(status_code=400, detail="Do not embed authentication credentials in a skill's live URL. Use an authorization header.")
     row = await get_managed_skill(db, current_user.org_id, slug)
     if not row:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"Skill '{slug}' not found")
     # caller can override download mode; otherwise use the skill's stored update_mode
     effective_mode = mode or row.update_mode
