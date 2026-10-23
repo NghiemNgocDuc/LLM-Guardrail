@@ -135,8 +135,6 @@ def finding_to_dict(f) -> dict[str, Any]:
 
 def format_packet_for_chat(packet: dict[str, Any]) -> str:
     """Markdown block to paste into Cursor agent chat."""
-    import json
-
     body = json.dumps(packet, indent=2)
     return (
         "## Skill Guard — recorded user decision\n\n"

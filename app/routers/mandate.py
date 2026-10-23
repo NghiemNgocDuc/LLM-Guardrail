@@ -140,8 +140,6 @@ async def retry_run(run_id: str, request: Request, user: CurrentUser, db: AsyncS
 # ── gateway — the ONLY path to fixtures (enforcement point) ─────────────────
 # Tries Go sidecar (MANDATE_GATEWAY_URL) first for speed (WAL SQLite),
 # falls back to Python on timeout/error — fail-closed if Go denies.
-GO_GATEWAY_URL = None  # lazy from env
-
 async def _try_go_gateway(body: GatewayCallIn, authorization: str | None):
     if get_settings().PRIVATE_MODE:
         return None

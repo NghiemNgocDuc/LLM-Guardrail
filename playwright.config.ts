@@ -19,9 +19,10 @@ export default defineConfig({
     { name: "mobile", use: { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true } },
   ],
   webServer: {
-    command: "npm run dev -- --host 127.0.0.1 --port 5173 --strictPort",
+    command: "node scripts/frontend-test-server.mjs",
     url: "http://127.0.0.1:5173",
-    reuseExistingServer: !process.env.CI,
-    env: { VITE_API_BASE_URL: "http://127.0.0.1:8000", VITE_POSTHOG_API_KEY: "", VITE_SENTRY_DSN: "" },
+    reuseExistingServer: false,
+    timeout: 120_000,
+    env: { VITE_API_BASE_URL: "http://127.0.0.1:8000", VITE_PRIVATE_MODE: "false", VITE_POSTHOG_API_KEY: "", VITE_SENTRY_DSN: "" },
   },
 });

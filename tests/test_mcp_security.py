@@ -27,6 +27,56 @@ class _Request:
         yield self.body
 
 
+@pytest.mark.parametrize("tool,field,limit", [
+    ("scan_skill", "content", mcp.MAX_CONTENT_CHARS),
+    ("check_input", "prompt", mcp.MAX_PROMPT_CHARS),
+    ("check_output", "response", mcp.MAX_OUTPUT_CHARS),
+    ("chat", "prompt", mcp.MAX_PROMPT_CHARS),
+    ("redact_pii", "text", mcp.MAX_CONTENT_CHARS),
+])
+@pytest.mark.asyncio
+async def test_tool_text_limits_reject_empty_and_oversized_arguments(tool, field, limit):
+    assert mcp._validate_tool_call(tool, {field: "A valid message."}) is None
+    for value in ("", "   ", "x" * (limit + 1)):
+        result = await mcp._call_tool(tool, {field: value})
+        assert result["isError"] is True
+        assert "error" in json.loads(result["content"][0]["text"])
+
+
+@pytest.mark.asyncio
+async def test_scan_skill_rejects_oversized_filename_before_scanning():
+    result = await mcp._call_tool("scan_skill", {"content": "Run tests.", "filename": "f" * (mcp.MAX_FILENAME_CHARS + 1)})
+    assert result["isError"] is True
+    assert "filename" in json.loads(result["content"][0]["text"])["error"]
+
+
+@pytest.mark.parametrize("field,value", [("temperature", -1), ("temperature", 3), ("max_tokens", 0), ("max_tokens", 99999)])
+@pytest.mark.asyncio
+async def test_chat_rejects_out_of_range_generation_parameters(field, value):
+    result = await mcp._call_tool("chat", {"prompt": "Explain guardrails.", field: value})
+    assert result["isError"] is True
+    assert field in json.loads(result["content"][0]["text"])["error"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_tool_returns_a_tool_error():
+    result = await mcp._call_tool("missing_tool", {})
+    assert result["isError"] is True
+
+
+@pytest.mark.parametrize("rpm,rpd,limited_counter", [(3, 100, "rpm_remaining"), (100, 3, "rpd_remaining")])
+def test_local_rate_limits_count_each_call_exhaust_and_isolate_keys(monkeypatch, rpm, rpd, limited_counter):
+    monkeypatch.setattr(mcp, "_rate_limits", {})
+    for call in range(1, 5):
+        state = mcp._check_rate_limit_local("limited-key", rpm, rpd)
+        assert state.rpm_remaining == rpm - call
+        assert state.rpd_remaining == rpd - call
+    assert getattr(state, limited_counter) < 0
+    independent = mcp._check_rate_limit_local("another-key", rpm, rpd)
+    assert independent.rpm_remaining == rpm - 1
+    assert independent.rpd_remaining == rpd - 1
+
+
 @pytest.mark.parametrize("arguments", [None, [], "text", {"content": 42}, {"content": "ok", "filename": {}}, {"content": "ok", "extra": "unexpected"}])
 @pytest.mark.asyncio
 async def test_malformed_tool_arguments_return_tool_errors(arguments):

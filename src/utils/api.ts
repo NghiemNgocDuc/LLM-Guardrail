@@ -1,5 +1,3 @@
-import type { components } from "../api-types";
-
 export const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? "http://localhost:8000" : "");
 
 export function getGatewayKey(): string { return localStorage.getItem("gateway_api_key") || ""; }
@@ -53,10 +51,6 @@ export class ApiError extends Error {
   }
 }
 
-export async function getAuthToken(): Promise<string | null> {
-  return localStorage.getItem("access_token");
-}
-
 export function getToken(): string | null { return localStorage.getItem("access_token"); }
 export function setTokens(accessToken?: string, refreshToken?: string): void {
   if (accessToken) localStorage.setItem("access_token", accessToken);
@@ -68,8 +62,7 @@ export function clearTokens(): void {
 }
 
 export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
-  let token: string | null = null;
-  token = getToken();
+  const token = getToken();
 
   const res = await fetch(BASE_URL + path, {
     ...opts,
@@ -95,8 +88,3 @@ export const PII_PATTERNS: GuardrailPattern[] = [
 ];
 export const INJECTION_KW: string[] = ["ignore previous instructions", "disregard your system prompt", "forget everything"];
 export const JAILBREAK_KW: string[] = ["DAN mode", "developer mode", "pretend you have no restrictions"];
-
-export const USER_PROMPT = "What does AI Guardrails protect?";
-export const AI_RESPONSE = "I secure AI workflows end to end: live model traffic, Cursor skills, MCP instructions, and agent system prompts. I block leaked credentials, PII, destructive shell/SQL, and jailbreaks before they reach providers or coding agents — with one dashboard and git hooks you control from chat.";
-
-export type ChatStatus = components["schemas"]["ChatResponse"]["status"];

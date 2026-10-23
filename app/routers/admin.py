@@ -23,7 +23,6 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
 TEAM_MEMBER_CAP = 500
-TEAM_TERMS_CAP = 500  # terms = managed skills + org terms per team
 
 def require_org_admin(user: User) -> None:
     if not user.is_admin or not user.org_id:
@@ -44,14 +43,6 @@ async def _check_team_member_cap(db: AsyncSession, org_id: str) -> None:
     total = distinct_cnt if distinct_cnt else max(primary_cnt, mem_cnt)
     if total >= TEAM_MEMBER_CAP:
         raise HTTPException(status_code=400, detail=f"Team member cap reached — max {TEAM_MEMBER_CAP} members per team.")
-
-async def _check_team_terms_cap(db: AsyncSession, org_id: str) -> None:
-    from app.models import ManagedSkill
-    cnt_res = await db.execute(select(func.count()).select_from(ManagedSkill).where(ManagedSkill.org_id == org_id))
-    cnt = cnt_res.scalar() or 0
-    if cnt >= TEAM_TERMS_CAP:
-        raise HTTPException(status_code=400, detail=f"Team terms cap reached — max {TEAM_TERMS_CAP} terms per team.")
-
 
 @router.post("/users/invite", response_model=UserOut)
 async def invite_user(

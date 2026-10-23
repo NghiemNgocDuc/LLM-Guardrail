@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { api, BASE_URL, formatApiError, getAuthToken } from "../utils/api";
+import { api, BASE_URL, formatApiError, getToken } from "../utils/api";
 import { Badge, Button, EmptyState, LoadingState, Notice, PageHeader, Panel, TableWrap } from "../components/ui";
 import type { components } from "../api-types";
 import type { UserUsageStat } from "../api-supplementary";
@@ -63,7 +63,7 @@ export default function AnalyticsView() {
   async function exportCsv() {
     setExporting(true); setError("");
     try {
-      const token = await getAuthToken();
+      const token = getToken();
       if (!token) throw new Error("Sign in to export request logs.");
       const response = await fetch(`${BASE_URL}/analytics/export?days=${days}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!response.ok) { const detail = await response.json().catch(() => ({ detail: response.statusText })); throw new Error(formatApiError(detail.detail)); }

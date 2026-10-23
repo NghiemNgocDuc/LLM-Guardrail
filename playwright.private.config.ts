@@ -13,9 +13,10 @@ export default defineConfig({
     { name: "mobile", use: { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true } },
   ],
   webServer: {
-    command: "node scripts/private-frontend-test-server.mjs",
+    command: "node scripts/frontend-test-server.mjs",
     url: "http://127.0.0.1:5175",
     reuseExistingServer: false,
+    timeout: 120_000,
     env: {
       VITE_API_BASE_URL: "",
       VITE_PRIVATE_MODE: "true",

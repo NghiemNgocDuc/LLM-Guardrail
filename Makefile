@@ -13,7 +13,7 @@ backup:  ## Backup database + config
 # ── Lint ──────────────────────────────────────────────────────────────────────
 
 lint:  ## Check Python application code and frontend types
-	python -m ruff check app guardrails main.py grpc_gateway/server.py sdk/python examples
+	python -m ruff check app guardrails main.py seed.py grpc_gateway/server.py sdk/python examples scripts
 	npm run typecheck
 
 test:  ## Run the backend test suite

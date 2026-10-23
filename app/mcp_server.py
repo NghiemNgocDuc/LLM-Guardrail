@@ -352,10 +352,6 @@ class MCPAuthContext:
     raw_key: str | None = field(default=None, repr=False)
 
 
-_UNAUTHENTICATED = MCPAuthContext(
-    key_id="", owner_id="", org_id=None, is_authenticated=False
-)
-
 # ─── Tools ────────────────────────────────────────────────────────────────────
 
 def _finding_dict(f) -> dict[str, Any]:

@@ -5,7 +5,6 @@ from typing import Any
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _NULL_BYTE = re.compile(r"\x00")
-_STRIP_LEADING_TRAILING_WS = re.compile(r"^\s+|\s+$")
 _MULTILINE_TRIM = re.compile(r"\n{4,}")
 
 

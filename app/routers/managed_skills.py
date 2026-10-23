@@ -17,14 +17,15 @@ Endpoints (all require auth; write requires admin):
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from types import SimpleNamespace
 from typing import Literal
 from urllib.parse import parse_qsl, urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import PlainTextResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 from sqlalchemy import select
@@ -33,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.deps import CurrentUser, get_current_user, resolve_api_key
-from app.models import ManagedSkill, OrgMembership, OrgPolicy, User
+from app.models import ManagedSkill, OrgMembership, OrgPolicy, SkillAccessRejection, User
 from app.services.skill_store import (
     create_managed_skill,
     delete_managed_skill,
@@ -199,14 +200,12 @@ async def _require_private_safe_draft(db: AsyncSession, actor, *, slug: str, nam
 
 def _require_admin(user):
     if not user.is_admin:
-        from fastapi import HTTPException, status
         from app.i18n import _t
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_t("admin.access_required"))
 
 
 def _require_org(user):
     if not user.org_id:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No organization")
 
 
@@ -269,7 +268,6 @@ async def create_skill(
 
     # optional hard block: if body says block_on_conflict and critical, reject
     if body.block_on_conflict and conflicts.blocked_by_policy:
-        from fastapi import HTTPException
         raise HTTPException(status_code=422, detail={
             "message": "Skill conflicts with current API-key leak protection — fix before saving",
             "conflicts": [c.__dict__ for c in conflicts.conflicts],
@@ -407,7 +405,6 @@ async def check_conflict(body: ConflictRequest, current_user: CurrentUser, db: A
     _require_org(current_user)
     content = body.content
     if not content.strip():
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="content is required")
     # exclude slug if checking an update to existing skill (avoid self-conflict)
     exclude = body.exclude_slug.strip().lower()
@@ -431,7 +428,6 @@ async def check_conflict_for_slug(slug: str, body: SkillContentRequest, current_
     _require_org(current_user)
     content = body.content
     if not content.strip():
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="content is required")
     existing = [d for d in await _existing_as_dicts(db, current_user.org_id) if d["slug"] != slug.lower()]
     policy = await _org_policy_dict(db, current_user.org_id)
@@ -482,7 +478,6 @@ async def combined_metrics(current_user: CurrentUser, db: AsyncSession = Depends
     """Combined benchmark: llm-redactor + jailbreak + NotInject — single macro-F1."""
     _require_org(current_user)
     policy = await _org_policy_dict(db, current_user.org_id)
-    import asyncio
     result = await asyncio.to_thread(compute_combined, policy, 150)
     return result
 
@@ -491,19 +486,15 @@ async def export_evidence_pdf(current_user: CurrentUser, db: AsyncSession = Depe
     """Evidence pack PDF — no email in metadata, signed hash, reproducible."""
     _require_org(current_user)
     policy = await _org_policy_dict(db, current_user.org_id)
-    import asyncio
     from app.services.export_pdf import build_evidence_pdf
-    from guardrails.test_case_generator import generate_test_cases, run_test_cases
     # Metrics (9 fixtures)
-    from app.services.skill_metrics import compute_metrics as _cm
-    metrics = await asyncio.to_thread(_cm, policy or {"block_secrets": True, "block_pii": True})
+    metrics = await asyncio.to_thread(compute_skill_metrics, policy or {"block_secrets": True, "block_pii": True})
     combined = await asyncio.to_thread(compute_combined, policy, 30)  # lighter for PDF (30 each, faster)
     # Sample PASS cases from a synthetic new block
     sample_content = "gsk_" + "A"*30 + " and api_key secret"
     cases = generate_test_cases(sample_content, org_policy=policy or {"block_secrets": True, "block_pii": True})
     samples = run_test_cases(cases[:6], org_policy=policy or {"block_secrets": True, "block_pii": True})
     pdf_bytes = await asyncio.to_thread(build_evidence_pdf, metrics, combined, samples)
-    from fastapi.responses import Response
     return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="guardrail-evidence-pack.pdf"', "X-Content-Type-Options": "nosniff"})
 
 
@@ -513,7 +504,6 @@ async def generate_tests(body: SkillContentRequest, current_user: CurrentUser, d
     _require_org(current_user)
     content = body.content
     if not content:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="content is required")
     policy = await _org_policy_dict(db, current_user.org_id)
     cases = generate_test_cases(content, org_policy=policy)
@@ -533,7 +523,6 @@ async def test_new_block(body: BlockTestRequest, current_user: CurrentUser, db: 
         body = BlockTestRequest.model_validate(body)
     content = body.content
     if not content:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="content is required")
     policy = await _org_policy_dict(db, current_user.org_id)
     cases = generate_test_cases(content, org_policy=policy)[:body.max_total]
@@ -557,7 +546,6 @@ async def test_existing_block(slug: str, current_user: CurrentUser, db: AsyncSes
     _require_org(current_user)
     row = await get_managed_skill(db, current_user.org_id, slug)
     if not row:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"Skill '{slug}' not found")
     policy = await _org_policy_dict(db, current_user.org_id)
     cases = generate_test_cases(row.content, org_policy=policy)
@@ -607,9 +595,7 @@ async def check_identical_block(body: SkillContentRequest, current_user: Current
         managed_blocks.append({"where": "managed_skills", "reason": f"{len(intersect_managed)} matching finding category/categories in existing managed drafts. A stored finding is not an enforced block or an approval.", "covers": sorted([f"{a}:{b}" for a,b in intersect_managed])})
 
     # Recent SkillAccessRejection blocks (last 100)
-    from sqlalchemy import select as _select
-    from app.models import SkillAccessRejection
-    q = _select(SkillAccessRejection).where(SkillAccessRejection.org_id == current_user.org_id, SkillAccessRejection.user_id == current_user.id).order_by(SkillAccessRejection.created_at.desc()).limit(100)
+    q = select(SkillAccessRejection).where(SkillAccessRejection.org_id == current_user.org_id, SkillAccessRejection.user_id == current_user.id).order_by(SkillAccessRejection.created_at.desc()).limit(100)
     result = await db.execute(q)
     rejection_codes: set[tuple] = set()
     for rej in result.scalars().all():

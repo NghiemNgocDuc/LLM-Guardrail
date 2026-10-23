@@ -341,7 +341,6 @@ async def chat(
     _orig_prompt_for_llm = prompt_for_llm
     try:
         from app.models import Memory as _Mem
-        from sqlalchemy import select as _sel
         # semantic recall
         try:
             from app.services.memory import recall_memories
@@ -350,7 +349,7 @@ async def chat(
             recalled = []
         # pinned memories always injected
         try:
-            pinned_q = await db.execute(_sel(_Mem).where(_Mem.user_id == api_key.owner_id, _Mem.pinned == True, _Mem.archived == False).limit(5))
+            pinned_q = await db.execute(select(_Mem).where(_Mem.user_id == api_key.owner_id, _Mem.pinned == True, _Mem.archived == False).limit(5))
             pinned = list(pinned_q.scalars().all())
         except Exception:
             pinned = []
@@ -652,7 +651,6 @@ async def chat_stream(
     async def generate():
         sessionmaker = get_sessionmaker()
         async with sessionmaker() as stream_db:
-            from sqlalchemy import select
             from app.models import TokenWallet
             stream_wallet = await stream_db.execute(
                 select(TokenWallet).where(TokenWallet.user_id == api_key.owner_id)
@@ -705,9 +703,8 @@ async def chat_stream(
                 try:
                     from app.services.memory import recall_memories as _recall
                     from app.models import Memory as _Mem
-                    from sqlalchemy import select as _sel2
                     rec = await _recall(stream_db, api_key.owner_id, prompt_for_llm, top_k=3)
-                    pq = await stream_db.execute(_sel2(_Mem).where(_Mem.user_id == api_key.owner_id, _Mem.pinned == True, _Mem.archived == False).limit(5))
+                    pq = await stream_db.execute(select(_Mem).where(_Mem.user_id == api_key.owner_id, _Mem.pinned == True, _Mem.archived == False).limit(5))
                     pinned2 = list(pq.scalars().all())
                     mm2 = {m.id: m for m in (pinned2 + rec)}
                     if mm2:

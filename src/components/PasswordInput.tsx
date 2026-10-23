@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import AppIcon from "./AppIcon";
-import { s } from "../styles/theme";
+import { inputStyle } from "../styles/theme";
 import type { CSSProperties, InputHTMLAttributes } from "react";
 
 const passwordStyles: Record<string, CSSProperties> = {
@@ -41,7 +41,7 @@ export default function PasswordInput({ value, onChange, style, ...inputProps }:
     <div style={passwordStyles.wrap}>
       <input
         {...inputProps}
-        style={{ ...s.input, ...passwordStyles.codeInput, ...style, paddingRight: 50 }}
+        style={{ ...inputStyle, ...passwordStyles.codeInput, ...style, paddingRight: 50 }}
         type={visible ? "text" : "password"}
         value={value}
         onChange={onChange}

@@ -206,7 +206,7 @@ fixtures; optional database and language-tool integrations skip when their
 prerequisites are unavailable.
 
 ```bash
-python -m ruff check app guardrails main.py grpc_gateway/server.py sdk/python examples
+python -m ruff check app guardrails main.py seed.py grpc_gateway/server.py sdk/python examples scripts
 python scripts/check_repository_secrets.py
 python -m pytest -q
 npm run typecheck
@@ -216,9 +216,11 @@ npm run test:frontend
 npm run test:frontend:private
 ```
 
-Browser tests cover desktop and mobile layouts, both themes, accessibility,
-and fixture-backed workflows. They do not require a running API. On Windows,
-set `$env:PW_CHANNEL="msedge"` to use installed Edge. Screenshots and failure
+Browser tests build and serve production assets, covering desktop and mobile
+layouts, both themes, accessibility, and fixture-backed workflows. They do not
+require a running API. Test bundles go to ignored `dist-test/` and `dist-private/`
+directories. Stop development servers on ports 5173 and 5175 before running.
+On Windows, set `$env:PW_CHANNEL="msedge"` to use installed Edge. Screenshots and failure
 traces go to ignored `test-results/`.
 
 The optional [Rust engine](guardrail_core/Cargo.toml) accelerates regex checks.

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, BASE_URL, formatApiError, getAuthToken } from "../utils/api";
+import { api, BASE_URL, formatApiError, getToken } from "../utils/api";
 import { Badge, Button, Dialog, EmptyState, Field, LoadingState, Notice, PageHeader, Panel, TableWrap } from "../components/ui";
 import type { Tone } from "../components/ui";
 import type { RequestLogItem, LogsResponse } from "../api-supplementary";
@@ -82,7 +82,7 @@ export default function LogsView() {
     const clearTimers = () => { if (heartbeat) window.clearInterval(heartbeat); if (joinTimeout) window.clearTimeout(joinTimeout); if (refreshTimer) window.clearTimeout(refreshTimer); };
     async function connect() {
       try {
-        const token = await getAuthToken(); if (!token) throw new Error("No session");
+        const token = getToken(); if (!token) throw new Error("No session");
         const me = await api<{ org_id?: string | null }>("/auth/me"); if (!me.org_id) throw new Error("No organization"); if (disposed) return;
         const topic = `requests:${me.org_id}`; const joinReference = String(nextReference++);
         socket = new WebSocket(feedSocketUrl(token));
@@ -111,7 +111,7 @@ export default function LogsView() {
   const filterCount = [dateFrom, dateTo, backendFilter].filter(Boolean).length;
   async function exportCsv() {
     setExporting(true); setError("");
-    try { const token = await getAuthToken(); if (!token) throw new Error("Sign in to export request logs."); const response = await fetch(`${BASE_URL}/analytics/export?days=${exportDays}`, { headers: { Authorization: `Bearer ${token}` } }); if (!response.ok) { const detail = await response.json().catch(() => ({ detail: response.statusText })); throw new Error(formatApiError(detail.detail)); } const url = URL.createObjectURL(await response.blob()); const link = document.createElement("a"); link.href = url; link.download = `guardrails-logs-${exportDays}d.csv`; document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    try { const token = getToken(); if (!token) throw new Error("Sign in to export request logs."); const response = await fetch(`${BASE_URL}/analytics/export?days=${exportDays}`, { headers: { Authorization: `Bearer ${token}` } }); if (!response.ok) { const detail = await response.json().catch(() => ({ detail: response.statusText })); throw new Error(formatApiError(detail.detail)); } const url = URL.createObjectURL(await response.blob()); const link = document.createElement("a"); link.href = url; link.download = `guardrails-logs-${exportDays}d.csv`; document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
     catch (failure) { setError(errorMessage(failure)); } finally { setExporting(false); }
   }
 

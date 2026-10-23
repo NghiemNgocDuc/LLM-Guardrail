@@ -19,6 +19,7 @@ wheels/
 # Node / frontend
 node_modules/
 dist/
+dist-test/
 dist-private/
 test-results/
 playwright-report/
