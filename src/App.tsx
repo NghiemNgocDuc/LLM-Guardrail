@@ -8,6 +8,7 @@ import AppIcon from "./components/AppIcon";
 import { trapDialogFocus } from "./components/ui";
 import type { IconName } from "./components/AppIcon";
 import AuthView from "./views/AuthView";
+import WorkspaceHelp from "./components/WorkspaceHelp";
 
 const DashboardView = lazy(() => import("./views/DashboardView"));
 const ChatView = lazy(() => import("./views/ChatView"));
@@ -43,7 +44,7 @@ const NAV: NavItem[] = [
   { id: "billing", label: "Usage & billing", icon: "card", group: "Manage" },
   { id: "admin", label: "Administration", icon: "shield", group: "Manage", adminOnly: true },
   { id: "settings", label: "Settings", icon: "settings", group: "Resources" },
-  { id: "about", label: "About the project", icon: "code", group: "Resources" },
+  { id: "about", label: "Help & getting started", icon: "help", group: "Resources" },
 ];
 const validViews = new Set([...NAV.map(item => item.id), "profile", "team"]);
 function readView() {
@@ -187,7 +188,7 @@ function WorkspaceShell({ user, setUser, signOut }: GateContext) {
     </aside>
     <div className="workspace-area" inert={mobile && sidebarOpen ? true : undefined}><header className="workspace-topbar">
       <div className="workspace-breadcrumb"><button type="button" className="workspace-icon-button workspace-menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation" aria-expanded={sidebarOpen} aria-controls="workspace-navigation"><AppIcon name="menu" size={20} /></button><span>{current?.group || "Workspace"}</span><AppIcon name="chevron" size={12} /><strong key={pageLabel}>{pageLabel}</strong></div>
-      <div className="workspace-header-actions"><button type="button" className="workspace-search-trigger" onClick={openCommand} aria-label="Jump to a page"><AppIcon name="search" size={15} /><span>Jump to…</span><kbd>Ctrl K</kbd></button><button type="button" className="workspace-icon-button" aria-label={darkMode ? "Switch to light theme" : "Switch to dark theme"} onClick={() => setDarkMode(value => !value)}><AppIcon key={darkMode ? "sun" : "moon"} className="workspace-theme-icon" name={darkMode ? "sun" : "moon"} size={17} /></button><button type="button" className="workspace-icon-button" aria-label="Sign out" onClick={signOut}><AppIcon name="logout" size={17} /></button></div>
+      <div className="workspace-header-actions"><WorkspaceHelp key={view} view={view} pageLabel={pageLabel} onNavigate={navigate} /><button type="button" className="workspace-search-trigger" onClick={openCommand} aria-label="Jump to a page"><AppIcon name="search" size={15} /><span>Jump to…</span><kbd>Ctrl K</kbd></button><button type="button" className="workspace-icon-button" aria-label={darkMode ? "Switch to light theme" : "Switch to dark theme"} onClick={() => setDarkMode(value => !value)}><AppIcon key={darkMode ? "sun" : "moon"} className="workspace-theme-icon" name={darkMode ? "sun" : "moon"} size={17} /></button><button type="button" className="workspace-icon-button" aria-label="Sign out" onClick={signOut}><AppIcon name="logout" size={17} /></button></div>
     </header><main className="workspace-content" id="workspace-main" ref={contentRef} tabIndex={-1} aria-label={pageLabel} onClick={contentClick}><ViewBoundary key={view}><div className="workspace-route"><Suspense fallback={<LoadingWorkspace />}>{renderView()}</Suspense></div></ViewBoundary></main></div>
     <dialog className="workspace-command" ref={commandRef} aria-label="Jump to a page" onKeyDown={trapDialogFocus} onClick={event => { if (event.target === event.currentTarget) commandRef.current?.close(); }}>
       <div className="workspace-command-header"><AppIcon name="search" /><input ref={commandInput} value={query} onChange={event => { setQuery(event.target.value); setSelected(0); }} placeholder="Find a page…" aria-label="Search pages" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="workspace-page-results" aria-activedescendant={results[selected] ? "workspace-page-" + results[selected].id : undefined} onKeyDown={event => {

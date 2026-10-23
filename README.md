@@ -34,6 +34,10 @@ The scanner uses heuristic checks. Its verdict is evidence for review, not a
 guarantee that arbitrary instructions are safe. An integrating agent must honor
 the scan decision before loading content.
 
+New to the app? Open **Help & getting started** in the sidebar for an introduction,
+examples, and a glossary. The **? Help** button explains the current page and
+suggests a useful next step. The sign-in page also has a **What is this?** introduction.
+
 ## How it works
 
 ```mermaid

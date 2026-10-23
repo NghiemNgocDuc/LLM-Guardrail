@@ -1,8 +1,9 @@
 import type { ReactNode, SVGProps } from "react";
 
-export type IconName = "grid" | "sparkles" | "shield" | "chart" | "key" | "logs" | "settings" | "user" | "arrow" | "plus" | "refresh" | "copy" | "check" | "close" | "menu" | "search" | "sun" | "moon" | "chevron" | "external" | "code" | "layers" | "team" | "card" | "activity" | "eye" | "eye-off" | "logout";
+export type IconName = "grid" | "sparkles" | "shield" | "chart" | "key" | "logs" | "settings" | "user" | "arrow" | "plus" | "refresh" | "copy" | "check" | "close" | "menu" | "search" | "sun" | "moon" | "chevron" | "external" | "code" | "layers" | "team" | "card" | "activity" | "eye" | "eye-off" | "logout" | "help";
 
 const paths: Record<IconName, ReactNode> = {
+  help: <><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 0 1 5 .3c0 1.8-2.5 2-2.5 3.7" /><path d="M12 16.5h.01" /></>,
   grid: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
   sparkles: <><path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z" /><path d="m20 3 .5 1.5L22 5l-1.5.5L20 7l-.5-1.5L18 5l1.5-.5Z" /></>,
   shield: <><path d="m12 3 8 3v5c0 5-4 8.5-8 10-4-1.5-8-5-8-10V6Z" /><path d="m8.5 12 2.3 2.3 4.7-4.7" /></>,

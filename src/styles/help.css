@@ -1,0 +1,44 @@
+.workspace-help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 7px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid var(--gr-border);
+  border-radius: 24px;
+  color: var(--gr-accent);
+  background: var(--gr-surface);
+  font-size: 12px;
+  font-weight: 600;
+}
+.workspace-help-trigger:hover { background: var(--gr-accent-soft); border-color: var(--gr-accent); }
+.workspace-help-trigger:active { background: var(--gr-subtle); }
+.ui-dialog:has(.workspace-help-content) { width: min(560px, calc(100% - 32px)); max-height: calc(100% - 48px); }
+.workspace-help-description { margin: 0; font-size: 14px; line-height: 1.7; }
+.workspace-help-content { font-size: 14px; line-height: 1.7; }
+.workspace-help-content h3 { margin: 0 0 18px; font-size: 16px; font-weight: 600; letter-spacing: -.02em; }
+.workspace-help-steps { list-style: none; padding: 0; margin: 0; counter-reset: help-step; display: grid; gap: 18px; }
+.workspace-help-steps li { counter-increment: help-step; position: relative; padding-left: 40px; color: var(--gr-ink); }
+.workspace-help-steps li::before { content: counter(help-step); position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; background: var(--gr-accent-soft); color: var(--gr-accent); font-size: 12px; font-weight: 650; }
+.workspace-help-tip { display: flex; gap: 10px; align-items: flex-start; margin: 24px 0 0; padding: 14px 16px; border-radius: 8px; background: var(--gr-subtle); color: var(--gr-muted); font-size: 13px; line-height: 1.65; }
+.workspace-help-tip svg { margin-top: 2px; color: var(--gr-accent); }
+.workspace-breadcrumb { flex: 1; }
+.workspace-breadcrumb strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.workspace-header-actions { flex-shrink: 0; }
+.gr-auth-header-actions { display: flex; align-items: center; gap: 20px; }
+.gr-auth-page .project-intro-trigger { font-size: 12px; font-weight: 600; }
+@media (max-width: 850px) {
+  .workspace-topbar { gap: 8px; }
+  .workspace-help-label { display: none; }
+  .workspace-help-trigger { width: 44px; padding: 9px; }
+  .project-intro-trigger { width: auto; padding: 9px 12px; }
+  .gr-auth-header-actions { gap: 0; }
+  .gr-auth-header-actions .gr-auth-header-note { display: none; }
+}
+@media (max-width: 420px) {
+  .ui-dialog:has(.workspace-help-content) .ui-dialog-footer .ui-button { width: 100%; white-space: normal; text-align: center; }
+  .project-intro-trigger { gap: 5px; padding-inline: 10px; font-size: 11px; }
+}

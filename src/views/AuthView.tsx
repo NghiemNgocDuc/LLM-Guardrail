@@ -5,6 +5,7 @@ import GlobalStyles from "../styles/GlobalStyles";
 import AuthFlowBackground from "../components/AuthFlowBackground";
 import AuthTerminalIntro from "../components/AuthTerminalIntro";
 import PasswordInput from "../components/PasswordInput";
+import { ProjectIntroHelp } from "../components/WorkspaceHelp";
 import type { components } from "../api-types";
 import "../styles/auth.css";
 
@@ -201,7 +202,7 @@ export default function AuthView({ onAuth }: { onAuth: (user: UserOut) => void }
       <AuthFlowBackground />
       <header className="gr-auth-header">
         <a href="/" className="gr-auth-wordmark" aria-label="LLM Guardrail home"><span className="gr-auth-brand-symbol"><AuthIcon kind="shield" /></span><span>LLM<span className="gr-auth-wordmark-light"> Guardrail</span></span></a>
-        <span className="gr-auth-header-note">Your models. Your rules.</span>
+        <div className="gr-auth-header-actions"><span className="gr-auth-header-note">Your models. Your rules.</span><ProjectIntroHelp /></div>
       </header>
       <h1 className="gr-auth-sr-only">LLM Guardrail account access</h1>
 
