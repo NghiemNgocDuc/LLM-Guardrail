@@ -1,0 +1,89 @@
+.gr-journey {
+  --journey-message-bg: var(--gr-warning-soft);
+  --journey-message-ink: var(--gr-warning);
+  position: relative;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--gr-border);
+  border-radius: 22px;
+  background: var(--gr-surface);
+  color: var(--gr-ink);
+  font-family: var(--gr-font);
+  box-shadow: 0 10px 30px -24px rgb(24 42 35 / 25%);
+}
+.gr-journey *, .gr-journey *::before, .gr-journey *::after { box-sizing: border-box; }
+.gr-journey-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.gr-journey-kicker { display: flex; align-items: center; gap: 7px; color: var(--gr-accent); font-size: 12px; font-weight: 650; }
+.gr-journey-kicker > span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.gr-journey-example-label { color: var(--gr-muted); font-size: 11px; }
+.gr-journey-examples { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 4px; border-radius: 13px; background: var(--gr-bg); }
+.gr-journey-examples button { min-height: 44px; min-width: 0; padding: 8px 5px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--gr-muted); font-family: inherit; font-size: 12px; font-weight: 550; line-height: 1.35; cursor: pointer; transition: background 160ms ease, color 160ms ease, border-color 160ms ease; }
+.gr-journey-examples button:hover { background: var(--gr-surface); color: var(--gr-ink); }
+.gr-journey-examples button[aria-pressed="true"] { border-color: var(--gr-border); background: var(--gr-surface); color: var(--gr-accent); box-shadow: 0 2px 5px rgb(24 42 35 / 4%); }
+.gr-journey button:focus-visible { outline: 3px solid var(--gr-accent); outline-offset: 3px; }
+.gr-journey-scene { position: relative; margin: 18px 0; }
+.gr-journey-track { position: absolute; z-index: 0; inset: 33px 16.666% auto; height: 2px; border-top: 2px dashed var(--gr-border); container-type: inline-size; }
+.gr-journey-spark { position: absolute; top: -6px; left: 0; width: 10px; height: 10px; border: 2px solid var(--gr-surface); border-radius: 50%; background: var(--gr-accent); box-shadow: 0 0 0 3px var(--gr-accent-soft); animation: gr-journey-travel 4200ms cubic-bezier(.4, 0, .3, 1) both; }
+.gr-journey-stages { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; list-style: none; padding: 0; margin: 0; }
+.gr-journey-stage { display: flex; flex-direction: column; align-items: center; min-width: 0; text-align: center; }
+.gr-journey-node { position: relative; display: grid; place-items: center; width: 68px; height: 68px; margin-bottom: 11px; border: 1px solid var(--gr-border); border-radius: 22px; background: var(--gr-bg); color: var(--gr-muted); transition: background 220ms ease, border-color 220ms ease, color 220ms ease; }
+.gr-journey-node > svg { width: 40px; height: 40px; }
+.gr-journey-stage-0 .gr-journey-node { background: var(--gr-warning-soft); color: var(--gr-warning); transform: rotate(-5deg); }
+.gr-journey-stage-1 .gr-journey-node { background: var(--gr-accent-soft); color: var(--gr-accent); border-radius: 50%; }
+.gr-journey-stage-2 .gr-journey-node { background: var(--gr-accent-soft); color: var(--gr-accent); transform: rotate(5deg); }
+.gr-journey-step-number { position: absolute; top: -4px; right: -4px; display: grid; place-items: center; width: 21px; height: 21px; border: 1px solid var(--gr-border); border-radius: 50%; background: var(--gr-surface); color: var(--gr-muted); font-size: 10px; font-weight: 650; }
+.gr-journey-stage > strong { color: var(--gr-ink); font-size: 12px; font-weight: 650; line-height: 1.4; }
+.gr-journey-stage-detail { max-width: 130px; margin-top: 4px; color: var(--gr-muted); font-size: 11px; line-height: 1.45; }
+.gr-journey-stage-current .gr-journey-node { border-color: var(--gr-accent); box-shadow: 0 0 0 5px var(--gr-accent-soft); }
+.gr-journey-stage-1.gr-journey-stage-current .gr-journey-shield-check { animation: gr-journey-check 500ms ease-out both; transform-origin: center; }
+.gr-journey-stage-done .gr-journey-step-number { border-color: var(--gr-accent); color: var(--gr-accent); }
+.gr-journey-messages { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.gr-journey-message { min-width: 0; padding: 13px 14px; border-radius: 15px; }
+.gr-journey-message-from { background: var(--journey-message-bg); border-bottom-left-radius: 4px; }
+.gr-journey-message-to { background: var(--gr-accent-soft); border-bottom-right-radius: 4px; }
+.gr-journey-message-label { display: block; margin-bottom: 5px; color: var(--gr-accent); font-size: 10px; font-weight: 650; line-height: 1.4; }
+.gr-journey-message-from .gr-journey-message-label { color: var(--journey-message-ink); }
+.gr-journey-message p { margin: 0; color: var(--gr-ink); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.gr-journey-messages-risky .gr-journey-message-to { background: var(--gr-danger-soft); }
+.gr-journey-messages-risky .gr-journey-message-to .gr-journey-message-label { color: var(--gr-danger); }
+.gr-journey-explanation { margin-top: 14px; }
+.gr-journey-explanation > strong { color: var(--gr-ink); font-size: 12px; font-weight: 650; line-height: 1.5; }
+.gr-journey-explanation > p { margin: 4px 0 0; color: var(--gr-muted); font-size: 12px; line-height: 1.55; }
+.gr-journey-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--gr-border); }
+.gr-journey-footer > p { margin: 0; color: var(--gr-muted); font-size: 10px; line-height: 1.5; }
+.gr-journey-playback { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 5px; min-width: 76px; min-height: 44px; padding: 8px; border: 0; border-radius: 8px; background: transparent; color: var(--gr-accent); font-family: inherit; font-size: 11px; font-weight: 550; cursor: pointer; }
+.gr-journey-playback > svg { width: 19px; height: 19px; }
+.gr-journey-playback:hover { background: var(--gr-accent-soft); }
+.gr-journey[data-state="paused"] .gr-journey-spark, .gr-journey[data-state="paused"] .gr-journey-shield-check { animation-play-state: paused; }
+.gr-journey[data-state="complete"] .gr-journey-spark { animation: none; opacity: 0; }
+.gr-journey-compact { padding: 18px; border-radius: 18px; }
+.gr-journey-compact .gr-journey-scene { margin: 14px 0; }
+.gr-journey-compact .gr-journey-stage-detail { display: none; }
+.gr-journey-compact .gr-journey-node { width: 56px; height: 56px; margin-bottom: 9px; border-radius: 18px; }
+.gr-journey-compact .gr-journey-stage-1 .gr-journey-node { border-radius: 50%; }
+.gr-journey-compact .gr-journey-node > svg { width: 34px; height: 34px; }
+.gr-journey-compact .gr-journey-track { top: 27px; }
+@keyframes gr-journey-travel { 0%, 10% { transform: translateX(0); opacity: 0; } 18% { opacity: 1; } 45%, 55% { transform: translateX(calc(50cqw - 5px)); opacity: 1; } 85% { opacity: 1; } 100% { transform: translateX(calc(100cqw - 10px)); opacity: 0; } }
+@keyframes gr-journey-check { from { transform: scale(.75); opacity: .3; } to { transform: scale(1); opacity: 1; } }
+@media (max-width: 480px) {
+  .gr-journey { padding: 16px; border-radius: 18px; }
+  .gr-journey-heading { gap: 8px; }
+  .gr-journey-kicker { font-size: 11px; }
+  .gr-journey-example-label { font-size: 10px; }
+  .gr-journey-examples { gap: 3px; }
+  .gr-journey-examples button { font-size: 11px; padding: 7px 4px; }
+  .gr-journey-stages { gap: 6px; }
+  .gr-journey-stage > strong { font-size: 11px; }
+  .gr-journey-stage-detail { font-size: 10px; }
+  .gr-journey-node { width: 58px; height: 58px; border-radius: 19px; }
+  .gr-journey-node > svg { width: 35px; height: 35px; }
+  .gr-journey-track { top: 28px; }
+  .gr-journey-message { padding: 11px; }
+  .gr-journey-message p { font-size: 11px; }
+  .gr-journey-messages { gap: 8px; }
+  .gr-journey-explanation > p { font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gr-journey *, .gr-journey *::before, .gr-journey *::after { animation: none !important; transition: none !important; }
+  .gr-journey-spark { display: none; }
+}

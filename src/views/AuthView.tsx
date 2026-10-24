@@ -3,7 +3,7 @@ import type { ChangeEvent, FormEvent } from "react";
 import { api, setTokens } from "../utils/api";
 import GlobalStyles from "../styles/GlobalStyles";
 import AuthFlowBackground from "../components/AuthFlowBackground";
-import AuthTerminalIntro from "../components/AuthTerminalIntro";
+import AuthWelcome from "../components/AuthWelcome";
 import PasswordInput from "../components/PasswordInput";
 import { ProjectIntroHelp } from "../components/WorkspaceHelp";
 import type { components } from "../api-types";
@@ -207,7 +207,7 @@ export default function AuthView({ onAuth }: { onAuth: (user: UserOut) => void }
       <h1 className="gr-auth-sr-only">LLM Guardrail account access</h1>
 
       <main className="gr-auth-layout">
-        {!mobileLayout && <AuthTerminalIntro />}
+        {!mobileLayout && <AuthWelcome />}
         <section className="gr-auth-form-shell" aria-labelledby="gr-auth-form-title">
           <div className="gr-auth-form-card">
             <div className="gr-auth-form-heading" key={screen + tab}><p className="gr-auth-form-eyebrow">YOUR WORKSPACE</p><h2 id="gr-auth-form-title">{title}</h2><p>{description}</p></div>
@@ -252,9 +252,9 @@ export default function AuthView({ onAuth }: { onAuth: (user: UserOut) => void }
             </div>}
             {screen === "auth" && (tab === "login" || tab === "forgot") && <p className="gr-auth-resend">Need to verify your email? <button type="button" onClick={resendVerification} disabled={loading}>Resend link</button></p>}
           </div>
-          <p className="gr-auth-form-note"><AuthIcon kind="shield" /> Policies before prompts. Visibility after every request.</p>
+          <p className="gr-auth-form-note"><AuthIcon kind="shield" /> Your AI, with rules you can understand.</p>
         </section>
-        {mobileLayout && <AuthTerminalIntro />}
+        {mobileLayout && <AuthWelcome />}
       </main>
       <footer className="gr-auth-footer"><span>LLM Guardrail</span><span>Built by Ngoc Duc Nghiem</span></footer>
     </div>

@@ -38,6 +38,14 @@ New to the app? Open **Help & getting started** in the sidebar for an introducti
 examples, and a glossary. The **? Help** button explains the current page and
 suggests a useful next step. The sign-in page also has a **What is this?** introduction.
 
+Sign-in and Overview include an illustrated, three-step example: **your message
+→ a quick check → what happens next**. Try an everyday question, a private detail,
+or a risky instruction to understand the possible outcomes. The animation plays
+once, with pause and replay controls, and respects reduced-motion preferences.
+These examples do not send real requests or change your workspace activity.
+
+![Welcoming sign-in page with an illustrated explanation of guardrails](docs/images/sign-in.png)
+
 Playground prompts use the gateway's current workspace policy. The browser does
 not veto drafts using a separate keyword list; the response inspector shows the
 server's input and output decisions. The policy editor's local preview is an

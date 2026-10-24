@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../utils/api";
 import AppIcon from "../components/AppIcon";
+import RequestJourney from "../components/RequestJourney";
 import type { components } from "../api-types";
 import type { RecentLogItem, SuspiciousLogItem } from "../api-supplementary";
 import {
@@ -107,10 +108,24 @@ export default function DashboardView() {
   const tickStyle = { fontSize: 11, fill: "var(--gr-muted)", fontFamily: "var(--gr-font)" };
 
   return <div className="gr-dashboard">
-    <header className="gr-dash-header">
-      <div><div className="gr-dash-eyebrow">Workspace overview</div><h1>Every request, accounted for.</h1><p>Understand your model traffic and the decisions your guardrails make.</p></div>
-      <div className="gr-dash-header-actions"><label className="gr-dash-range-label"><span className="gr-dash-sr-only">Activity period</span><select value={days} onChange={(event) => setDays(Number(event.target.value))}><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option></select></label><button className="gr-dash-button" onClick={() => setReload((value) => value + 1)} disabled={!data && !error}><RefreshIcon /><span>Refresh</span></button></div>
+    <header className="gr-dash-welcome">
+      <div className="gr-dash-welcome-copy">
+        <p className="gr-dash-welcome-eyebrow"><AppIcon name="sparkles" size={16} /> SMALL CHECKS. MORE CONFIDENCE.</p>
+        <h1>Welcome to your <span>AI workspace.</span></h1>
+        <p>Ask a question. Check what happens. Make AI work a little better for you.</p>
+        <div className="gr-dash-welcome-actions">
+          <a className="gr-dash-primary-link" href="?view=chat">Try a question<ArrowIcon /></a>
+          <a className="gr-dash-text-link" href="?view=about">Show me around<AppIcon name="help" size={16} /></a>
+        </div>
+        <p className="gr-dash-welcome-note">New here? The example walks you through it.</p>
+      </div>
+      <RequestJourney compact />
     </header>
+
+    <div className="gr-dash-header gr-dash-activity-header">
+      <div><div className="gr-dash-eyebrow">Your workspace activity</div><h2>Every request, accounted for.</h2><p>Real requests and the decisions your guardrails make.</p></div>
+      <div className="gr-dash-header-actions"><label className="gr-dash-range-label"><span className="gr-dash-sr-only">Activity period</span><select value={days} onChange={(event) => setDays(Number(event.target.value))}><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option></select></label><button className="gr-dash-button" onClick={() => setReload((value) => value + 1)} disabled={!data && !error}><RefreshIcon /><span>Refresh</span></button></div>
+    </div>
 
     {error ? <section className="gr-dash-error" role="alert"><div><h2>Activity could not be loaded</h2><p>{error}</p></div><button className="gr-dash-button" onClick={() => setReload((value) => value + 1)}>Try again<ArrowIcon /></button></section> : !data || !summary ? <LoadingDashboard /> : <>
       <section className="gr-dash-metrics" aria-label="Request metrics">

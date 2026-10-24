@@ -58,19 +58,17 @@ async function preview(page: Page, filename: string) {
   await page.screenshot({ path: `test-results/previews/${filename}.png`, fullPage: await page.locator(".app-shell").count() === 0 });
 }
 
-test("login is usable while its illustrative text plays; keyboard sign-in works", async ({ page }, info) => {
+test("login is usable alongside its illustrative journey; keyboard sign-in works", async ({ page }, info) => {
   const requests = await mockApi(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible();
-  await page.getByRole("button", { name: "Pause example response" }).click();
-  const before = await page.locator(".gr-auth-word-visible").count();
-  await expect(page.getByRole("button", { name: "Resume example response" })).toBeVisible();
-  await page.getByRole("button", { name: "Prompt injection", exact: true }).click();
-  await expect(page.getByText("Prompt injection blocked", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Sensitive data", exact: true }).click();
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect(page.getByRole("button", { name: "Pause example response" })).toHaveCount(0);
-  expect(before).toBeGreaterThanOrEqual(0);
+  const journey = page.getByRole("region", { name: "How guardrails work", exact: true });
+  await journey.getByRole("button", { name: "Risky instruction", exact: true }).click();
+  await expect(journey.getByRole("button", { name: "Risky instruction", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await journey.getByRole("button", { name: "Private detail", exact: true }).click();
+  await expect(journey).toHaveAttribute("data-state", "complete");
+  await expect(journey.getByRole("button", { name: "Pause example", exact: true })).toHaveCount(0);
   await assertNoOverflow(page);
   await preview(page, `login-${info.project.name}`);
   const accessibility = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
@@ -78,7 +76,7 @@ test("login is usable while its illustrative text plays; keyboard sign-in works"
   await page.getByLabel("Email address", { exact: true }).fill("reviewer@example.com");
   await page.getByLabel("Password", { exact: true }).fill("valid-password");
   await page.getByLabel("Password", { exact: true }).press("Enter");
-  await expect(page.getByRole("heading", { name: "Every request, accounted for." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Welcome to your AI workspace." })).toBeVisible();
   expect(requests.filter(request => request.path === "/auth/login")).toHaveLength(1);
 });
 
@@ -119,7 +117,7 @@ test("dashboard, quick navigation, history and dark theme work", async ({ page }
   const requests = await mockApi(page, { signedIn: true });
   await page.goto("/?view=admin");
   await expect(page.getByRole("main", { name: "Overview" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Every request, accounted for." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Welcome to your AI workspace." })).toBeVisible();
   await assertNoOverflow(page);
   await preview(page, `dashboard-${info.project.name}`);
   await page.getByLabel("Activity period").selectOption("30");

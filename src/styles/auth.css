@@ -35,43 +35,10 @@
 .gr-auth-layout { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(360px, .85fr); align-items: center; gap: clamp(48px, 6vw, 108px); width: min(1232px, 100%); min-height: calc(100dvh - 165px); margin: 0 auto; padding: 48px 0 56px; }
 .gr-auth-story { min-width: 0; max-width: 630px; }
 .gr-auth-eyebrow { display: flex; align-items: center; gap: 8px; margin: 0 0 20px; color: var(--auth-accent); font-size: 11px; font-weight: 650; letter-spacing: 1.3px; }
-.gr-auth-eyebrow > span { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--auth-accent); }
 .gr-auth-story-title { margin: 0; font-size: clamp(40px, 3.8vw, 56px); line-height: 1.09; letter-spacing: -2.7px; font-weight: 600; }
-.gr-auth-story-title > span { color: #718275; }
+.gr-auth-story-title > span { color: var(--auth-accent); }
 .gr-auth-story-description { max-width: 450px; margin: 22px 0 30px; color: var(--auth-muted); font-size: 16px; line-height: 1.7; }
-.gr-auth-preview { overflow: hidden; border: 1px solid #30483b; border-radius: 16px; background: var(--auth-dark); box-shadow: 0 16px 32px -24px #182a2366; color: #f0f5eb; }
-.gr-auth-preview-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 24px; border-bottom: 1px solid #ffffff14; font-family: var(--gr-mono, "SFMono-Regular", Consolas, monospace); font-size: 11px; }
-.gr-auth-preview-header > div { display: flex; align-items: center; gap: 9px; }
-.gr-auth-preview-mark { display: inline-flex; color: #d2e9b8; }
-.gr-auth-sample-label { color: #b3c2b6; font-family: var(--gr-font, Inter, sans-serif); }
-.gr-auth-example-switch { display: flex; gap: 4px; padding: 16px 24px 0; }
-.gr-auth-example-switch button { padding: 8px 12px; min-height: 44px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #b6c8ba; font-size: 12px; transition: background 160ms ease, color 160ms ease; }
-.gr-auth-example-switch button:hover { background: #ffffff0d; color: #f0f5eb; }
-.gr-auth-example-switch button[aria-pressed="true"] { border-color: #d2e9b833; background: #d2e9b814; color: #d2e9b8; }
-.gr-auth-preview button:focus-visible { outline-color: #d2e9b8; outline-offset: 3px; }
-.gr-auth-preview-content { padding: 23px 24px 19px; }
-.gr-auth-prompt-label { display: flex; align-items: center; gap: 9px; color: #aec2b4; font-family: var(--gr-mono, "SFMono-Regular", Consolas, monospace); font-size: 10px; letter-spacing: .9px; }
-.gr-auth-prompt-label > span { color: #91a997; letter-spacing: 0; }
-.gr-auth-sample-prompt { margin: 12px 0 20px; min-height: 44px; color: #eef3e9; font-family: var(--gr-mono, "SFMono-Regular", Consolas, monospace); font-size: 13px; line-height: 1.7; }
-.gr-auth-policy-result { padding: 13px 14px; border: 1px solid #d2e9b826; border-radius: 8px; background: #d2e9b80a; }
-.gr-auth-policy-result-heading { display: flex; align-items: center; gap: 8px; color: #d2e9b8; }
-.gr-auth-policy-result-heading strong { font-size: 12px; font-weight: 500; }
-.gr-auth-policy-result-heading > span { margin-left: auto; padding: 3px 5px; border-radius: 3px; background: #d2e9b819; font-family: var(--gr-mono, "SFMono-Regular", Consolas, monospace); font-size: 9px; letter-spacing: .5px; }
-.gr-auth-policy-result p { margin: 8px 0 0 24px; color: #adbfaf; font-family: var(--gr-mono, "SFMono-Regular", Consolas, monospace); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
-.gr-auth-output-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 20px; min-height: 36px; }
-.gr-auth-playback { display: inline-flex; align-items: center; gap: 5px; padding: 8px 0 8px 8px; min-width: 61px; min-height: 44px; border: 0; background: transparent; color: #b6c8ba; font-size: 11px !important; }
-.gr-auth-playback:hover { color: #d2e9b8; }
-.gr-auth-playback svg { width: 13px; height: 13px; }
-.gr-auth-stream { position: relative; min-height: 104px; margin: 7px 0 18px; color: #f0f5eb; font-family: var(--gr-mono, "SFMono-Regular", Consolas, monospace); font-size: clamp(16px, 1.35vw, 18px); font-weight: 400; line-height: 1.7; letter-spacing: -.45px; }
-.gr-auth-word-visible { opacity: 1; transition: opacity 200ms ease; }
-.gr-auth-word-hidden { opacity: 0; }
-.gr-auth-stream-cursor { position: absolute; display: inline-block; width: 2px; height: 1em; margin-top: 6px; margin-left: -4px; background: #d2e9b8; }
-.gr-auth-preview-caption { display: flex; align-items: center; gap: 7px; padding-top: 14px; border-top: 1px solid #ffffff12; color: #a8bbad; font-size: 10px; }
-.gr-auth-preview-caption > span:first-child { width: 5px; height: 5px; border-radius: 50%; background: #a8bbad; }
-.gr-auth-preview-caption > .gr-auth-example-complete { background: #d2e9b8 !important; }
-.gr-auth-caption-note { margin-left: auto; color: #a8bbad; }
-.gr-auth-capabilities { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 16px; margin-top: 22px; color: var(--auth-muted); font-size: 12px; }
-.gr-auth-capabilities svg { color: #95a596; width: 13px; height: 13px; }
+.gr-auth-story-note { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 18px 0 0; color: var(--auth-muted); font-size: 12px; line-height: 1.6; }
 .gr-auth-form-shell { width: 100%; min-width: 0; max-width: 438px; justify-self: end; }
 .gr-auth-form-card { padding: 34px 32px 26px; border: 1px solid var(--auth-border); border-radius: 18px; background: #ffffff; box-shadow: 0 12px 40px -28px #182a232a; }
 .gr-auth-form-heading { margin-bottom: 26px; }
@@ -142,10 +109,6 @@
   .gr-auth-layout { grid-template-columns: minmax(0, 1fr) minmax(340px, .88fr); gap: 40px; }
   .gr-auth-story-title { font-size: 43px; letter-spacing: -2px; }
   .gr-auth-form-card { padding: 30px 25px 24px; }
-  .gr-auth-preview-header, .gr-auth-preview-content { padding-left: 20px; padding-right: 20px; }
-  .gr-auth-example-switch { padding-left: 20px; padding-right: 20px; }
-  .gr-auth-stream { font-size: 16px; min-height: 116px; }
-  .gr-auth-capabilities { gap: 10px; font-size: 11px; }
 }
 @media (max-width: 850px) {
   .gr-auth-page { padding: 0 28px; }
@@ -160,8 +123,6 @@
   .gr-auth-demo summary { min-height: 44px; padding: 12px 0; }
   .gr-auth-resend button { padding: 8px 4px; vertical-align: middle; }
   .gr-auth-story-description { margin-bottom: 24px; }
-  .gr-auth-stream { font-size: 18px; min-height: 96px; }
-  .gr-auth-preview-content { padding: 24px; }
 }
 @media (max-width: 480px) {
   .gr-auth-page { padding: 0 20px; }
@@ -184,22 +145,6 @@
   .gr-auth-story-title { font-size: 39px; letter-spacing: -1.9px; }
   .gr-auth-eyebrow { font-size: 10px; margin-bottom: 16px; letter-spacing: 1px; }
   .gr-auth-story-description { font-size: 14px; line-height: 1.75; margin-top: 18px; }
-  .gr-auth-preview { border-radius: 12px; }
-  .gr-auth-preview-header { gap: 8px; padding: 15px 16px; font-size: 10px; }
-  .gr-auth-sample-label { font-size: 9px; }
-  .gr-auth-example-switch { padding: 13px 16px 0; }
-  .gr-auth-example-switch button { font-size: 11px; padding: 8px 10px; }
-  .gr-auth-preview-content { padding: 20px 16px 16px; }
-  .gr-auth-sample-prompt { min-height: 57px; font-size: 12px; }
-  .gr-auth-policy-result { padding: 12px 10px; }
-  .gr-auth-policy-result-heading { gap: 6px; }
-  .gr-auth-policy-result-heading strong { font-size: 10px; }
-  .gr-auth-policy-result-heading > span { font-size: 8px; padding: 3px 4px; }
-  .gr-auth-policy-result p { margin-left: 0; font-size: 10px; }
-  .gr-auth-stream { min-height: 138px; font-size: 16px; line-height: 1.75; }
-  .gr-auth-preview-caption { font-size: 9px; gap: 5px; }
-  .gr-auth-capabilities { gap: 9px; font-size: 10px; }
-  .gr-auth-capabilities svg { width: 11px; }
   .gr-auth-footer { font-size: 10px; min-height: 62px; }
 }
 .gr-auth-story { animation: gr-auth-enter 550ms cubic-bezier(.22, 1, .36, 1) both; }
@@ -209,5 +154,4 @@
 @keyframes gr-auth-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .gr-auth-page *, .gr-auth-page *::before, .gr-auth-page *::after { animation: none !important; transition: none !important; }
-  .gr-auth-stream-cursor { display: none; }
 }
