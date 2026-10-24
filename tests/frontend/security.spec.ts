@@ -100,7 +100,7 @@ test("policy editing validates Rego and saves only writable fields while preserv
 test("policy preview obeys toggles and reports invalid Rego without saving", async ({ page }) => {
   const { requests } = await mockWorkspace(page, { override: request => request.path === "/policy/validate-rego" ? { json: { valid: false, error: "rego_parse_error: unexpected token" } } : undefined });
   await page.goto("/?view=policy");
-  await expect(page.getByText("Would block · prompt injection", { exact: true })).toBeVisible();
+  await expect(page.getByText("Local match · prompt injection", { exact: true })).toBeVisible();
   await page.getByRole("switch", { name: /^Prompt injection/ }).uncheck();
   await expect(page.getByText("No match in local preview", { exact: true })).toBeVisible();
   await page.getByRole("textbox", { name: "Rego source", exact: true }).fill("invalid rule");

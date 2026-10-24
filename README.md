@@ -38,6 +38,15 @@ New to the app? Open **Help & getting started** in the sidebar for an introducti
 examples, and a glossary. The **? Help** button explains the current page and
 suggests a useful next step. The sign-in page also has a **What is this?** introduction.
 
+Playground prompts use the gateway's current workspace policy. The browser does
+not veto drafts using a separate keyword list; the response inspector shows the
+server's input and output decisions. The policy editor's local preview is an
+approximation, so test representative prompts before relying on a configuration.
+Built-in checks distinguish configuration discussions from requests for secret
+values, and validate card-number checksums before treating numeric references
+as credit cards. Explicit workspace keywords and topic restrictions still apply;
+existing saved policies are not rewritten when defaults change.
+
 ## How it works
 
 ```mermaid

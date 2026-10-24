@@ -24,8 +24,6 @@
 .chat-pipeline-step div > span { font-size: 11px; color: var(--gr-muted); line-height: 1.4; }
 .chat-pipeline-arrow { margin-left: auto; color: var(--gr-muted); opacity: .65; }
 .chat-pipeline-step.is-active { background: var(--gr-accent-soft); }
-.chat-pipeline-step.is-blocked { background: var(--chat-warning-bg, #fff4e8); }
-.chat-pipeline-step.is-blocked .chat-step-number, .chat-pipeline-step.is-blocked div > span { color: var(--chat-warning, #9c5a1f); }
 .chat-workspace { display: grid; grid-template-columns: minmax(300px, .77fr) minmax(0, 1.23fr); gap: 24px; align-items: start; }
 .chat-composer, .chat-output { background: var(--gr-surface); border: 1px solid var(--gr-border); border-radius: 14px; min-width: 0; }
 .chat-composer { padding: 23px; }
@@ -47,9 +45,8 @@
 .chat-prompt-label > span { font-size: 10px; color: var(--gr-muted); font-family: var(--gr-mono); }
 .chat-prompt-input { display: block; box-sizing: border-box; width: 100%; min-height: 180px; resize: vertical; border: 1px solid var(--gr-border); border-radius: 9px; background: var(--gr-surface); color: var(--gr-ink); font-size: 13px !important; line-height: 1.8 !important; padding: 15px; }
 .chat-prompt-input::placeholder { color: var(--gr-muted); }
-.chat-precheck { display: flex; align-items: flex-start; gap: 7px; font-size: 11px; line-height: 1.6; margin: 12px 0 18px; color: var(--gr-muted); }
-.chat-precheck svg { flex-shrink: 0; margin-top: 1px; }
-.chat-precheck.is-blocked { color: var(--chat-warning, #9c5a1f); }
+.chat-gateway-note { display: flex; align-items: flex-start; gap: 7px; font-size: 11px; line-height: 1.6; margin: 12px 0 18px; color: var(--gr-muted); }
+.chat-gateway-note svg { flex-shrink: 0; margin-top: 1px; }
 .chat-run-button { width: 100%; min-height: 45px; display: flex; align-items: center; justify-content: center; gap: 9px; border: 1px solid var(--gr-accent); border-radius: 8px; background: var(--gr-accent); color: var(--gr-on-accent); font-size: 13px !important; font-weight: 600 !important; }
 .chat-run-button:hover:not(:disabled) { filter: brightness(.9); }
 .chat-composer-shortcut { display: flex; align-items: center; justify-content: center; gap: 5px; color: var(--gr-muted); font-size: 10px; margin: 11px 0 23px; }

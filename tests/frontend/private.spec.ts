@@ -4,7 +4,12 @@ import { mockWorkspace } from "./fixtures";
 test.skip(!process.env.PW_PRIVATE_MODE, "Run with playwright.private.config.ts and PW_PRIVATE_MODE=1");
 
 test("private playground keeps blocked and delivered content only in this tab", async ({ page }) => {
-  const workspace = await mockWorkspace(page);
+  const workspace = await mockWorkspace(page, { override: request => {
+    if (request.path !== "/chat") return;
+    const blocked = request.body.prompt === "Private client record: SSN 123-45-6789";
+    const guard = { passed: true, check: "all", reason: "", reason_code: "clean", risk_score: 0 };
+    return { json: { request_id: blocked ? "private-blocked" : "private-delivered", response: blocked ? null : "Your private model runs in your own deployment.", status: blocked ? "input_blocked" : "delivered", input_guard: blocked ? { ...guard, passed: false, reason: "The gateway blocked sensitive data.", reason_code: "pii_detected" } : guard, output_guard: blocked ? null : guard, latency_ms: 12, backend: blocked ? "not_called" : "ollama", model: blocked ? "" : "local-model" } };
+  } });
   const telemetry: string[] = [];
   page.on("request", request => { if (/posthog|sentry|telemetry\.example|fonts\.googleapis|fonts\.gstatic/i.test(new URL(request.url()).hostname)) telemetry.push(request.url()); });
   const legacy = JSON.stringify([{ prompt: "Old private project codename Moonlight", result: { error: "Older stored run" }, ts: 1 }]);
@@ -14,12 +19,16 @@ test("private playground keeps blocked and delivered content only in this tab", 
   await expect(page.getByText("Old private project codename Moonlight", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/Conversation history stays in this tab/)).toBeVisible();
   await page.getByLabel("Your prompt", { exact: true }).fill("Private client record: SSN 123-45-6789");
-  await page.getByRole("button", { name: "Test blocked prompt", exact: true }).click();
-  await expect(page.getByText("Client blocked", { exact: true })).toBeVisible();
-  expect(workspace.requests.some(request => request.path === "/chat")).toBe(false);
+  await page.getByRole("button", { name: "Run prompt", exact: true }).click();
+  await expect(page.locator(".chat-result.is-blocked")).toContainText("The gateway blocked sensitive data.");
+  await expect(page.locator(".chat-result.is-blocked .chat-response-content")).toHaveCount(0);
+  expect(workspace.requests.filter(request => request.path === "/chat")).toHaveLength(1);
   await page.getByLabel("Your prompt", { exact: true }).fill("Explain local model hosting.");
   await page.getByRole("button", { name: "Run prompt", exact: true }).click();
   await expect(page.locator(".chat-run-number")).toHaveCount(2);
+  await expect(page.getByText("Your private model runs in your own deployment.", { exact: true })).toBeVisible();
+  expect(workspace.requests.filter(request => request.path === "/chat")).toHaveLength(2);
+  expect(workspace.unknown).toEqual([]);
   expect(await page.evaluate(() => localStorage.getItem("guardrails_chat_history"))).toBe(legacy);
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "LLM Playground", exact: true })).toBeVisible();

@@ -37,26 +37,32 @@ _SECRET_PATTERNS: dict[str, re.Pattern] = {
     ),
     # AWS secret access key (40 base64 chars)
     "aws_secret_key": re.compile(r"(?i)aws.{0,20}secret.{0,20}['\"][A-Za-z0-9/\+]{40}['\"]"),
-    # Explicit env-name mention — often exfiltration attempts include the literal
-    # env var name even without a value (e.g. "what is GROQ_API_KEY?").
-    # We do NOT redact every occurrence globally (too noisy), but the input
-    # guardrail blocks it. For scrubbing we only redact when a value-like suffix
-    # follows.
+    # Names are safe to discuss; scrub assignments containing value-like text.
     "env_assignment": re.compile(r"(?i)\b(?:GROQ_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|GEMINI_API_KEY|DATABASE_PASSWORD|AWS_SECRET_ACCESS_KEY|DATABASE_URL)\s*[:=]\s*[^\s\"']{8,}"),
 }
 
-# Attempts to make the model reveal env / secrets.
+# Match disclosure requests, rather than ordinary mentions of configuration.
+_SECRET_ENV_NAME = r"(?:GROQ_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|GEMINI_API_KEY|XAI_API_KEY|GROK_API_KEY|OPENAI_COMPATIBLE_API_KEY|SECRET_KEY|DATABASE_URL|DATABASE_PASSWORD|POSTGRES_PASSWORD|REDIS_PASSWORD|AWS_SECRET_ACCESS_KEY)"
+_EXFIL_OBJECT = (
+    rf"(?:{_SECRET_ENV_NAME}\b|(?:Groq|OpenAI|Anthropic|Gemini)?\s*api[ _-]*keys?\b"
+    r"|(?:Groq|OpenAI|Anthropic|Gemini)\s+keys?\b"
+    r"|(?:access[ _-]*)?tokens?\b|passwords?\b|credentials?\b|secrets\b"
+    r"|secret\s+(?:api[ _-]*key|key|value)\b|secret\b(?=\s*(?:$|[.!?,;]))"
+    r"|env(?:ironment)?(?:\s+variables?)?\b|process\.env\b|os\.environ\b|\.env\b)"
+)
+_DISCLOSURE_PREFIX = r"(?:^|[.;!?\n]\s*|\b(?:please|then|also|and|you(?:\s+(?:must|should|can|to))?)\s+)"
+_DISCLOSURE_VERB = r"(?:show(?:\s+me)?|tell\s+me|reveal|expose|leak|dump|disclose|print(?:\s+out)?|echo|output|return|share|send|give|list|read(?:\s+out)?|display|fetch|retrieve|get)"
+_VALUE_REFERENCE = r"(?:(?:actual|current|stored|configured)\s+)?(?:values?|contents?)(?:\s+(?:stored|held|assigned))?\s+(?:of|for|from|in|to)"
+_OBJECT_QUALIFIERS = rf"(?:(?:me|us|all|every|the|your|my|our|actual|current|stored|configured|server|system|runtime|application|{_VALUE_REFERENCE})\s+)*"
 _ENV_EXFIL_PATTERNS: list[re.Pattern] = [
-    re.compile(r"(?i)\bGROQ_API_KEY\b"),
-    re.compile(r"(?i)\bOPENAI_API_KEY\b"),
-    re.compile(r"(?i)\bANTHROPIC_API_KEY\b"),
-    re.compile(r"(?i)\bGEMINI_API_KEY\b"),
-    re.compile(r"(?i)\bprint\s*\(\s*(?:os\.)?environ"),
-    re.compile(r"(?i)\bprocess\.env\b"),
-    re.compile(r"(?i)\bshow\s+me\s+.*\b(?:secret|api[_-]?key|env)\b"),
-    re.compile(r"(?i)\bwhat\s+is\s+.*\b(?:groq|openai|anthropic)\b.*\bkey\b"),
-    re.compile(r"(?i)\b(?:reveal|expose|leak|dump)\b.*\b(?:key|secret|token|env)\b"),
-    re.compile(r"(?i)\b(?:cat|print|echo)\b.*\.env\b"),
+    re.compile(rf"{_DISCLOSURE_PREFIX}{_DISCLOSURE_VERB}\s+{_OBJECT_QUALIFIERS}{_EXFIL_OBJECT}", re.I),
+    re.compile(rf"\bwhat(?:\s+is|'s|\s+are)\s+(?:(?:the\s+)?{_VALUE_REFERENCE}\s+|(?:your|our|my|current|configured|server)\s+){_OBJECT_QUALIFIERS}{_EXFIL_OBJECT}", re.I),
+    re.compile(r"\b(?:print|pprint|console\.log|console\.dir|JSON\.stringify)\s*\(\s*(?:dict\s*\(\s*)?(?:(?:os\.)?environ|process\.env)(?![\w.\[])", re.I),
+    re.compile(rf"\b(?:print|pprint|console\.log|console\.dir)\s*\(\s*(?:os\.environ|process\.env)(?:\.{_SECRET_ENV_NAME}|\[\s*['\"]{_SECRET_ENV_NAME}['\"]\s*\])", re.I),
+    re.compile(rf"\b(?:print|pprint)\s*\(\s*os\.getenv\s*\(\s*['\"]{_SECRET_ENV_NAME}['\"]", re.I),
+    re.compile(r"^\s*(?:process\.env|os\.environ|env|printenv)\s*;?\s*$", re.I),
+    re.compile(rf"\b(?:printenv|echo)\s+[\"']?\$?\{{?{_SECRET_ENV_NAME}\b", re.I),
+    re.compile(r"\b(?:cat|print|echo)\s+(?:[\w./-]*/)?\.env\b", re.I),
 ]
 
 _REDACTED = "[REDACTED:SECRET]"

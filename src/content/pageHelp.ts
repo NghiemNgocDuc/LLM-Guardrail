@@ -26,7 +26,7 @@ export const PAGE_HELP: Record<string, PageHelp> = {
       "Select Run prompt, then read the input and output policy decisions in the response inspector.",
       "Expand Request details to see the model, response time, and request identifier.",
     ],
-    tip: "Client blocked means the browser stopped the prompt before sending it to the gateway. Provider keys belong on the server; only grg_ gateway keys can be entered here.",
+    tip: "The gateway applies your current workspace policy when you run a prompt, including warn and redact settings. Provider keys belong on the server; only grg_ gateway keys can be entered here.",
     action: { label: "Explore request logs", view: "logs" },
   },
   skills: {
@@ -81,7 +81,7 @@ export const PAGE_HELP: Record<string, PageHelp> = {
       "Open a request to read its input and output decisions, reason, and recorded details.",
       "Compare the decision with your workspace policy before deciding whether a rule needs adjusting.",
     ],
-    tip: "A request stopped by the playground's client precheck never reaches the gateway, so it will not appear in these server logs.",
+    tip: "Prompts submitted in the playground follow the gateway policy and audit path. Older saved runs marked Client blocked were stopped by an earlier browser check and have no server log.",
     action: { label: "Review policy settings", view: "policy" },
   },
   health: {
@@ -114,7 +114,7 @@ export const PAGE_HELP: Record<string, PageHelp> = {
       "If you are an administrator, adjust the controls for your use case and save your changes.",
       "Try representative prompts in the playground and inspect the decisions before relying on the policy.",
     ],
-    tip: "Sensitive-data handling is configurable: it can block or redact supported data. The playground's separate client precheck can stop a prompt before server policy runs.",
+    tip: "Sensitive-data handling can block, redact, warn, or skip supported checks. The local preview is approximate; use a playground request to see the gateway's actual decision.",
     action: { label: "Test a prompt", view: "chat" },
   },
   teams: {

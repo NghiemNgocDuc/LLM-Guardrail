@@ -49,8 +49,8 @@ def test_contains_secret_variants(content, should_flag):
     assert hit == should_flag, f"{content!r} -> {hit}/{kind} expected {should_flag}"
 
 @pytest.mark.parametrize("text,should_hit", [
-    ("what is GROQ_API_KEY?", True),
-    ("WHAT IS groq_api_key ???", True),
+    ("what is GROQ_API_KEY?", False),
+    ("WHAT IS groq_api_key ???", False),
     ("print(os.environ)", True),
     ("print(environ)", True),
     ("process.env", True),

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { api, getToken, getGatewayKey, setGatewayKey, gatewayKeyInputProps, isProviderKey, PII_PATTERNS, INJECTION_KW, JAILBREAK_KW } from "../utils/api";
+import { api, getToken, getGatewayKey, setGatewayKey, gatewayKeyInputProps, isProviderKey } from "../utils/api";
 import { trackEvent } from "../utils/analytics";
 import AppIcon from "../components/AppIcon";
 import { useConfirmation } from "../components/ui";
@@ -11,20 +11,6 @@ type ChatResponse = components["schemas"]["ChatResponse"];
 type GuardrailResult = components["schemas"]["GuardrailResult"];
 type ChatResult = ChatResponse | { error: string } | { clientBlocked: boolean; reason: string };
 interface HistoryMessage { prompt: string; result: ChatResult; ts: number; feedback?: ChatFeedbackOut }
-
-function clientGuardrail(prompt: string): { blocked: boolean; reason?: string } {
-  for (const pattern of PII_PATTERNS) {
-    if (pattern.regex.test(prompt)) return { blocked: true, reason: `PII detected: ${pattern.name}` };
-  }
-  const lower = prompt.toLowerCase();
-  for (const keyword of INJECTION_KW) {
-    if (lower.includes(keyword.toLowerCase())) return { blocked: true, reason: `Prompt injection: "${keyword}"` };
-  }
-  for (const keyword of JAILBREAK_KW) {
-    if (lower.includes(keyword.toLowerCase())) return { blocked: true, reason: `Jailbreak attempt: "${keyword}"` };
-  }
-  return { blocked: false };
-}
 
 function parseInlineMarkdown(text: string): React.ReactNode {
   return text.split(/(\*\*.*?\*\*|`.*?`)/g).map((token, index) => {
@@ -175,7 +161,6 @@ export default function ChatView() {
   const outputRef = useRef<HTMLDivElement>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const sendingRef = useRef(false);
-  const clientBlock = prompt ? clientGuardrail(prompt).reason || null : null;
   const authenticated = !!getToken();
   const connected = !!gatewayKey || authenticated;
   const lastResponse = [...messages].reverse().find((message) => "status" in message.result && message.result.tokens_remaining != null);
@@ -204,8 +189,6 @@ export default function ChatView() {
     if (isProviderKey(gatewayKey)) { setKeyError("Remove the provider key. Only grg_ gateway keys can be used in the browser."); return; }
     const userPrompt = prompt.trim();
     if (!gatewayKey && !getToken()) { appendMessage({ prompt: userPrompt, result: { error: "Sign in and create a gateway API key, or paste your full grg_ key here." }, ts: Date.now() }); setPrompt(""); return; }
-    const guard = clientGuardrail(userPrompt);
-    if (guard.blocked) { appendMessage({ prompt: userPrompt, result: { clientBlocked: true, reason: guard.reason || "Client policy check failed." }, ts: Date.now() }); setPrompt(""); return; }
     sendingRef.current = true; setLoading(true); setPendingPrompt(userPrompt); setPrompt("");
     try {
       const headers: Record<string, string> = {}; if (gatewayKey) headers["X-Api-Key"] = gatewayKey;
@@ -221,19 +204,19 @@ export default function ChatView() {
   return <div className="chat-page">
     <header className="chat-page-header"><div><span className="chat-eyebrow">PROMPT WORKSPACE</span><h1>LLM Playground</h1><p>A clear view of what passes, what stops, and why.</p></div><div className="chat-session-status"><span className={`chat-connection-dot${connected ? " is-connected" : ""}`} />{gatewayKey ? "Gateway key added" : authenticated ? "Signed-in session" : "Authentication needed"}</div></header>
     <div className="chat-pipeline" aria-label="Request protection pipeline">{[
-      { label: "Client precheck", detail: clientBlock ? "Flag detected" : prompt ? "Ready to check" : "Check your draft", active: !!clientBlock },
+      { label: "Gateway access", detail: "Your session or gateway key" },
       { label: "Input policy", detail: "Before the model" },
       { label: "Model request", detail: loading ? "Request in progress" : "Your configured provider", active: loading },
       { label: "Output policy", detail: "Before delivery" },
-    ].map((step, index) => <div className={`chat-pipeline-step${step.active ? " is-active" : ""}${index === 0 && clientBlock ? " is-blocked" : ""}`} key={step.label}><span className="chat-step-number">0{index + 1}</span><div><strong>{step.label}</strong><span>{step.detail}</span></div>{index < 3 && <span className="chat-pipeline-arrow"><AppIcon name="arrow" size={14} /></span>}</div>)}</div>
+    ].map((step, index) => <div className={`chat-pipeline-step${step.active ? " is-active" : ""}`} key={step.label}><span className="chat-step-number">0{index + 1}</span><div><strong>{step.label}</strong><span>{step.detail}</span></div>{index < 3 && <span className="chat-pipeline-arrow"><AppIcon name="arrow" size={14} /></span>}</div>)}</div>
     <div className="chat-workspace">
       <section className="chat-composer" aria-labelledby="chat-compose-title">
         <div className="chat-panel-heading"><span className="chat-panel-icon"><AppIcon name="code" /></span><div><h2 id="chat-compose-title">Compose a request</h2><p>One prompt, protected end to end.</p></div></div>
         <div className="chat-connection-field"><label htmlFor="chat-gateway-key"><AppIcon name="key" size={15} />Gateway key <span>{authenticated ? "Optional with your session" : "grg_ keys only"}</span></label><input {...gatewayKeyInputProps} className="chat-key-input" id="chat-gateway-key" placeholder="grg_..." value={gatewayKey} onChange={onGatewayKeyChange} aria-invalid={!!keyError || isProviderKey(gatewayKey)} aria-describedby="chat-key-help" /><p id="chat-key-help" className={keyError || isProviderKey(gatewayKey) ? "chat-inline-error" : "chat-field-help"} role={keyError ? "alert" : undefined}>{keyError || (isProviderKey(gatewayKey) ? "Remove this provider key. Use a grg_ gateway key." : authenticated ? "Uses your signed-in session unless a key is supplied." : "Create a key in API Keys to connect your gateway.")}</p></div>
         <div className="chat-prompt-label"><label htmlFor="chat-prompt">Your prompt</label><span>{prompt.length.toLocaleString()} characters</span></div>
-        <textarea ref={promptRef} id="chat-prompt" className="chat-prompt-input" placeholder="Ask a question, paste a prompt, or try an example below..." value={prompt} onChange={(event) => setPrompt(event.target.value)} aria-describedby="chat-precheck" onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void send(); } }} />
-        <div id="chat-precheck" className={`chat-precheck${clientBlock ? " is-blocked" : ""}`} aria-live="polite"><AppIcon name="shield" size={15} /><span>{clientBlock || (prompt.trim() ? "Client precheck ready. Server policy runs on send." : "Your prompt is checked before it reaches the model.")}</span></div>
-        <button type="button" className="chat-run-button" onClick={() => void send()} disabled={loading || !prompt.trim()}>{loading ? <><span className="chat-loading-indicator" />Running request</> : <>{clientBlock ? "Test blocked prompt" : "Run prompt"}<AppIcon name="arrow" size={17} /></>}</button>
+        <textarea ref={promptRef} id="chat-prompt" className="chat-prompt-input" placeholder="Ask a question, paste a prompt, or try an example below..." value={prompt} onChange={(event) => setPrompt(event.target.value)} aria-describedby="chat-gateway-note" onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void send(); } }} />
+        <div id="chat-gateway-note" className="chat-gateway-note"><AppIcon name="shield" size={15} /><span>The gateway checks your prompt using your workspace's current policy. Read its decision in the response inspector.</span></div>
+        <button type="button" className="chat-run-button" onClick={() => void send()} disabled={loading || !prompt.trim()}>{loading ? <><span className="chat-loading-indicator" />Running request</> : <>Run prompt<AppIcon name="arrow" size={17} /></>}</button>
         <div className="chat-composer-shortcut">Keyboard shortcut <kbd>Ctrl / ⌘</kbd><kbd>Enter</kbd></div>
         <div className="chat-examples"><div className="chat-examples-heading"><span className="chat-small-label">Start with an example</span><span>Fills your draft</span></div>{SAMPLE_PROMPTS.map((sample) => <button type="button" className="chat-sample" key={sample.kind} onClick={() => setDraft(sample.text)}><span className={`chat-sample-dot is-${sample.kind}`} /><span>{sample.label}</span><AppIcon name="arrow" size={14} /></button>)}</div>
         <p className="chat-composer-note">{PRIVATE_MODE ? "Requests use the self-hosted model. Conversation history stays in this tab and is cleared when you reload." : "Requests use your organization's configured provider and policy."}</p>

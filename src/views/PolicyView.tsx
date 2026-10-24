@@ -18,6 +18,29 @@ const BACKENDS = PRIVATE_MODE ? ["ollama"] : ["anthropic", "openai", "gemini", "
 function RuleSwitch({ title, description, checked, disabled, onChange }: { title: string; description: string; checked: boolean; disabled: boolean; onChange: () => void }) {
   return <label className="security-rule"><span><strong>{title}</strong><small>{description}</small></span><input type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={onChange} /><span className="security-switch-track" aria-hidden="true" /></label>;
 }
+function localPreview(prompt: string, policy: EditablePolicy | null): { label: string; tone: "neutral" | "warning"; action?: string } {
+  if (!prompt.trim()) return { label: "Enter a prompt to preview", tone: "neutral" };
+  const input = policy?.input_rules;
+  const lower = prompt.toLowerCase();
+  const matches = (phrases: string[]) => phrases.some(phrase => phrase.trim() && lower.includes(phrase.trim().toLowerCase()));
+  if (input?.block_prompt_injection && matches([...(input.injection_keywords || []), "ignore previous instructions"])) {
+    return { label: "Local match · prompt injection", tone: "warning", action: input.injection_mode === "warn" ? "Configured action: warn" : "Configured action: block" };
+  }
+  if (input?.block_jailbreak && matches([...(input.jailbreak_patterns || []), "dan mode"])) {
+    return { label: "Local match · jailbreak", tone: "warning", action: input.jailbreak_mode === "warn" ? "Configured action: warn" : "Configured action: block" };
+  }
+  const piiMode = input?.pii_redaction_mode || (input?.block_pii === false ? "off" : "block");
+  const checkPii = piiMode === "redact" || (piiMode !== "off" && input?.block_pii !== false);
+  if (checkPii && /\b\d{3}-\d{2}-\d{4}\b/.test(prompt)) {
+    const action = piiMode === "redact" ? "redact" : ["warn", "logs_only", "reversible"].includes(piiMode) ? "warn" : "block";
+    return { label: "Local match · sensitive data", tone: "warning", action: "Configured action: " + action };
+  }
+  if (matches(policy?.topic_policy?.blocked_topics || [])) {
+    const mode = policy?.output_rules?.topic_mode;
+    return { label: "Local match · restricted topic", tone: "warning", action: "Output setting: " + (mode === "warn" || mode === "review" ? mode : "block") };
+  }
+  return { label: "No match in local preview", tone: "neutral" };
+}
 export default function PolicyView({ user }: { user: UserOut }) {
   const [policy, setPolicy] = useState<EditablePolicy | null>(null);
   const [error, setError] = useState("");
@@ -65,8 +88,7 @@ export default function PolicyView({ user }: { user: UserOut }) {
   const allTopics = Array.from(new Set([...TOPICS, ...blockedTopics]));
   const disabled = !user.is_admin || saving || resetting;
   const piiMode = policy?.input_rules?.pii_redaction_mode || (policy?.input_rules?.block_pii === false ? "off" : "block");
-  const lower = testPrompt.toLowerCase();
-  const localResult = !testPrompt.trim() ? { label: "Enter a prompt to preview", tone: "neutral" as const } : policy?.input_rules?.block_prompt_injection && [...(policy.input_rules.injection_keywords || []), "ignore previous instructions"].some(value => lower.includes(value.toLowerCase())) ? { label: "Would block · prompt injection", tone: "danger" as const } : policy?.input_rules?.block_jailbreak && [...(policy.input_rules.jailbreak_patterns || []), "dan mode"].some(value => lower.includes(value.toLowerCase())) ? { label: "Would block · jailbreak", tone: "danger" as const } : piiMode !== "off" && /\b\d{3}-\d{2}-\d{4}\b/.test(testPrompt) ? { label: piiMode === "redact" ? "Would redact · sensitive data" : "Would block · sensitive data", tone: "warning" as const } : blockedTopics.some(topic => lower.includes(topic.toLowerCase())) ? { label: "Would block · restricted topic", tone: "danger" as const } : { label: "No match in local preview", tone: "success" as const };
+  const localResult = localPreview(testPrompt, policy);
   function rule(title: string, description: string, section: Section, key: string) { return <RuleSwitch key={key} title={title} description={description} checked={Boolean((policy?.[section] || {})[key])} disabled={disabled || (PRIVATE_MODE && key === "full_prompt_logging")} onChange={() => setSection(section, key, !(policy?.[section] || {})[key])} />; }
   return <div className="security-page">
     <PageHeader eyebrow="GATEWAY CONTROLS" title="Policies" description="Define what your AI can receive, return, and discuss." actions={<><Button variant="secondary" icon="code" onClick={() => setJsonMode(current => !current)}>{jsonMode ? "Rule editor" : "View JSON"}</Button>{user.is_admin && <Button variant="primary" icon="check" loading={saving} disabled={!policy || resetting} onClick={save}>Save changes</Button>}</>} />
@@ -75,8 +97,8 @@ export default function PolicyView({ user }: { user: UserOut }) {
     {error && <Notice tone="danger">{error}{!policy && <Button variant="ghost" onClick={load}>Try again</Button>}</Notice>}
     {success && <Notice tone="success">{success}</Notice>}
     {loading ? <LoadingState label="Loading policy configuration…" /> : policy && <>
-      <Panel title="Try a prompt" description="A local preview of configured keywords, sensitive-data handling, and blocked topics." actions={<Badge tone="neutral">Preview only</Badge>}>
-        <Field label="Sample prompt" htmlFor="policy-test-prompt"><textarea id="policy-test-prompt" className="ui-input security-code-input" rows={3} value={testPrompt} onChange={event => setTestPrompt(event.target.value)} /></Field><div className="security-preview-result" role="status"><Badge tone={localResult.tone}>{localResult.label}</Badge><span className="security-hint">The gateway also evaluates additional checks and custom rules.</span></div>
+      <Panel title="Try a prompt" description="Explore local pattern matches and configured actions. No prompt is sent." actions={<Badge tone="neutral">Approximate preview</Badge>}>
+        <Field label="Sample prompt" htmlFor="policy-test-prompt"><textarea id="policy-test-prompt" className="ui-input security-code-input" rows={3} value={testPrompt} onChange={event => setTestPrompt(event.target.value)} /></Field><div className="security-preview-result" role="status"><Badge tone={localResult.tone}>{localResult.label}</Badge>{localResult.action && <span className="security-hint">{localResult.action}</span>}<span className="security-hint">Local matches are approximate. Run a prompt in the Playground to see the gateway's decision.</span></div>
       </Panel>
       {jsonMode ? <Panel title="Policy configuration" description="The complete current configuration, including fields outside this editor." actions={<Button variant="ghost" icon="copy" onClick={async () => { try { await navigator.clipboard.writeText(JSON.stringify(policy, null, 2)); setSuccess("Policy JSON copied."); } catch { setError("Copy is unavailable. Select the JSON to copy it manually."); } }}>Copy JSON</Button>}><pre className="security-code-block">{JSON.stringify(policy, null, 2)}</pre></Panel> : <>
         <div className="security-policy-grid">

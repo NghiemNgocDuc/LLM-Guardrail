@@ -9,6 +9,72 @@ from typing import Optional
 from app.i18n import _t_or
 from guardrails import _engine
 
+_AMBIGUOUS_MODES = frozenset({
+    "admin override", "debug mode enabled", "maintenance mode", "sudo mode",
+    "developer mode", "evil mode", "harm mode", "no filter mode", "opposite mode", "god mode",
+})
+_TASK_REPLACEMENTS = frozenset({"new instructions:", "your new task is", "your new instructions are", "you are no longer"})
+_CLAUSES = re.compile(r"[.!?;]\s+|\n+")
+_MODEL_TARGET = re.compile(r"\b(?:you|your|yourself|assistant|chatbot|this chat|(?:ai|language) model)\b", re.I)
+_ACTIVATION = re.compile(r"\b(?:enable|activate|enter|switch|turn on|run in|use|operate|now|enabled|activated)\b", re.I)
+_OVERRIDE = re.compile(r"\b(?:ignore|disregard|bypass|disable|override|remove|suspend|forget|drop|no longer|without)\b.{0,80}\b(?:instructions?|rules?|restrictions?|safety|safeguards?|guardrails?|polic(?:y|ies)|filters?|ethical|system prompt|censorship)\b", re.I)
+_DIRECT_OVERRIDE = re.compile(r"\b(?:ignore|disregard|bypass|disable|override)\b.{0,80}\b(?:instructions?|rules?|restrictions?|safety|safeguards?|guardrails?|polic(?:y|ies)|filters?|ethical|system prompt|censorship)\b", re.I)
+_MODE_COMMAND = re.compile(r"^(?:please\s+)?(?:enable|activate|enter|switch\s+(?:to|into)|turn\s+on|run\s+in|use|operate\s+in)\s+(?:the\s+)?", re.I)
+_EXTERNAL_MODE_TARGET = re.compile(r"^(?:on|in|for)\s+(?:(?:my|your|the|a|an|our|this|that)\s+)?(?:android|ios|iphone|ipad|windows|macos|linux|wordpress|drupal|shopify|chrome|chromium|firefox|safari|edge|(?:web\s+)?browser|phone|device|emulator|simulator|website|web\s+site|server|router|database|(?:video\s+)?game)\b", re.I)
+
+
+def _keyword_positions(text: str, keyword: str):
+    """Match complete phrase edges, so 'dan mode' never matches 'Jordan model'."""
+    lower = text.lower()
+    start = 0
+    while keyword and (index := lower.find(keyword, start)) >= 0:
+        end = index + len(keyword)
+        left_ok = not (keyword[0].isalnum() or keyword[0] == "_") or index == 0 or not (lower[index - 1].isalnum() or lower[index - 1] == "_")
+        right_ok = not (keyword[-1].isalnum() or keyword[-1] == "_") or end == len(lower) or not (lower[end].isalnum() or lower[end] == "_")
+        if left_ok and right_ok:
+            yield index, end
+        start = index + 1
+
+
+def _builtin_matches(prompt: str, keyword: str) -> bool:
+    if keyword not in _AMBIGUOUS_MODES | _TASK_REPLACEMENTS:
+        return next(_keyword_positions(prompt, keyword), None) is not None
+    if keyword in _AMBIGUOUS_MODES and _ACTIVATION.search(prompt) and _DIRECT_OVERRIDE.search(prompt) and next(_keyword_positions(prompt, keyword), None) is not None:
+        return True
+    for clause in _CLAUSES.split(prompt):
+        clause = clause.lower()
+        for start, end in _keyword_positions(clause, keyword):
+            if keyword in _TASK_REPLACEMENTS:
+                if _OVERRIDE.search(clause):
+                    return True
+                continue
+            # Recognize an actual product target, not an arbitrary suffix such
+            # as 'developer mode for unrestricted responses'. This does not
+            # exempt an override later in the same prompt.
+            suffix = clause[end:].lstrip().lower()
+            if _EXTERNAL_MODE_TARGET.match(suffix):
+                continue
+            command = _MODE_COMMAND.match(clause)
+            if (_MODEL_TARGET.search(clause) and _ACTIVATION.search(clause)) or (command and command.end() == start):
+                return True
+    return False
+
+
+def _find_keyword(prompt: str, built_in: list[str], extras: list[str]) -> str | None:
+    for keyword in built_in:
+        if _builtin_matches(prompt, keyword):
+            return keyword
+    # Explicit workspace keywords remain authoritative, including ambiguous words.
+    for value in extras:
+        if isinstance(value, str) and (keyword := value.strip().lower()) and next(_keyword_positions(prompt, keyword), None) is not None:
+            return keyword
+    return None
+
+
+def _rust_input_v2() -> bool:
+    """Old installed extensions must fall back rather than retain broad matching."""
+    return _engine.enabled() and getattr(_engine.module(), "INPUT_CHECKS_VERSION", 0) >= 2
+
 
 @dataclass
 class GuardrailResult:
@@ -176,7 +242,7 @@ class InputGuardrail:
         mode = self.policy.get("pii_mode") or self.policy.get("pii_redaction_mode") or "block"
         # logs_only / reversible: allow but flag for scrubbed logging (Bifrost pattern)
         is_logs_only = mode in ("logs_only", "reversible", "warn")
-        if _engine.enabled():
+        if _rust_input_v2():
             try:
                 name = _engine.module().check_pii(
                     prompt, [(p["name"], p["regex"]) for p in self.policy.get("pii_patterns", [])]
@@ -202,8 +268,9 @@ class InputGuardrail:
                 return GuardrailResult(allowed=True, check="PII Detection")
             except Exception:
                 pass  # fall through to the Python implementation
+        from guardrails.luhn import luhn_valid
         for p in self.policy.get("pii_patterns", []):
-            if re.search(p["regex"], prompt):
+            if any(p["name"] != "credit_card" or luhn_valid(match.group()) for match in re.finditer(p["regex"], prompt)):
                 if is_logs_only:
                     return GuardrailResult(
                         allowed=True, warned=True,
@@ -288,7 +355,7 @@ class InputGuardrail:
         return GuardrailResult(allowed=True, check="Env Exfiltration Probe")
 
     def _check_injection(self, prompt: str) -> GuardrailResult:
-        if _engine.enabled():
+        if _rust_input_v2():
             try:
                 kw = _engine.module().check_injection(
                     prompt, list(self.policy.get("injection_keywords", []))
@@ -304,7 +371,6 @@ class InputGuardrail:
                 return GuardrailResult(allowed=True, check="Injection Detection")
             except Exception:
                 pass  # fall through to the Python implementation
-        lower = prompt.lower()
         built_in = [
             # Classic overrides
             "ignore previous instructions",
@@ -345,18 +411,15 @@ class InputGuardrail:
             "sudo mode",
             "system prompt override",
         ]
-        keywords = {kw.lower() for kw in self.policy.get("injection_keywords", [])}
-        keywords.update(built_in)
-
-        for kw in keywords:
-            if kw in lower:
-                return GuardrailResult(
-                    allowed=False,
-                    check="Injection Detection",
-                    reason=_t_or("guardrail.prompt_injection", "Prompt injection: '{keyword}'", keyword=kw),
-                    reason_code="prompt_injection",
-                    risk_score=0.9,
-                )
+        kw = _find_keyword(prompt, built_in, self.policy.get("injection_keywords", []))
+        if kw is not None:
+            return GuardrailResult(
+                allowed=False,
+                check="Injection Detection",
+                reason=_t_or("guardrail.prompt_injection", "Prompt injection: '{keyword}'", keyword=kw),
+                reason_code="prompt_injection",
+                risk_score=0.9,
+            )
         return GuardrailResult(allowed=True, check="Injection Detection")
 
     def _check_ml_injection(self, prompt: str) -> GuardrailResult:
@@ -399,7 +462,7 @@ class InputGuardrail:
         return GuardrailResult(allowed=True, check="Injection Detection (ML)")
 
     def _check_jailbreak(self, prompt: str) -> GuardrailResult:
-        if _engine.enabled():
+        if _rust_input_v2():
             try:
                 pat = _engine.module().check_jailbreak(
                     prompt, list(self.policy.get("jailbreak_patterns", []))
@@ -415,7 +478,6 @@ class InputGuardrail:
                 return GuardrailResult(allowed=True, check="Jailbreak Detection")
             except Exception:
                 pass  # fall through to the Python implementation
-        lower = prompt.lower()
         built_in = [
             # Classic modes
             "dan mode",
@@ -452,18 +514,15 @@ class InputGuardrail:
             "keystroke logger",
             "keylogger",
         ]
-        patterns = {p.lower() for p in self.policy.get("jailbreak_patterns", [])}
-        patterns.update(built_in)
-
-        for p in patterns:
-            if p in lower:
-                return GuardrailResult(
-                    allowed=False,
-                    check="Jailbreak Detection",
-                    reason=_t_or("guardrail.jailbreak_attempt", "Jailbreak: '{pattern}'", pattern=p),
-                    reason_code="jailbreak_attempt",
-                    risk_score=0.9,
-                )
+        p = _find_keyword(prompt, built_in, self.policy.get("jailbreak_patterns", []))
+        if p is not None:
+            return GuardrailResult(
+                allowed=False,
+                check="Jailbreak Detection",
+                reason=_t_or("guardrail.jailbreak_attempt", "Jailbreak: '{pattern}'", pattern=p),
+                reason_code="jailbreak_attempt",
+                risk_score=0.9,
+            )
         return GuardrailResult(allowed=True, check="Jailbreak Detection")
 
     def _check_semantic(self, prompt: str) -> GuardrailResult:

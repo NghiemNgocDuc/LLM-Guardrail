@@ -1,8 +1,7 @@
 //! PII redaction port — `pii_redactor.py::PIIRedactor.redact` / `.restore`.
 //!
-//! Mirrors the Python algorithm exactly: for each pattern (in order), repeatedly
-//! find the leftmost match in the *current* (already partially redacted) text,
-//! replace the first occurrence of its value with the next numbered placeholder,
+//! Mirrors the Python algorithm: inspect each pattern's original candidates,
+//! validate card checksums, replace the first remaining occurrence with a placeholder,
 //! and record the placeholder → original mapping so the operation is reversible.
 
 use regex::Regex;
@@ -28,9 +27,15 @@ pub fn redact(text: &str, patterns_in: &[(String, String, String)]) -> Result<Re
 
     for (name, regex, placeholder) in patterns_in {
         let re = Regex::new(regex).map_err(|e| format!("invalid pii regex for '{name}': {e}"))?;
-        loop {
-            let Some(m) = re.find(&redacted) else { break };
+        // Inspect every original candidate: an invalid card must not hide a
+        // later valid one, and generated placeholders must never be rescanned.
+        for m in re.find_iter(text) {
             let original_value = m.as_str().to_string();
+            if (name == "credit_card" && !crate::checks::luhn_valid(&original_value))
+                || !redacted.contains(&original_value)
+            {
+                continue;
+            }
             counter += 1;
             let ph = placeholder.replace("{n}", &counter.to_string());
             mapping.push((ph.clone(), original_value.clone()));

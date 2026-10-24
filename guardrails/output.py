@@ -1,6 +1,7 @@
 """Output Guardrails — 2026: grounding, 4-way actions, sampling"""
 import json
 import random
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -17,8 +18,12 @@ _TOXIC_PHRASES = [
     "how to make a bomb",
     "how to build a weapon",
     "how to make explosives",
-    "instructions for mass",
-    "steps to commit",
+    "instructions for mass killing",
+    "steps to commit murder",
+    "steps to commit suicide",
+    "steps to commit a crime",
+    "steps to commit fraud",
+    "steps to commit arson",
     "mass shooting",
     "mass murder",
     "school shooting",
@@ -203,8 +208,19 @@ class OutputGuardrail:
             )
         # Keep the old broad heuristic as a safety net (e.g. non-standard prefixes)
         lower = response.lower()
-        if "api_key=" in lower or "authorization: bearer" in lower:
+        if "api_key=" in lower:
             return _t_or("guardrail.secret_leakage", "Potential credential leakage detected")
+        for match in re.finditer(r"(?i)\bauthorization:\s*bearer\b", response):
+            value = response[match.end():]
+            # These are complete reference syntaxes, not literal credential values.
+            # Keep checking later headers: a safe example must not hide a real key.
+            reference = re.match(
+                r"\s+(?:<(?:(?:your|access|api|gateway)_)?token(?:_here)?>|\$\{[A-Z_][A-Z0-9_]*\})(?=$|[\s\"'`,;.)])",
+                value,
+                re.I,
+            )
+            if reference is None:
+                return _t_or("guardrail.secret_leakage", "Potential credential leakage detected")
         return None
 
     def _validate_schema(self, response: str) -> Optional[str]:

@@ -83,7 +83,8 @@ class PIIRedactor:
         mapping that can be used to restore the originals later.
         Credit cards are Luhn-validated to kill FP on 20-digit order refs.
         """
-        if _engine.enabled():
+        # Older binaries lack the Luhn filter used by the canonical Python path.
+        if _engine.enabled() and getattr(_engine.module(), "INPUT_CHECKS_VERSION", 0) >= 2:
             try:
                 res = _engine.module().redact_pii(
                     text,

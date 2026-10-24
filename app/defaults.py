@@ -24,7 +24,6 @@ DEFAULT_INPUT_RULES = {
     "block_jailbreak": True,
     "jailbreak_patterns": [
         "DAN mode",
-        "developer mode",
         "pretend you have no restrictions",
         "act as an unrestricted",
         "you are now jailbroken",

@@ -131,11 +131,29 @@ def _reference_assignment(line: str, match: re.Match) -> bool:
     return bool(reference and (reference.end() == len(rhs) or rhs[reference.end()] in " \t;,#)"))
 
 
+def _numeric_config_metadata(name: str, value: str) -> bool:
+    """Recognize bounded numeric settings whose names describe credential metadata."""
+    if not re.fullmatch(r"[0-9]{1,8}", value):
+        return False
+    number = int(value)
+    if name in {"PASSWORD_MIN_LENGTH", "PASSWORD_MAX_LENGTH"}:
+        return 1 <= number <= 1024
+    if name == "AUTH_TIMEOUT_MS":
+        return 0 <= number <= 86_400_000
+    if name in {"AUTH_TIMEOUT", "AUTH_TIMEOUT_SECONDS"}:
+        return 0 <= number <= 86_400
+    if name in {"TOKEN_TTL_SECONDS", "ACCESS_TOKEN_TTL_SECONDS", "REFRESH_TOKEN_TTL_SECONDS", "TOKEN_EXPIRY_SECONDS"}:
+        return 1 <= number <= 31_536_000
+    return False
+
+
 def _actionable_match(code: str, line: str, match: re.Match) -> bool:
     if code in {"credential_assignment", "env_assignment", "json_api_key", "json_password"}:
         if code == "env_assignment":
-            name = match.group(0).split("=", 1)[0].strip()
+            name, value = (part.strip() for part in match.group(0).split("=", 1))
             if not _SENSITIVE_ENV_RE.search(name) or name.upper().split("_")[-1] in {"COUNT", "COUNTS", "LIMIT", "LIMITS", "BUDGET", "MODE", "METHOD", "ENABLED", "DISABLED", "NAME", "NAMES", "FLAG", "PATTERN", "RULE", "TYPE", "FORMAT"}:
+                return False
+            if _numeric_config_metadata(name.upper(), value):
                 return False
         return not _reference_assignment(line, match)
     return True

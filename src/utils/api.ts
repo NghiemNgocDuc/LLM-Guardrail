@@ -80,11 +80,3 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
   if (res.status === 204) return null as T;
   return res.json() as Promise<T>;
 }
-
-export type GuardrailPattern = { name: string; regex: RegExp };
-export const PII_PATTERNS: GuardrailPattern[] = [
-  { name: "credit_card", regex: /\b(?:\d[ -]?){13,16}\b/ },
-  { name: "ssn",         regex: /\b\d{3}-\d{2}-\d{4}\b/ },
-];
-export const INJECTION_KW: string[] = ["ignore previous instructions", "disregard your system prompt", "forget everything"];
-export const JAILBREAK_KW: string[] = ["DAN mode", "developer mode", "pretend you have no restrictions"];
