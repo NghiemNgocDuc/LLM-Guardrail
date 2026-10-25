@@ -17,17 +17,45 @@
 .gr-dash-panel { animation: gr-page-in 300ms var(--gr-ease) both; }
 .gr-dash-text-link svg, .gr-dash-icon-link svg { transition: transform var(--gr-motion-base) var(--gr-ease); }
 .gr-dash-text-link:hover svg, .gr-dash-icon-link:hover svg { transform: translateX(3px); }
-.gr-dash-welcome { display: grid; grid-template-columns: minmax(240px, .78fr) minmax(0, 1.22fr); gap: clamp(24px, 3vw, 48px); align-items: center; padding: 6px 0 28px; border-bottom: 1px solid var(--gr-border); }
+.gr-dash-welcome { position: relative; display: grid; grid-template-columns: minmax(230px, .76fr) minmax(0, 1.24fr); gap: clamp(24px, 3vw, 44px); align-items: center; padding: 28px; border: 1px solid var(--gr-border); border-radius: 26px; background: radial-gradient(ellipse at 0 0, var(--gr-accent-soft), transparent 65%), var(--gr-surface); }
 .gr-dash-welcome-copy { min-width: 0; }
-.gr-dash-welcome-eyebrow { display: flex; gap: 8px; align-items: center; margin: 0 0 18px; font-size: 10px; font-weight: 650; letter-spacing: .09em; color: var(--gr-accent); }
-.gr-dash-welcome h1 { margin: 0 0 18px; font-size: clamp(32px, 3vw, 43px); font-weight: 550; line-height: 1.12; letter-spacing: -.045em; }
+.gr-dash-welcome-eyebrow { display: flex; gap: 8px; align-items: center; margin: 0 0 22px; font-size: 10px; font-weight: 650; letter-spacing: .08em; line-height: 1.7; color: var(--gr-accent); }
+.gr-dash-welcome h1 { margin: 0 0 22px; font-size: clamp(36px, 3.4vw, 50px); font-weight: 600; line-height: 1.07; letter-spacing: -.045em; }
 .gr-dash-welcome h1 span { display: block; color: var(--gr-accent); }
-.gr-dash-welcome-copy > p:not(.gr-dash-welcome-eyebrow) { max-width: 340px; color: var(--gr-muted); font-size: 14px; line-height: 1.7; }
+.gr-dash-welcome-copy > p:not(.gr-dash-welcome-eyebrow) { max-width: 350px; color: var(--gr-muted); font-size: 15px; line-height: 1.75; }
 .gr-dash-welcome-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin-top: 24px; }
 .gr-dash-primary-link { display: inline-flex; align-items: center; justify-content: center; gap: 12px; min-height: 44px; padding: 11px 16px; border: 1px solid var(--gr-accent); border-radius: 9px; background: var(--gr-accent); color: var(--gr-on-accent); text-decoration: none; font-size: 13px; font-weight: 600; transition: transform var(--gr-motion-base) var(--gr-ease), box-shadow var(--gr-motion-base) var(--gr-ease); }
 .gr-dash-primary-link:hover { transform: translateY(-2px); box-shadow: 0 5px 0 -2px var(--gr-border); }
 .gr-dash-primary-link:active { transform: translateY(0); box-shadow: none; }
-.gr-dash-welcome-copy > p.gr-dash-welcome-note { margin: 14px 0 0; font-size: 11px; }
+.gr-dash-welcome-copy > p.gr-dash-welcome-note { display: flex; align-items: flex-start; gap: 7px; margin: 18px 0 0; font-size: 12px; }
+.gr-dash-welcome-note svg { margin-top: 3px; color: var(--gr-accent); }
+.gr-dash-shortcuts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.gr-dash-shortcuts > a { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 18px; border: 1px solid var(--gr-border); border-radius: 15px; background: var(--gr-surface); color: var(--gr-ink); text-decoration: none; transition: transform 220ms var(--gr-ease), border-color 220ms, box-shadow 220ms; }
+.gr-dash-shortcuts > a:hover { transform: translateY(-3px); border-color: var(--gr-accent); box-shadow: 0 8px 18px -14px var(--gr-accent); }
+.gr-dash-shortcut-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 13px; color: var(--gr-accent); background: var(--gr-accent-soft); flex-shrink: 0; }
+.gr-dash-shortcuts > a:nth-child(2) .gr-dash-shortcut-icon { color: var(--gr-warning); background: var(--gr-warning-soft); }
+.gr-dash-shortcuts > a:nth-child(3) .gr-dash-shortcut-icon { color: var(--gr-info); background: var(--gr-info-soft); }
+.gr-dash-shortcuts > a > span:nth-child(2) { min-width: 0; flex: 1; }
+.gr-dash-shortcuts strong { display: block; font-size: 14px; font-weight: 600; }
+.gr-dash-shortcuts strong + span { display: block; margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--gr-muted); }
+.gr-dash-shortcuts > a > svg { color: var(--gr-muted); }
+.gr-dash-pulse { display: grid; grid-template-columns: 116px minmax(210px, 1fr) minmax(260px, 1.25fr); align-items: center; gap: 24px; padding: 24px; background: var(--gr-accent-soft); border: 1px solid var(--gr-border); border-radius: 19px; }
+.gr-dash-pulse-ring { position: relative; width: 116px; height: 116px; }
+.gr-dash-pulse-ring > svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.gr-dash-pulse-ring circle { fill: none; stroke-width: 7px; }
+.gr-dash-pulse-track { stroke: var(--gr-border); }
+.gr-dash-pulse-value { stroke: var(--gr-accent); stroke-linecap: round; }
+.gr-dash-pulse-ring > div { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--gr-accent); text-align: center; }
+.gr-dash-pulse-ring strong { font-size: 24px; line-height: 1.1; letter-spacing: -.04em; font-weight: 600; }
+.gr-dash-pulse-ring span { color: var(--gr-muted); font-size: 12px; line-height: 1.5; }
+.gr-dash-pulse-copy > .gr-dash-eyebrow { margin: 0 0 8px; font: 10px var(--gr-font); letter-spacing: .045em; }
+.gr-dash-pulse h2 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.03em; }
+.gr-dash-pulse-copy > p:not(.gr-dash-eyebrow) { font-size: 14px; line-height: 1.7; color: var(--gr-muted); margin: 9px 0; }
+.gr-dash-pulse-copy p strong { color: var(--gr-ink); font-weight: 550; }
+.gr-dash-pulse-outcomes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 22px; margin: 0; padding: 6px 0 6px 24px; border-left: 1px solid var(--gr-border); }
+.gr-dash-pulse-outcomes dt { display: flex; align-items: flex-start; gap: 7px; color: var(--gr-muted); font-size: 12px; line-height: 1.5; }
+.gr-dash-pulse-outcomes dt svg { margin-top: 2px; }
+.gr-dash-pulse-outcomes dd { font-size: 22px; font-weight: 550; margin: 5px 0 0 22px; line-height: 1.2; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
 .gr-dash-activity-header h2 { margin: 7px 0 8px; font-size: 23px; font-weight: 550; line-height: 1.2; letter-spacing: -.035em; }
 .gr-dash-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 8px; }
 .gr-dash-eyebrow { color: var(--gr-muted); font-family: var(--gr-mono); text-transform: uppercase; letter-spacing: .1em; font-size: 10px; line-height: 1.5; font-weight: 500; }
@@ -40,7 +68,7 @@
 .gr-dash-button:disabled { cursor: wait; opacity: .55; }
 .gr-dashboard :is(button, select, a, summary, [tabindex]):focus-visible { outline: 2px solid var(--gr-accent); outline-offset: 4px; }
 .gr-dash-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.gr-dash-metric { border: 1px solid var(--gr-border); background: var(--gr-surface); border-radius: 8px; padding: 20px 20px 18px; min-width: 0; }
+.gr-dash-metric { border: 1px solid var(--gr-border); background: var(--gr-surface); border-radius: 15px; padding: 22px 20px 20px; min-width: 0; }
 .gr-dash-metric-accent { background: var(--gr-accent-soft); border-color: var(--gr-border); }
 .gr-dash-metric-label { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-height: 3em; font-size: 12px; line-height: 1.5; font-weight: 550; }
 .gr-dash-metric-index { font: 10px var(--gr-font); color: var(--gr-muted); }
@@ -54,7 +82,7 @@
 .gr-dash-outcomes p { margin: 0 0 0 auto; font-size: 10px; color: var(--gr-muted); }
 .gr-dash-primary-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 20px; }
 .gr-dash-secondary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
-.gr-dash-panel { min-width: 0; padding: 22px 22px 18px; border: 1px solid var(--gr-border); border-radius: 8px; background: var(--gr-surface); }
+.gr-dash-panel { min-width: 0; padding: 24px 24px 20px; border: 1px solid var(--gr-border); border-radius: 16px; background: var(--gr-surface); }
 .gr-dash-panel-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 22px; }
 .gr-dash-panel-heading h2 { font-size: 15px; letter-spacing: -.025em; font-weight: 600; line-height: 1.4; margin: 6px 0 0; }
 .gr-dash-panel-heading p { font-size: 12px; color: var(--gr-muted); margin: 6px 0 0; line-height: 1.6; }
@@ -145,10 +173,18 @@
   .gr-dash-panel { padding: 19px 18px 16px; }
   .gr-dash-table-panel { padding: 0; }
 }
+@media (max-width: 1100px) {
+  .gr-dash-pulse { grid-template-columns: 100px minmax(0, 1fr); gap: 18px; }
+  .gr-dash-pulse-ring { width: 100px; height: 100px; }
+  .gr-dash-pulse-outcomes { grid-column: 1 / -1; padding: 18px 0 0; border-left: 0; border-top: 1px solid var(--gr-border); }
+}
 @media (max-width: 900px) {
   .gr-dash-welcome { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .gr-dash-welcome-copy > p:not(.gr-dash-welcome-eyebrow) { max-width: 480px; }
   .gr-dash-welcome h1 span { display: inline; }
+  .gr-dash-shortcuts { gap: 10px; }
+  .gr-dash-shortcuts > a { flex-wrap: wrap; gap: 10px; padding: 14px; }
+  .gr-dash-shortcuts > a > svg { display: none; }
   .gr-dash-header { flex-direction: column; gap: 18px; }
   .gr-dash-header-actions { padding: 0; }
   .gr-dash-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -159,10 +195,19 @@
   .gr-dash-outcomes p { width: 100%; margin-left: 0; }
 }
 @media (max-width: 520px) {
-  .gr-dash-welcome { padding-top: 0; padding-bottom: 24px; }
-  .gr-dash-welcome h1 { font-size: 34px; max-width: 310px; }
+  .gr-dash-welcome { padding: 23px 16px 16px; border-radius: 21px; gap: 24px; }
+  .gr-dash-welcome h1 { font-size: 39px; max-width: 310px; }
   .gr-dash-welcome-eyebrow { font-size: 9px; margin-bottom: 15px; }
   .gr-dash-welcome-actions { gap: 8px 16px; margin-top: 18px; }
+  .gr-dash-shortcuts { grid-template-columns: minmax(0, 1fr); }
+  .gr-dash-shortcuts > a { flex-wrap: nowrap; padding: 15px; gap: 14px; }
+  .gr-dash-shortcuts > a > svg { display: block; }
+  .gr-dash-pulse { padding: 19px 16px; gap: 16px; }
+  .gr-dash-pulse-ring { width: 88px; height: 88px; }
+  .gr-dash-pulse { grid-template-columns: 88px minmax(0, 1fr); }
+  .gr-dash-pulse-ring strong { font-size: 21px; }
+  .gr-dash-pulse h2 { font-size: 19px; }
+  .gr-dash-pulse-copy > p:not(.gr-dash-eyebrow) { font-size: 13px; }
   .gr-dash-activity-header { align-items: flex-start; }
   .gr-dashboard { gap: 18px; }
   .gr-dash-header p { font-size: 13px; }

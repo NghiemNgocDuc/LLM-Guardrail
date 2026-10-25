@@ -66,6 +66,32 @@ function LoadingDashboard() {
   return <div role="status" aria-live="polite" className="gr-dash-loading"><span className="gr-dash-sr-only">Loading workspace activity.</span><div className="gr-dash-metrics" aria-hidden="true">{Array.from({ length: 4 }, (_, index) => <div className="gr-dash-metric gr-dash-skeleton-card" key={index}><span className="gr-dash-skeleton gr-dash-skeleton-label" /><span className="gr-dash-skeleton gr-dash-skeleton-value" /><span className="gr-dash-skeleton gr-dash-skeleton-label" /></div>)}</div><div className="gr-dash-primary-grid" aria-hidden="true"><div className="gr-dash-panel gr-dash-skeleton-panel" /><div className="gr-dash-panel gr-dash-skeleton-panel" /></div></div>;
 }
 
+function ActivityAtAGlance({ summary, days }: { summary: UsageSummary; days: number }) {
+  const hasRequests = summary.total_requests > 0;
+  const deliveredRate = hasRequests ? summary.delivered / summary.total_requests * 100 : 0;
+  const percent = deliveredRate.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  const outcomes = [
+    { label: "Stopped before the AI", value: summary.input_blocked, icon: "shield" },
+    { label: "AI response blocked", value: summary.output_blocked, icon: "check" },
+    { label: "Rate limited", value: summary.rate_limited ?? 0, icon: "activity" },
+    { label: "Failed requests", value: summary.error_count, icon: "refresh" },
+  ] as const;
+
+  return <section className="gr-dash-pulse" aria-labelledby="gr-dash-pulse-title">
+    <div className="gr-dash-pulse-ring">
+      <svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="50" className="gr-dash-pulse-track" />{hasRequests && <circle cx="60" cy="60" r="50" pathLength="100" className="gr-dash-pulse-value" strokeDasharray={`${Math.max(0, Math.min(100, deliveredRate))} 100`} />}</svg>
+      <div>{hasRequests ? <><strong>{percent}%</strong><span>delivered</span></> : <><AppIcon name="sparkles" size={27} /><span>Ready when<br />you are</span></>}</div>
+    </div>
+    <div className="gr-dash-pulse-copy">
+      <p className="gr-dash-eyebrow">From your workspace · Last {days} days</p>
+      <h2 id="gr-dash-pulse-title">Activity at a glance</h2>
+      {hasRequests ? <p><strong>{count(summary.delivered)}</strong> of <strong>{count(summary.total_requests)}</strong> requests were delivered.</p> : <p><strong>No requests in this period yet.</strong><br />Send a prompt to see your real activity here.</p>}
+      <a href={hasRequests ? "?view=logs" : "?view=chat"} className="gr-dash-text-link">{hasRequests ? "Explore the decisions" : "Try a prompt"}<ArrowIcon /></a>
+    </div>
+    <dl className="gr-dash-pulse-outcomes">{outcomes.map(outcome => <div key={outcome.label}><dt><AppIcon name={outcome.icon} size={15} /><span>{outcome.label}</span></dt><dd>{count(outcome.value)}</dd></div>)}</dl>
+  </section>;
+}
+
 export default function DashboardView() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState("");
@@ -110,17 +136,23 @@ export default function DashboardView() {
   return <div className="gr-dashboard">
     <header className="gr-dash-welcome">
       <div className="gr-dash-welcome-copy">
-        <p className="gr-dash-welcome-eyebrow"><AppIcon name="sparkles" size={16} /> SMALL CHECKS. MORE CONFIDENCE.</p>
-        <h1>Welcome to your <span>AI workspace.</span></h1>
-        <p>Ask a question. Check what happens. Make AI work a little better for you.</p>
+        <p className="gr-dash-welcome-eyebrow"><AppIcon name="sparkles" size={16} /> A LITTLE PERSPECTIVE GOES A LONG WAY</p>
+        <h1>Your AI, <span>in perspective.</span></h1>
+        <p>Good ideas deserve a clear path. Explore what your guardrails check, shape your rules, and see the story behind every request.</p>
         <div className="gr-dash-welcome-actions">
           <a className="gr-dash-primary-link" href="?view=chat">Try a question<ArrowIcon /></a>
           <a className="gr-dash-text-link" href="?view=about">Show me around<AppIcon name="help" size={16} /></a>
         </div>
-        <p className="gr-dash-welcome-note">New here? The example walks you through it.</p>
+        <p className="gr-dash-welcome-note"><AppIcon name="check" size={14} /> Explore the example. Then make it your own.</p>
       </div>
       <RequestJourney compact />
     </header>
+
+    <nav className="gr-dash-shortcuts" aria-label="Workspace shortcuts">
+      <a href="?view=chat" aria-labelledby="gr-shortcut-chat-title" aria-describedby="gr-shortcut-chat-description"><span className="gr-dash-shortcut-icon"><AppIcon name="sparkles" size={23} /></span><span><strong id="gr-shortcut-chat-title">Try a question</strong><span id="gr-shortcut-chat-description">See a real check in action</span></span><ArrowIcon /></a>
+      <a href="?view=policy" aria-labelledby="gr-shortcut-policy-title" aria-describedby="gr-shortcut-policy-description"><span className="gr-dash-shortcut-icon"><AppIcon name="settings" size={23} /></span><span><strong id="gr-shortcut-policy-title">Shape your rules</strong><span id="gr-shortcut-policy-description">Choose what matters to you</span></span><ArrowIcon /></a>
+      <a href="?view=logs" aria-labelledby="gr-shortcut-logs-title" aria-describedby="gr-shortcut-logs-description"><span className="gr-dash-shortcut-icon"><AppIcon name="logs" size={23} /></span><span><strong id="gr-shortcut-logs-title">Understand a result</strong><span id="gr-shortcut-logs-description">Follow the reason behind a decision</span></span><ArrowIcon /></a>
+    </nav>
 
     <div className="gr-dash-header gr-dash-activity-header">
       <div><div className="gr-dash-eyebrow">Your workspace activity</div><h2>Every request, accounted for.</h2><p>Real requests and the decisions your guardrails make.</p></div>
@@ -128,6 +160,7 @@ export default function DashboardView() {
     </div>
 
     {error ? <section className="gr-dash-error" role="alert"><div><h2>Activity could not be loaded</h2><p>{error}</p></div><button className="gr-dash-button" onClick={() => setReload((value) => value + 1)}>Try again<ArrowIcon /></button></section> : !data || !summary ? <LoadingDashboard /> : <>
+      <ActivityAtAGlance summary={summary} days={days} />
       <section className="gr-dash-metrics" aria-label="Request metrics">
         <article className="gr-dash-metric"><div className="gr-dash-metric-label">Total requests<span className="gr-dash-metric-index">01</span></div><strong>{count(summary.total_requests)}</strong><p><span>{count(summary.delivered)}</span> delivered to your models</p></article>
         <article className="gr-dash-metric gr-dash-metric-accent"><div className="gr-dash-metric-label">Prevented requests<span className="gr-dash-metric-index">02</span></div><strong>{count(blockedTotal)}</strong><p><span>{summary.block_rate_pct.toLocaleString(undefined, { maximumFractionDigits: 2 })}%</span> blocked or rate limited</p></article>

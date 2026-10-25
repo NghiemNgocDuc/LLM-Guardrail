@@ -7,7 +7,15 @@ figures, prompts, and identifiers are test data, not a live customer account.
 
 ## Overview
 
-![Request overview with traffic and policy signals](images/dashboard.png)
+![Overview with an illustrated guardrail example and workspace shortcuts](images/dashboard.png)
+
+## Activity
+
+Overview's activity summary explains the actual dashboard response, including
+the share delivered and the counts for each blocked, limited, or failed outcome.
+This capture is scrolled to that section; all values are synthetic test data.
+
+![Activity at a glance with delivery rate, request metrics, and traffic charts](images/activity.png)
 
 ## Sign-in and interactive introduction
 
@@ -51,6 +59,7 @@ After the tests pass, copy these generated files:
 | Generated file | Committed image |
 | --- | --- |
 | `test-results/previews/dashboard-light-desktop.png` | `docs/images/dashboard.png` |
+| `test-results/previews/activity-desktop.png` | `docs/images/activity.png` |
 | `test-results/previews/sign-in-desktop.png` | `docs/images/sign-in.png` |
 | `test-results/previews/skills-light-desktop.png` | `docs/images/skill-guard.png` |
 | `test-results/previews/policy-light-desktop.png` | `docs/images/policy.png` |

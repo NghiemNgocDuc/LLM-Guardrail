@@ -14,7 +14,7 @@ self-hosted Ollama inference.
 [API guide](docs/API_GUIDE.md) ·
 [Private self-hosting](docs/PRIVATE_SELF_HOSTING.md)
 
-![LLM Guardrail dashboard showing request totals, blocked traffic, latency, and policy signals](docs/images/dashboard.png)
+![LLM Guardrail Overview with an interactive guardrail illustration and workspace shortcuts](docs/images/dashboard.png)
 
 *The actual web app rendered locally with synthetic test data. More views and
 capture instructions are in the [screenshot guide](docs/SCREENSHOTS.md).*
@@ -43,6 +43,11 @@ Sign-in and Overview include an illustrated, three-step example: **your message
 or a risky instruction to understand the possible outcomes. The animation plays
 once, with pause and replay controls, and respects reduced-motion preferences.
 These examples do not send real requests or change your workspace activity.
+Select a numbered step to explore the explanation at your own pace. Overview
+also offers shortcuts to prompts, rules, and request logs, plus an activity
+summary calculated from your workspace's real request counts.
+See the [activity view](docs/SCREENSHOTS.md#activity) for delivery counts,
+outcomes, and request charts.
 
 ![Welcoming sign-in page with an illustrated explanation of guardrails](docs/images/sign-in.png)
 

@@ -1,6 +1,6 @@
 # Frontend design
 
-The interface uses a restrained forest-green and warm-white palette, DM Sans
+The interface uses a forest-green and warm-white palette, DM Sans
 for text, and IBM Plex Mono for prompts and request metadata. Shared colors,
 surfaces, typography, and interaction states live in `src/styles/global.css`.
 Each redesigned page has a scoped stylesheet.
@@ -8,12 +8,23 @@ Each redesigned page has a scoped stylesheet.
 Sign-in and Overview share a friendly, illustrated request journey: your message,
 a quick check, and what happens next. Everyday questions, private details, and risky
 instructions explain the product without requiring technical vocabulary.
+The illustrated checkpoint gives the message, rule check, and outcome a clear
+spatial relationship. Numbered step buttons let users explore the explanation
+at their own pace. Selecting a step pauses playback and preserves keyboard
+focus; only an explicit playback or scenario action resumes the sequence.
 `RequestJourney.tsx` owns the example and its scoped stylesheet. It makes no API
 calls, and labels the outcomes as illustrative and dependent on workspace rules.
 Overview keeps this introduction separate from actual activity and metrics.
 
+Workspace shortcuts lead to a real prompt, policy settings, and request logs.
+The activity summary uses the dashboard API's delivered and total request
+counts to calculate its percentage; the outcome list uses the same response's
+input blocks, output blocks, rate limits, and errors. It shows an empty-period
+message for zero traffic and does not appear when activity fails to load.
+The illustration and these shortcuts remain available during loading/errors.
+
 The journey plays once, with a persistent pause/resume/replay button. Its short
-sequence highlights the three stages while every explanation remains readable.
+sequence highlights the three stages while the message and outcome stay readable.
 Reduced motion shows the complete static example immediately, including when
 the system preference changes while the page is open. Scenario controls work
 with a keyboard and retain focus. The sign-in form stays usable during playback
@@ -52,6 +63,7 @@ Design research:
 - [Vercel Geist typography](https://vercel.com/geist/typography) informed a consistent heading, body, and metadata scale.
 - [W3C form labels](https://www.w3.org/WAI/tutorials/forms/labels/) informed associated labels and native form behavior.
 - [Nielsen Norman Group: purposeful animation](https://www.nngroup.com/articles/animation-purpose-ux/) informed the request journey's explanation of cause and effect.
+- [Nielsen Norman Group: progressive disclosure](https://www.nngroup.com/articles/progressive-disclosure/) informed focused shortcuts, manual step explanations, and access to deeper request details.
 - [W3C clear content](https://www.w3.org/WAI/WCAG2/supplemental/objectives/o3-clear-content/) informed familiar words, short explanations, and the visual three-step introduction.
 - [W3C pause, stop, hide](https://www.w3.org/WAI/WCAG22/Understanding/pause-stop-hide) informed playback controls and stable motion.
 - [W3C animation preferences](https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions.html) informed the complete static alternative and system preference support.

@@ -76,7 +76,7 @@ test("login is usable alongside its illustrative journey; keyboard sign-in works
   await page.getByLabel("Email address", { exact: true }).fill("reviewer@example.com");
   await page.getByLabel("Password", { exact: true }).fill("valid-password");
   await page.getByLabel("Password", { exact: true }).press("Enter");
-  await expect(page.getByRole("heading", { name: "Welcome to your AI workspace." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your AI, in perspective." })).toBeVisible();
   expect(requests.filter(request => request.path === "/auth/login")).toHaveLength(1);
 });
 
@@ -117,7 +117,7 @@ test("dashboard, quick navigation, history and dark theme work", async ({ page }
   const requests = await mockApi(page, { signedIn: true });
   await page.goto("/?view=admin");
   await expect(page.getByRole("main", { name: "Overview" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Welcome to your AI workspace." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your AI, in perspective." })).toBeVisible();
   await assertNoOverflow(page);
   await preview(page, `dashboard-${info.project.name}`);
   await page.getByLabel("Activity period").selectOption("30");
@@ -172,6 +172,8 @@ test("dashboard failures offer recovery without fabricated metrics", async ({ pa
   const requests = await mockApi(page, { signedIn: true, failDashboard: true });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Activity could not be loaded" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Activity at a glance", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Workspace shortcuts", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Try again" }).click();
   await expect.poll(() => requests.filter(request => request.path.startsWith("/analytics/dashboard")).length).toBeGreaterThanOrEqual(2);
   await expect(page.getByText("Total requests", { exact: true })).toHaveCount(0);
