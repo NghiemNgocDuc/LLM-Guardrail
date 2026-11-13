@@ -13,7 +13,6 @@ from app.defaults import (
     DEFAULT_TOPIC_POLICY,
 )
 
-
 async def create_demo_account(email: str, password: str, org_name: str) -> None:
     async with AsyncSessionLocal() as db:
         existing = await db.execute(select(User).where(User.email == email))
